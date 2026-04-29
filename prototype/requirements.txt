@@ -1,0 +1,3 @@
+streamlit>=1.39,<2.0
+pandas>=2.2
+streamlit-paste-button>=0.1.2
