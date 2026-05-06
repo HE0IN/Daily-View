@@ -20,6 +20,15 @@ htmlcov/
 .env
 .env.local
 
+# 런타임 데이터 (실 데이터는 절대 커밋 안 함)
+data/*
+!data/.gitkeep
+
+# 로그 / 임시
+*.log
+.tmp
+tmp/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -37,3 +46,4 @@ desktop.ini
 .claude/projects/
 .claude/todos/
 .claude/.cache/
+.claude/settings.local.json

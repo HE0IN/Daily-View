@@ -1,0 +1,499 @@
+"""repository 통합 시나리오 테스트.
+
+create → list → status 전이 → comment → image → archive 의 전체 흐름을
+실제 디스크에 쓰면서 검증한다. 환경변수 ``DATA_DIR`` 를 ``tmp_path`` 로 격리.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from core import index as index_mod
+from core import paths, repository
+from core.clock import KST, from_iso, to_iso
+from core.models import Issue, Role, Status, Urgency
+from core.workflow import WorkflowError
+
+
+# ---------------------------------------------------------------------------
+# 생성
+# ---------------------------------------------------------------------------
+
+
+def test_create_issue_basic(temp_data_dir: Path, sample_issue_kwargs: dict) -> None:
+    """create_issue → get_issue 가 동일 이슈를 반환. id/상태/타임스탬프 검증."""
+    issue = repository.create_issue(**sample_issue_kwargs)
+
+    # id 형식: YYYY-MM-DD_6hex
+    assert re.match(r"^\d{4}-\d{2}-\d{2}_[0-9a-f]{6}$", issue.id), (
+        f"id 형식 위반: {issue.id}"
+    )
+
+    # 상태/타임스탬프
+    assert issue.status == Status.requested
+    assert issue.created_at == issue.updated_at, "생성 직후엔 동일해야 함"
+    assert len(issue.status_history) == 1
+    assert issue.status_history[0].status == Status.requested
+    assert issue.status_history[0].by == sample_issue_kwargs["author"]
+
+    # 라운드트립
+    fetched = repository.get_issue(issue.id)
+    assert fetched.id == issue.id
+    assert fetched.title == sample_issue_kwargs["title"]
+    assert fetched.urgency == Urgency.normal
+    assert fetched.status == Status.requested
+
+    # meta.json 디스크에 존재
+    meta_path = paths.item_meta_path(issue.id)
+    assert meta_path.exists()
+    raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert raw["id"] == issue.id
+
+    # 빈 comments.jsonl 생성
+    assert paths.item_comments_path(issue.id).exists()
+    # 이미지 디렉토리도 생성
+    assert paths.item_images_dir(issue.id).exists()
+
+
+def test_create_issue_validation_empty_title(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """빈 title 은 pydantic ValidationError."""
+    sample_issue_kwargs["title"] = ""
+    with pytest.raises(ValidationError):
+        repository.create_issue(**sample_issue_kwargs)
+
+
+def test_create_issue_validation_title_too_long(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """title > 120자는 ValidationError."""
+    sample_issue_kwargs["title"] = "가" * 121
+    with pytest.raises(ValidationError):
+        repository.create_issue(**sample_issue_kwargs)
+
+
+def test_create_issue_validation_invalid_urgency(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """알 수 없는 urgency 문자열 → ValueError 또는 ValidationError."""
+    sample_issue_kwargs["urgency"] = "super_high"
+    with pytest.raises((ValidationError, ValueError)):
+        repository.create_issue(**sample_issue_kwargs)
+
+
+# ---------------------------------------------------------------------------
+# 목록
+# ---------------------------------------------------------------------------
+
+
+def _make_issue(
+    sample_issue_kwargs: dict, **overrides
+) -> Issue:
+    """헬퍼: 기본 인자에 overrides 적용해 create_issue 호출."""
+    kw = dict(sample_issue_kwargs)
+    kw.update(overrides)
+    return repository.create_issue(**kw)
+
+
+def test_list_issues_filters(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """status/urgency/assignee/author/search 필터가 각각 정확히 동작."""
+    a = _make_issue(
+        sample_issue_kwargs,
+        title="apple bug",
+        urgency="high",
+        assignee="alice",
+        author="reviewer1",
+        author_role="reviewer",
+        tags=["frontend"],
+    )
+    b = _make_issue(
+        sample_issue_kwargs,
+        title="banana issue",
+        urgency="low",
+        assignee="bob",
+        author="reviewer2",
+        author_role="reviewer",
+        tags=["backend"],
+    )
+    c = _make_issue(
+        sample_issue_kwargs,
+        title="apple feature",
+        urgency="normal",
+        assignee=None,
+        author="reviewer1",
+        author_role="reviewer",
+        tags=["frontend", "ui"],
+    )
+
+    all_ids = {a.id, b.id, c.id}
+    listed = {e.id for e in repository.list_issues()}
+    assert listed == all_ids
+
+    # urgency 필터
+    high = repository.list_issues(urgency="high")
+    assert {e.id for e in high} == {a.id}
+
+    # assignee 필터
+    bobs = repository.list_issues(assignee="bob")
+    assert {e.id for e in bobs} == {b.id}
+
+    # author 필터
+    rev1 = repository.list_issues(author="reviewer1")
+    assert {e.id for e in rev1} == {a.id, c.id}
+
+    # 검색: title 부분 매칭
+    apples = repository.list_issues(search="apple")
+    assert {e.id for e in apples} == {a.id, c.id}
+
+    # 검색: 태그 매칭
+    backend = repository.list_issues(search="backend")
+    assert {e.id for e in backend} == {b.id}
+
+    # 대소문자 무시
+    upper = repository.list_issues(search="APPLE")
+    assert {e.id for e in upper} == {a.id, c.id}
+
+
+def test_list_issues_include_archived_default(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """include_archived 기본 False → 아카이브된 항목 미포함."""
+    a = _make_issue(sample_issue_kwargs, title="A")
+    b = _make_issue(sample_issue_kwargs, title="B")
+
+    repository.archive_issue(a.id, actor="tester")
+
+    default = repository.list_issues()
+    assert {e.id for e in default} == {b.id}, "아카이브된 a 가 기본 목록에 포함됨"
+
+    incl = repository.list_issues(include_archived=True)
+    assert {e.id for e in incl} == {a.id, b.id}
+
+
+def test_list_issues_include_closed_default_true(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """include_closed 기본 True → closed 항목도 기본에 포함."""
+    a = _make_issue(sample_issue_kwargs, title="A")
+    b = _make_issue(sample_issue_kwargs, title="B")
+
+    # a 를 closed 까지 진행
+    repository.update_status(a.id, Status.closed, actor="rev", actor_role=Role.reviewer)
+
+    default = repository.list_issues()
+    assert {e.id for e in default} == {a.id, b.id}, "closed 가 기본 목록에서 빠짐"
+
+    no_closed = repository.list_issues(include_closed=False)
+    assert {e.id for e in no_closed} == {b.id}
+
+
+def test_list_issues_sort_by_updated_at_desc(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """updated_at 내림차순 정렬."""
+    a = _make_issue(sample_issue_kwargs, title="A")
+    time.sleep(1.1)  # ISO 초 단위 분리 보장
+    b = _make_issue(sample_issue_kwargs, title="B")
+    time.sleep(1.1)
+    c = _make_issue(sample_issue_kwargs, title="C")
+
+    listed = repository.list_issues()
+    ids = [e.id for e in listed]
+    assert ids == [c.id, b.id, a.id], (
+        f"updated_at desc 정렬 위반: {ids}"
+    )
+
+    # a 를 다시 갱신 → 맨 위로 와야 한다
+    time.sleep(1.1)
+    repository.update_status(
+        a.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+    listed2 = repository.list_issues()
+    assert listed2[0].id == a.id, "갱신된 항목이 맨 위로 오지 않음"
+
+
+# ---------------------------------------------------------------------------
+# 상태 전이
+# ---------------------------------------------------------------------------
+
+
+def test_update_status_full_workflow(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """requested → in_progress → done → reviewing → closed 정상 흐름."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    repository.update_status(
+        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.done, actor="dev", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.reviewing, actor="rev", actor_role=Role.reviewer
+    )
+    final = repository.update_status(
+        issue.id, Status.closed, actor="rev", actor_role=Role.reviewer
+    )
+
+    assert final.status == Status.closed
+    assert final.reviewer_confirmed is True, "closed 진입 시 reviewer_confirmed True"
+    assert final.reviewer_confirmed_at is not None, "reviewer_confirmed_at not None"
+
+
+def test_update_status_unauthorized_role(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """검토자가 in_progress 로 변경 시도 → WorkflowError."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    with pytest.raises(WorkflowError):
+        repository.update_status(
+            issue.id, Status.in_progress, actor="bad", actor_role=Role.reviewer
+        )
+
+    # 상태 변경 시도가 실패했으니 디스크 상태도 그대로
+    after = repository.get_issue(issue.id)
+    assert after.status == Status.requested
+
+
+def test_update_status_invalid_transition(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """requested → done 직접 점프 시도 (개발자 권한이라도) → WorkflowError."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    with pytest.raises(WorkflowError):
+        repository.update_status(
+            issue.id, Status.done, actor="dev", actor_role=Role.developer
+        )
+
+
+def test_status_history_appended_on_each_change(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """매 상태 변경마다 status_history 에 StatusEvent 추가."""
+    issue = _make_issue(sample_issue_kwargs)
+    assert len(issue.status_history) == 1
+
+    repository.update_status(
+        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.done, actor="dev", actor_role=Role.developer
+    )
+
+    final = repository.get_issue(issue.id)
+    statuses = [ev.status for ev in final.status_history]
+    bys = [ev.by for ev in final.status_history]
+
+    assert statuses == [Status.requested, Status.in_progress, Status.done]
+    assert bys == [sample_issue_kwargs["author"], "dev", "dev"]
+    # 모든 at 이 timezone-aware 한 datetime
+    for ev in final.status_history:
+        assert ev.at.tzinfo is not None, f"naive datetime: {ev}"
+
+
+def test_system_comment_on_status_change(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """상태 변경 시 시스템 코멘트가 comments.jsonl 에 추가됨."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    repository.update_status(
+        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+
+    comments = repository.list_comments(issue.id)
+    sys_comments = [c for c in comments if c.kind == "system"]
+    assert len(sys_comments) == 1, (
+        f"시스템 코멘트가 1개여야 함, 실제 {len(sys_comments)}"
+    )
+
+    body = sys_comments[0].body
+    assert "상태 변경" in body, f"body 에 '상태 변경' 누락: {body!r}"
+    # 한국어 라벨이 들어가야 함
+    assert "요청됨" in body or "확인중" in body, f"라벨 누락: {body!r}"
+    # role 은 'system' 문자열
+    assert sys_comments[0].role == "system"
+
+
+# ---------------------------------------------------------------------------
+# 코멘트
+# ---------------------------------------------------------------------------
+
+
+def test_add_comment_basic(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """add_comment → list_comments 에서 보여야 하고 id 가 'c' 로 시작."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    comment = repository.add_comment(
+        issue.id, author="rev", role=Role.reviewer, body="첫 코멘트"
+    )
+
+    assert comment.id.startswith("c"), f"코멘트 id 가 'c' 로 시작해야: {comment.id}"
+    assert comment.kind == "comment"
+    assert comment.body == "첫 코멘트"
+
+    listed = repository.list_comments(issue.id)
+    user_comments = [c for c in listed if c.kind == "comment"]
+    assert len(user_comments) == 1
+    assert user_comments[0].id == comment.id
+
+    # updated_at 가 created_at 보다 미래 또는 같음
+    refreshed = repository.get_issue(issue.id)
+    assert refreshed.updated_at >= refreshed.created_at
+
+
+def test_add_comment_empty_body_rejected(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """빈 body 는 ValueError."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    with pytest.raises(ValueError):
+        repository.add_comment(issue.id, author="rev", role=Role.reviewer, body="")
+    with pytest.raises(ValueError):
+        repository.add_comment(issue.id, author="rev", role=Role.reviewer, body="   ")
+
+
+# ---------------------------------------------------------------------------
+# 인덱스 동기화
+# ---------------------------------------------------------------------------
+
+
+def test_index_updated_on_create(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """create_issue 직후 index.json 에 엔트리가 존재."""
+    issue = _make_issue(sample_issue_kwargs, title="인덱스 검증")
+
+    raw = index_mod.read_index()
+    found = [e for e in raw if e.get("id") == issue.id]
+    assert len(found) == 1, "인덱스에 엔트리 없음"
+    entry = found[0]
+    assert entry["title"] == "인덱스 검증"
+    assert entry["status"] == Status.requested.value
+    assert entry["comments_count"] == 0
+    assert entry["images_count"] == 0
+
+
+def test_index_updated_on_status_change(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """update_status 후 인덱스의 status 가 새 값."""
+    issue = _make_issue(sample_issue_kwargs)
+    repository.update_status(
+        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+
+    raw = index_mod.read_index()
+    entry = next(e for e in raw if e["id"] == issue.id)
+    assert entry["status"] == Status.in_progress.value
+
+
+def test_index_comments_count_includes_system(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """add_comment 와 status 변경(시스템 코멘트) 모두 comments_count 에 카운트."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    # 일반 코멘트 2개
+    repository.add_comment(issue.id, author="rev", role=Role.reviewer, body="c1")
+    repository.add_comment(issue.id, author="rev", role=Role.reviewer, body="c2")
+
+    raw = index_mod.read_index()
+    entry = next(e for e in raw if e["id"] == issue.id)
+    assert entry["comments_count"] == 2
+
+    # 상태 변경 → 시스템 코멘트 1개 추가
+    repository.update_status(
+        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+
+    raw = index_mod.read_index()
+    entry = next(e for e in raw if e["id"] == issue.id)
+    assert entry["comments_count"] == 3, (
+        f"시스템 코멘트도 카운트되어야: 기대 3, 실제 {entry['comments_count']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 아카이브
+# ---------------------------------------------------------------------------
+
+
+def test_archive_issue_flag_and_visibility(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """archive_issue 후 archived=True. 기본 list 에서 제외, include_archived 로 포함."""
+    issue = _make_issue(sample_issue_kwargs)
+    archived = repository.archive_issue(issue.id, actor="tester")
+
+    assert archived.archived is True
+    refreshed = repository.get_issue(issue.id)
+    assert refreshed.archived is True
+
+    # 기본 list_issues 에서 제외
+    default = repository.list_issues()
+    assert all(e.id != issue.id for e in default), "아카이브된 항목이 기본 목록에 포함"
+
+    incl = repository.list_issues(include_archived=True)
+    assert any(e.id == issue.id for e in incl)
+
+
+def test_auto_archive_closed(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """closed 후 reviewer_confirmed_at 가 cutoff 보다 과거면 auto_archive 됨.
+
+    meta.json 을 직접 편집해 reviewer_confirmed_at 을 강제로 과거로 바꾼다.
+    """
+    a = _make_issue(sample_issue_kwargs, title="A")
+    b = _make_issue(sample_issue_kwargs, title="B")
+
+    # a 만 closed 까지 진행
+    repository.update_status(a.id, Status.closed, actor="rev", actor_role=Role.reviewer)
+
+    # a 의 meta.json 을 읽어 reviewer_confirmed_at 을 30일 전으로 수정
+    meta_path = paths.item_meta_path(a.id)
+    raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    past = datetime.now(KST) - timedelta(days=30)
+    raw["reviewer_confirmed_at"] = to_iso(past)
+    meta_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 14일 임계값으로 auto_archive 수행
+    n = repository.auto_archive_closed(days=14)
+    assert n == 1, f"아카이브된 항목 수 기대 1, 실제 {n}"
+
+    # a 는 archived, b 는 그대로
+    a_after = repository.get_issue(a.id)
+    b_after = repository.get_issue(b.id)
+    assert a_after.archived is True, "오래된 closed 항목이 archived 되지 않음"
+    assert b_after.archived is False
+
+
+def test_auto_archive_skips_recent_closed(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """closed 직후라면 auto_archive 가 건드리지 않음."""
+    issue = _make_issue(sample_issue_kwargs)
+    repository.update_status(
+        issue.id, Status.closed, actor="rev", actor_role=Role.reviewer
+    )
+
+    n = repository.auto_archive_closed(days=14)
+    assert n == 0
+    assert repository.get_issue(issue.id).archived is False

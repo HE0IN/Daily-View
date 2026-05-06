@@ -1,0 +1,10 @@
+streamlit>=1.39,<2.0
+pydantic>=2.7,<3.0
+Pillow>=10.4
+filelock>=3.15
+python-dotenv>=1.0
+pandas>=2.2
+streamlit-autorefresh>=1.0
+streamlit-paste-button>=0.1.2
+extra-streamlit-components>=0.1.71
+tzdata>=2024.1  # Windows에서 ZoneInfo("Asia/Seoul") 필요
