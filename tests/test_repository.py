@@ -428,6 +428,150 @@ def test_index_comments_count_includes_system(
 
 
 # ---------------------------------------------------------------------------
+# 프로젝트 필드
+# ---------------------------------------------------------------------------
+
+
+def test_create_issue_with_project(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """create_issue 에 project 인자 → meta.json 라운드트립 + 인덱스 반영."""
+    issue = repository.create_issue(project="proj-A", **sample_issue_kwargs)
+
+    assert issue.project == "proj-A"
+
+    fetched = repository.get_issue(issue.id)
+    assert fetched.project == "proj-A"
+
+    # 인덱스에도 project 가 들어가야 함
+    raw = index_mod.read_index()
+    entry = next(e for e in raw if e["id"] == issue.id)
+    assert entry.get("project") == "proj-A"
+
+
+def test_create_issue_project_default_none(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """project 인자 미지정 시 None 으로 저장 — 기존 호환성."""
+    issue = repository.create_issue(**sample_issue_kwargs)
+    assert issue.project is None
+    assert repository.get_issue(issue.id).project is None
+
+
+def test_update_project(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """프로젝트 변경 → meta + 시스템 코멘트 + audit + 인덱스 갱신."""
+    issue = repository.create_issue(project="proj-A", **sample_issue_kwargs)
+
+    updated = repository.update_project(issue.id, "proj-B", actor="rev")
+    assert updated.project == "proj-B"
+
+    refreshed = repository.get_issue(issue.id)
+    assert refreshed.project == "proj-B"
+
+    # 시스템 코멘트
+    sys_comments = [c for c in repository.list_comments(issue.id) if c.kind == "system"]
+    assert any("프로젝트 변경" in c.body for c in sys_comments), (
+        f"시스템 코멘트에 '프로젝트 변경' 없음: {[c.body for c in sys_comments]}"
+    )
+    # old → new 모두 본문에 포함
+    target = next(c for c in sys_comments if "프로젝트 변경" in c.body)
+    assert "proj-A" in target.body and "proj-B" in target.body
+
+    # audit
+    audit_lines = [
+        json.loads(line)
+        for line in paths.audit_log_path().read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    project_audits = [
+        a for a in audit_lines if a.get("action") == "update_project"
+    ]
+    assert len(project_audits) == 1
+    assert project_audits[0]["detail"] == {"from": "proj-A", "to": "proj-B"}
+
+    # 인덱스 갱신
+    raw = index_mod.read_index()
+    entry = next(e for e in raw if e["id"] == issue.id)
+    assert entry.get("project") == "proj-B"
+
+    # 변경 없음 → early return (audit 더 이상 추가되지 않음)
+    repository.update_project(issue.id, "proj-B", actor="rev")
+    audit_lines2 = [
+        json.loads(line)
+        for line in paths.audit_log_path().read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    project_audits2 = [
+        a for a in audit_lines2 if a.get("action") == "update_project"
+    ]
+    assert len(project_audits2) == 1, "변경 없을 때 audit 추가되면 안 됨"
+
+
+def test_update_project_normalizes_empty(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """빈 문자열 / 공백만 → None 으로 정규화."""
+    issue = repository.create_issue(project="proj-A", **sample_issue_kwargs)
+
+    updated = repository.update_project(issue.id, "", actor="rev")
+    assert updated.project is None
+
+    # 다시 값 넣고 공백만 입력 → None
+    repository.update_project(issue.id, "proj-B", actor="rev")
+    updated2 = repository.update_project(issue.id, "   ", actor="rev")
+    assert updated2.project is None
+
+
+def test_list_projects_unique(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """여러 항목의 project 중 unique 만 정렬되어 반환. None/빈은 제외."""
+    repository.create_issue(project="zeta", **sample_issue_kwargs)
+    repository.create_issue(project="alpha", **sample_issue_kwargs)
+    repository.create_issue(project="alpha", **sample_issue_kwargs)  # 중복
+    repository.create_issue(project=None, **sample_issue_kwargs)  # None
+    repository.create_issue(project="", **sample_issue_kwargs)  # 빈 문자열 → None
+    repository.create_issue(project="beta", **sample_issue_kwargs)
+
+    projects = repository.list_projects()
+    assert projects == ["alpha", "beta", "zeta"], (
+        f"정렬된 unique project 리스트 기대 ['alpha','beta','zeta'], 실제 {projects}"
+    )
+
+
+def test_list_issues_with_project_filter(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """list_issues 의 project 필터 동작."""
+    a = repository.create_issue(project="proj-A", **sample_issue_kwargs)
+    b = repository.create_issue(project="proj-B", **sample_issue_kwargs)
+    c = repository.create_issue(project="proj-A", **sample_issue_kwargs)
+    d = repository.create_issue(**sample_issue_kwargs)  # project None
+
+    # project='proj-A' → a, c 만
+    pa = repository.list_issues(project="proj-A")
+    assert {e.id for e in pa} == {a.id, c.id}
+
+    # project='proj-B' → b 만
+    pb = repository.list_issues(project="proj-B")
+    assert {e.id for e in pb} == {b.id}
+
+    # project=None (기본) → 모두 (4개)
+    all_listed = repository.list_issues()
+    assert {e.id for e in all_listed} == {a.id, b.id, c.id, d.id}
+
+    # project='' 빈 문자열 → None 과 동일 (모두)
+    empty = repository.list_issues(project="")
+    assert {e.id for e in empty} == {a.id, b.id, c.id, d.id}
+
+    # 존재하지 않는 프로젝트 → 빈 결과
+    none_match = repository.list_issues(project="proj-X")
+    assert none_match == []
+
+
+# ---------------------------------------------------------------------------
 # 아카이브
 # ---------------------------------------------------------------------------
 

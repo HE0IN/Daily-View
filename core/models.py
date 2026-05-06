@@ -120,6 +120,9 @@ class Issue(BaseModel):
     category_l1: str | None = None
     category_l2: str | None = None
     category_l3: str | None = None
+    # 프로젝트 식별자 (자유 문자열). 사이드바에서 현재 프로젝트로 필터링.
+    # 기존 meta.json 호환을 위해 optional — 누락 시 None 으로 처리.
+    project: str | None = None
 
 
 class IndexEntry(BaseModel):
@@ -144,6 +147,8 @@ class IndexEntry(BaseModel):
     category_l1: str | None = None
     category_l2: str | None = None
     category_l3: str | None = None
+    # 프로젝트 식별자 — 사이드바 프로젝트 선택용 필터.
+    project: str | None = None
 
     @classmethod
     def from_issue(
@@ -170,6 +175,7 @@ class IndexEntry(BaseModel):
             category_l1=issue.category_l1,
             category_l2=issue.category_l2,
             category_l3=issue.category_l3,
+            project=issue.project,
         )
 
 

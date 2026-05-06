@@ -181,18 +181,33 @@ with left:
             st.caption(
                 "동작 안 되면 `localhost:8501` 으로 접속하거나 좌측 파일 업로드를 사용하세요."
             )
-            with st.expander("붙여넣기가 안 되시나요?"):
+            with st.expander("붙여넣기가 안 되시나요? (HTTP/사내 IP 환경)"):
                 st.markdown(
-                    "**브라우저 클립보드 API 는 Secure Context 에서만 동작합니다.**\n\n"
+                    "**왜 안 되는지 (확정 원인)**\n\n"
+                    "이 라이브러리(`streamlit-paste-button`)는 내부적으로 "
+                    "`navigator.clipboard.read()` (Async Clipboard API) 를 호출합니다. "
+                    "이 API 는 W3C 표준상 **Secure Context** (HTTPS 또는 localhost) "
+                    "에서만 동작하도록 명세되어 있어, 어떤 브라우저 설정으로도 "
+                    "HTTP + IP 환경에서는 우회되지 않습니다.\n\n"
                     "- OK : `http://localhost:8501`, `http://127.0.0.1:8501`, HTTPS 도메인\n"
                     "- NG : `http://192.168.x.x:8501` 같은 사내 IP 직접 접속 (HTTP)\n\n"
-                    "**Edge 사용 시 추가 확인**\n"
+                    "참고: 브라우저의 `paste` 이벤트(input/textarea 에 포커스 두고 Ctrl+V)는 "
+                    "Secure Context 가 필요 없지만, 이 라이브러리는 그 방식을 쓰지 않습니다. "
+                    "(향후 paste 이벤트 기반 컴포넌트로 교체 시 HTTP 도 지원 가능)\n\n"
+                    "---\n\n"
+                    "**가장 빠른 우회 (HTTP+IP 환경 권장 흐름)**\n\n"
+                    "1. `Win+Shift+S` 로 화면 캡처 (자동으로 `사진 → 스크린샷` 폴더에 저장됨, "
+                    "Win11 기본 설정)\n"
+                    "2. 또는 `PrtScn` → 그림판 열기 → `Ctrl+V` → `Ctrl+S` 로 PNG 저장\n"
+                    "3. 좌측 **파일 업로드** 칸에 드래그&드롭 (다중 선택 가능)\n\n"
+                    "**대안 1**: PC 에서 직접 사용한다면 주소창에 "
+                    "`http://localhost:8501` 또는 `http://127.0.0.1:8501` 로 접속 — "
+                    "Secure Context 로 인정되어 붙여넣기가 즉시 동작합니다.\n\n"
+                    "**대안 2**: 서버에 자체서명 HTTPS 인증서를 붙여 `https://192.168.x.x` "
+                    "로 접속 — 다만 사내 신뢰 인증서 발급이 필요해 운영자 작업이 따릅니다.\n\n"
+                    "**Edge 권한 확인** (HTTPS/localhost 인데도 안 될 때만 의미 있음)\n"
                     "- 주소창 자물쇠 아이콘 → 사이트 권한 → 클립보드 → `허용`\n"
-                    "- 그래도 안 되면 한 번 페이지 새로고침\n\n"
-                    "**가장 빠른 우회**: `Win+Shift+S` 로 화면 캡처 후, 캡처 도구에서 "
-                    "`다른 이름으로 저장` → 좌측 **파일 업로드** 에 드래그.\n\n"
-                    "(Win+Shift+S 만으로 클립보드에 들어간 이미지는 위 보안 정책 때문에 "
-                    "사내 IP 환경에서는 붙여넣기 버튼이 읽지 못합니다.)"
+                    "- 페이지 새로고침\n"
                 )
 
     # 미리보기

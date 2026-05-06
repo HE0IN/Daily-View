@@ -107,12 +107,14 @@ def create_issue(
     category_l1: str | None = None,
     category_l2: str | None = None,
     category_l3: str | None = None,
+    project: str | None = None,
 ) -> Issue:
     """새 항목 생성.
 
     폴더/meta.json/빈 comments.jsonl 생성 → audit 로그 → 인덱스 갱신.
     pydantic 검증으로 잘못된 입력은 ValidationError 로 거부.
     카테고리 3 단계는 모두 optional — 빈 문자열은 None 으로 정규화.
+    project 도 optional — 빈 문자열은 None 으로 정규화.
     """
     item_id = _new_item_id()
     item_root = paths.item_dir(item_id)
@@ -142,6 +144,7 @@ def create_issue(
         category_l1=(category_l1.strip() or None) if category_l1 else None,
         category_l2=(category_l2.strip() or None) if category_l2 else None,
         category_l3=(category_l3.strip() or None) if category_l3 else None,
+        project=(project.strip() or None) if project else None,
     )
 
     # meta.json 작성 (생성이라 경합 가능성은 낮지만 일관성 위해 락 사용)
@@ -191,6 +194,7 @@ def _entry_matches(
     search: str | None,
     include_archived: bool,
     include_closed: bool,
+    project: str | None,
 ) -> bool:
     """단일 인덱스 엔트리가 필터 조건에 부합하는지."""
     if not include_archived and entry.get("archived"):
@@ -216,6 +220,9 @@ def _entry_matches(
     if author is not None and entry.get("author") != author:
         return False
 
+    if project is not None and entry.get("project") != project:
+        return False
+
     if search:
         needle = search.lower()
         title = (entry.get("title") or "").lower()
@@ -235,11 +242,17 @@ def list_issues(
     search: str | None = None,
     include_archived: bool = False,
     include_closed: bool = True,
+    project: str | None = None,
 ) -> list[IndexEntry]:
     """인덱스 기반 필터링된 목록을 ``updated_at desc`` 로 정렬해 반환.
 
     검색은 title/tags 부분 매칭(case-insensitive). 인덱스가 비어 있으면 빈 리스트.
+    project 가 주어지면 해당 프로젝트로 필터 — 빈 문자열은 None 과 동일(필터 미적용).
     """
+    # 빈 문자열은 필터 미적용으로 정규화 (UI 측 편의).
+    if isinstance(project, str) and not project.strip():
+        project = None
+
     raw = index_mod.read_index()
     filtered = [
         e for e in raw
@@ -252,6 +265,7 @@ def list_issues(
             search=search,
             include_archived=include_archived,
             include_closed=include_closed,
+            project=project,
         )
     ]
 
@@ -531,6 +545,64 @@ def update_categories(
     return issue
 
 
+def update_project(
+    item_id: str,
+    new_project: str | None,
+    actor: str,
+) -> Issue:
+    """프로젝트 식별자 변경. 빈 문자열은 None 으로 정규화.
+
+    update_assignee / update_categories 와 동일 패턴 — meta 락 → audit →
+    시스템 코멘트 → 인덱스 갱신. 변경 없으면 (old == new) early return.
+    """
+    if isinstance(new_project, str):
+        cleaned = new_project.strip()
+        normalized: str | None = cleaned or None
+    else:
+        normalized = new_project
+
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        old = issue.project
+        if old == normalized:
+            return issue
+        issue.project = normalized
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_PROJECT,
+        item_id=item_id,
+        detail={"from": old, "to": normalized},
+    )
+    _add_system_comment(
+        item_id,
+        f"프로젝트 변경: {old or '없음'} → {normalized or '없음'}",
+    )
+
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(issue, comments_count, images_count)
+    return issue
+
+
+def list_projects() -> list[str]:
+    """인덱스에서 사용 중인 프로젝트 식별자 unique 리스트(정렬).
+
+    None / 빈 문자열은 제외. 새 등록 시 드롭다운 옵션 + 사이드바
+    프로젝트 선택용 헬퍼.
+    """
+    seen: set[str] = set()
+    for entry in index_mod.read_index():
+        raw = entry.get("project")
+        if not raw:
+            continue
+        s = str(raw).strip()
+        if s:
+            seen.add(s)
+    return sorted(seen)
+
+
 def list_categories() -> dict[str, dict[str, set[str]]]:
     """현재까지 사용된 카테고리를 트리 구조로 반환.
 
@@ -745,6 +817,8 @@ __all__ = [
     "update_categories",
     "list_categories",
     "flat_categories",
+    "update_project",
+    "list_projects",
     "add_image_from_bytes",
     "add_image_from_pil",
     "archive_issue",
