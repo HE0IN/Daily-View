@@ -204,21 +204,25 @@ def render_project_selector(user_name: str | None = None) -> str | None:
     - 반환값: 현재 선택 프로젝트 이름(str) 또는 None ("(전체 프로젝트)" 시).
     """
     # 지연 임포트 — 사이클 방지 + 테스트 환경 안전.
-    from core import repository
+    from core import repository, user_projects as up_mod
 
-    # 사용자 변경 감지 — 다른 사람으로 바뀌면 프로젝트 컨텍스트 리셋
+    # 사용자 변경 감지 — 다른 사람으로 바뀌면 그 사람의 "마지막 등록 프로젝트"
+    # 를 기본으로 새로 채운다 (프로젝트 풀은 글로벌이지만 default 는 사용자별).
+    user_changed = False
     if user_name is not None:
         last_user = st.session_state.get(_LAST_USER_KEY)
-        if last_user is not None and last_user != user_name:
+        if last_user != user_name:
+            user_changed = True
+            st.session_state[_LAST_USER_KEY] = user_name
+            # 사용자 바뀌었으니 이전 컨텍스트 무효화 → 아래에서 새로 채움
             st.session_state.pop(_PROJECT_KEY, None)
-        st.session_state[_LAST_USER_KEY] = user_name
 
     with st.sidebar:
         st.divider()
         st.markdown("**프로젝트**")
 
         try:
-            projects = repository.list_projects(participant=user_name)
+            projects = repository.list_projects()
         except Exception:  # noqa: BLE001 - 인덱스 손상 등은 빈 리스트로 격하
             projects = []
 
@@ -227,6 +231,19 @@ def render_project_selector(user_name: str | None = None) -> str | None:
         options = [ALL] + projects + [NEW]
 
         current = st.session_state.get(_PROJECT_KEY)
+        # 사용자 첫 진입 또는 사용자 바뀐 직후 → 그 사람의 마지막 등록 프로젝트
+        # 를 기본으로. 이미 명시적으로 선택된 값(_current_project) 이 있으면 그대로.
+        if not current and user_name:
+            try:
+                last_proj = repository.last_project_for_user(user_name)
+            except Exception:  # noqa: BLE001
+                last_proj = None
+            if last_proj and last_proj in projects:
+                current = last_proj
+                st.session_state[_PROJECT_KEY] = last_proj
+                # selectbox 도 그 값으로 동기화
+                st.session_state["_proj_select"] = last_proj
+
         # 현재 저장된 프로젝트가 옵션에 없으면 ALL(0) 로 fallback.
         default_idx = (
             options.index(current) if current and current in options else 0
@@ -248,14 +265,25 @@ def render_project_selector(user_name: str | None = None) -> str | None:
             )
             if st.button("추가", key="_proj_add"):
                 cleaned = (new_name or "").strip()
-                if cleaned:
+                if cleaned and user_name:
+                    # 1) 사용자별 프로젝트 파일에 영속화 — 항목 0 건이라도 옵션에 노출
+                    try:
+                        up_mod.add_user_project(user_name, cleaned)
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"프로젝트 저장 실패: {exc}")
+                        return None
+                    # 2) 현재 컨텍스트로 설정
                     st.session_state[_PROJECT_KEY] = cleaned
-                    st.toast(
-                        f"프로젝트 '{cleaned}' 선택됨", icon="📁"
-                    )
+                    # 3) selectbox 값도 새 프로젝트로 갱신 — NEW 모드에서 빠져나오게
+                    st.session_state["_proj_select"] = cleaned
+                    # 4) 입력 칸 비우기
+                    st.session_state.pop("_proj_new_name", None)
+                    st.toast(f"프로젝트 '{cleaned}' 추가됨", icon="📁")
                     st.rerun()
-                else:
+                elif not cleaned:
                     st.warning("프로젝트 이름을 입력해주세요.")
+                elif not user_name:
+                    st.warning("먼저 사용자 이름을 입력해주세요.")
             # 추가 버튼을 누르기 전엔 필터 미적용
             return None
 
@@ -268,6 +296,52 @@ def render_project_selector(user_name: str | None = None) -> str | None:
         # ALL 또는 기존 프로젝트
         selected = None if pick == ALL else pick
         st.session_state[_PROJECT_KEY] = selected
+
+        # ── 글로벌 삭제 영역 — 특정 프로젝트 선택 시에만 표시 ─────────────
+        if selected:
+            try:
+                item_count = repository.count_project_items(selected)
+            except Exception:  # noqa: BLE001
+                item_count = -1  # 알 수 없음 → 삭제 차단
+
+            confirm_key = f"_proj_confirm_delete_{selected}"
+            if st.session_state.get(confirm_key):
+                # 2단계: 확인 / 취소
+                st.warning(
+                    f"'{selected}' 를 모든 사용자에게서 제거합니다. 계속할까요?"
+                )
+                cc1, cc2 = st.columns(2)
+                with cc1:
+                    if st.button("확인", key=f"_proj_del_yes_{selected}", type="primary"):
+                        try:
+                            up_mod.remove_project_globally(selected)
+                            st.session_state.pop(_PROJECT_KEY, None)
+                            st.session_state["_proj_select"] = ALL
+                            st.session_state.pop(confirm_key, None)
+                            st.toast(f"'{selected}' 제거됨", icon="🗑")
+                            st.rerun()
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"제거 실패: {exc}")
+                with cc2:
+                    if st.button("취소", key=f"_proj_del_no_{selected}"):
+                        st.session_state.pop(confirm_key, None)
+                        st.rerun()
+            else:
+                # 1단계: 트리거 버튼
+                if item_count > 0:
+                    st.caption(
+                        f"이 프로젝트에 {item_count} 건의 요청이 있어 삭제할 수 없습니다. "
+                        f"먼저 모든 요청을 보관 처리하세요."
+                    )
+                else:
+                    if st.button(
+                        f"🗑 '{selected}' 삭제",
+                        key=f"_proj_del_btn_{selected}",
+                        help="프로젝트 목록에서 제거 (모든 사용자에게 적용). 항목 0 건일 때만 가능.",
+                    ):
+                        st.session_state[confirm_key] = True
+                        st.rerun()
+
         return selected
 
 

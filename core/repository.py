@@ -587,19 +587,20 @@ def update_project(
 
 
 def list_projects(participant: str | None = None) -> list[str]:
-    """인덱스에서 사용 중인 프로젝트 식별자 unique 리스트(정렬).
+    """프로젝트 식별자 unique 리스트 (정렬). **글로벌 풀** — 모든 사용자에게 모든 프로젝트 노출.
 
     Parameters
     ----------
     participant : str | None
-        지정 시: ``author == participant`` 또는 ``assignee == participant``
-        인 항목들에서만 unique 프로젝트를 추출 (사용자가 참여한 프로젝트만 노출).
-        None 이면 모든 항목 대상.
+        하위 호환을 위해 시그니처 유지하지만 무시됨. 모든 호출에서 동일한
+        결과 반환. 사용자 격리는 다른 함수 (``last_project_for_user``) 의
+        역할.
 
     Notes
     -----
-    None / 빈 프로젝트 식별자는 제외. 두 명만 쓰는 환경 + 사용자별 프로젝트
-    소유 모델에서 사이드바 옵션을 사용자별로 좁히는 데 사용.
+    소스: 인덱스의 모든 unique project ∪ user_projects.json 에 등록된
+    *모든 사용자* 의 프로젝트 union. 후자 덕분에 항목이 0 건인 프로젝트도
+    옵션에 노출됨.
     """
     seen: set[str] = set()
     for entry in index_mod.read_index():
@@ -607,15 +608,49 @@ def list_projects(participant: str | None = None) -> list[str]:
         if not raw:
             continue
         s = str(raw).strip()
-        if not s:
-            continue
-        if participant is not None:
-            author = (entry.get("author") or "").strip()
-            assignee = (entry.get("assignee") or "").strip()
-            if participant != author and participant != assignee:
-                continue
-        seen.add(s)
+        if s:
+            seen.add(s)
+    # 모든 사용자가 추가한 프로젝트도 union (항목 0 건도 노출)
+    from . import user_projects as up_mod
+    seen.update(up_mod.list_all_projects())
     return sorted(seen)
+
+
+def last_project_for_user(user: str) -> str | None:
+    """``user`` 가 가장 최근에 *등록* (author) 한 항목의 project 를 반환.
+
+    사이드바 첫 진입 시 사용자별 기본 프로젝트로 사용. 없으면 None.
+    인덱스 1 회 스캔 — created_at 가 가장 최근인 항목 기준.
+    """
+    if not user:
+        return None
+    latest_at = ""
+    latest_project: str | None = None
+    for entry in index_mod.read_index():
+        if (entry.get("author") or "").strip() != user:
+            continue
+        proj = (entry.get("project") or "").strip()
+        if not proj:
+            continue
+        created = entry.get("created_at") or ""
+        if isinstance(created, str) and created > latest_at:
+            latest_at = created
+            latest_project = proj
+    return latest_project
+
+
+def count_project_items(project: str) -> int:
+    """프로젝트의 전체 항목 수 (활성/보관 모두). 글로벌 삭제 가드용."""
+    if not project:
+        return 0
+    project = project.strip()
+    if not project:
+        return 0
+    n = 0
+    for entry in index_mod.read_index():
+        if (entry.get("project") or "").strip() == project:
+            n += 1
+    return n
 
 
 def list_categories() -> dict[str, dict[str, set[str]]]:
