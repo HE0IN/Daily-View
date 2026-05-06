@@ -198,14 +198,19 @@ with meta_c2:
             new_assignee = st.text_input(
                 "담당자 이름",
                 value=issue.assignee or "",
-                placeholder="비워두면 미배정",
+                placeholder="담당자는 필수입니다",
                 key="assignee_input",
             )
             if st.button("저장", key="assignee_save_btn", type="primary"):
+                # 담당자 필수: 빈 입력은 거부
+                cleaned_assignee = (new_assignee or "").strip()
+                if not cleaned_assignee:
+                    st.error("담당자는 필수입니다.")
+                    st.stop()
                 try:
                     repository.update_assignee(
                         item_id,
-                        new_assignee.strip() or None,
+                        cleaned_assignee,
                         user["name"],
                     )
                     st.toast("담당자가 변경되었습니다", icon="✅")
@@ -228,12 +233,15 @@ with meta_c3:
             _cat_tree_detail = repository.list_categories()
             _NONE_C = "(없음)"
 
+            # 평면 카테고리 옵션: 대분류 종속 없이 모든 unique 값을 노출.
+            _all_l1, _all_l2, _all_l3 = repository.flat_categories(_cat_tree_detail)
+
             # 단순화: 각 단계마다 [기존 selectbox] + [직접 입력 text_input] 항상 노출.
             # text_input 에 값이 있으면 그 값 우선, 없으면 selectbox 값.
             st.caption("기존에서 고르거나 직접 입력하세요. 직접 입력값이 우선합니다.")
 
             # L1
-            l1_opts = [_NONE_C] + sorted(_cat_tree_detail.keys())
+            l1_opts = [_NONE_C] + _all_l1
             l1_default = (
                 l1_opts.index(issue.category_l1)
                 if issue.category_l1 and issue.category_l1 in l1_opts
@@ -259,9 +267,8 @@ with meta_c3:
                 or (None if l1_pick == _NONE_C else l1_pick)
             ) or None
 
-            # L2
-            sub2 = _cat_tree_detail.get(new_l1, {}) if new_l1 else {}
-            l2_opts = [_NONE_C] + sorted(sub2.keys())
+            # L2 — 평면 옵션 (대분류와 무관하게 모든 unique 중분류)
+            l2_opts = [_NONE_C] + _all_l2
             l2_default = (
                 l2_opts.index(issue.category_l2)
                 if issue.category_l2 and issue.category_l2 in l2_opts
@@ -287,9 +294,8 @@ with meta_c3:
                 or (None if l2_pick == _NONE_C else l2_pick)
             ) or None
 
-            # L3
-            sub3 = sub2.get(new_l2, set()) if new_l2 else set()
-            l3_opts = [_NONE_C] + sorted(sub3)
+            # L3 — 평면 옵션 (대분류·중분류와 무관하게 모든 unique 소분류)
+            l3_opts = [_NONE_C] + _all_l3
             l3_default = (
                 l3_opts.index(issue.category_l3)
                 if issue.category_l3 and issue.category_l3 in l3_opts
@@ -560,22 +566,55 @@ with body_col:
 
 
 # ---------------------------------------------------------------------------
-# 추가 액션 — 보관 (검토자 본인이 author 인 closed 항목)
+# 추가 액션 — 삭제(보관)
+#   - 권한: 등록자(author == user.name) 또는 검토자(role == reviewer)
+#   - 두 번 클릭(확인) 패턴: 첫 번째 클릭 시 confirm 플래그를 세우고
+#     [삭제 확인] / [취소] 버튼을 노출. 두 번째 클릭 시 실제 archive 호출.
 # ---------------------------------------------------------------------------
 
-if (
-    issue.status == Status.closed
-    and not issue.archived
-    and issue.author == user["name"]
-):
+_can_delete = (issue.author == user["name"]) or (user_role == Role.reviewer)
+
+if issue.archived:
+    st.markdown("---")
+    st.info("🗑 이 항목은 삭제(보관)되었습니다.")
+elif _can_delete:
     st.markdown("---")
     st.markdown("### 추가 액션")
-    if st.button("📦 보관함으로 이동 (archive)", key="archive_btn"):
-        try:
-            repository.archive_issue(item_id, user["name"])
-            st.toast("보관함으로 이동되었습니다", icon="✅")
+
+    _confirm_key = f"_confirm_delete_{item_id}"
+    _confirming = bool(st.session_state.get(_confirm_key))
+
+    if not _confirming:
+        if st.button(
+            "🗑 삭제(보관)",
+            key="archive_btn",
+            help="삭제 처리한 항목입니다. 목록에서는 '삭제(보관)된 항목 포함' 체크 시에만 보입니다.",
+        ):
+            st.session_state[_confirm_key] = True
             st.rerun()
-        except Exception as exc:  # pragma: no cover
-            st.error(f"보관 실패: {exc}")
-elif issue.archived:
-    st.info("이 항목은 보관함에 있습니다.")
+    else:
+        st.warning("이 요청을 삭제(보관)하시겠습니까?")
+        cc1, cc2 = st.columns([1, 1])
+        with cc1:
+            if st.button(
+                "확인 (삭제)",
+                key="archive_confirm_btn",
+                type="primary",
+                use_container_width=True,
+            ):
+                try:
+                    repository.archive_issue(item_id, user["name"])
+                    st.session_state.pop(_confirm_key, None)
+                    st.toast("삭제(보관)되었습니다", icon="🗑")
+                    st.switch_page("pages/1_요청목록.py")
+                except Exception as exc:  # pragma: no cover
+                    st.session_state.pop(_confirm_key, None)
+                    st.error(f"삭제 실패: {exc}")
+        with cc2:
+            if st.button(
+                "취소",
+                key="archive_cancel_btn",
+                use_container_width=True,
+            ):
+                st.session_state.pop(_confirm_key, None)
+                st.rerun()

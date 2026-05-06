@@ -555,6 +555,34 @@ def list_categories() -> dict[str, dict[str, set[str]]]:
     return tree
 
 
+def flat_categories(
+    tree: dict[str, dict[str, set[str]]] | None = None,
+) -> tuple[list[str], list[str], list[str]]:
+    """카테고리 트리를 레벨별 평면(unique) 리스트로 펼쳐 반환.
+
+    사용자가 "대분류가 달라도 중분류 이름이 같으면 다 보고 싶다"고 한 요구사항
+    대응. 입력/수정 폼의 selectbox 옵션 구성 시 트리 종속을 해제한다.
+
+    반환값: ``(l1_list, l2_list, l3_list)`` — 각각 알파벳 정렬된 unique 값.
+    트리를 인자로 받지 않으면 :func:`list_categories` 결과를 사용한다.
+    """
+    if tree is None:
+        tree = list_categories()
+    all_l1 = sorted(tree.keys())
+    all_l2 = sorted(
+        {l2 for l2_map in tree.values() for l2 in l2_map.keys()}
+    )
+    all_l3 = sorted(
+        {
+            l3
+            for l2_map in tree.values()
+            for l3_set in l2_map.values()
+            for l3 in l3_set
+        }
+    )
+    return all_l1, all_l2, all_l3
+
+
 # ---------------------------------------------------------------------------
 # 이미지
 # ---------------------------------------------------------------------------
@@ -714,6 +742,9 @@ __all__ = [
     "update_status",
     "update_assignee",
     "update_tags",
+    "update_categories",
+    "list_categories",
+    "flat_categories",
     "add_image_from_bytes",
     "add_image_from_pil",
     "archive_issue",

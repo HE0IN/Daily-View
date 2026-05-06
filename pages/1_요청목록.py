@@ -130,11 +130,20 @@ with f5:
 
 opt_col1, opt_col2 = st.columns([1, 1])
 with opt_col1:
-    include_closed = st.checkbox("검토완료 포함", value=False, key="list_inc_closed")
+    include_closed = st.checkbox(
+        "완료된 작업 포함",
+        value=False,
+        key="list_inc_closed",
+        help="검토완료(closed) 처리된 항목까지 함께 표시합니다.",
+    )
 with opt_col2:
     include_archived = st.checkbox(
-        "보관함 포함", value=False, key="list_inc_archived"
+        "삭제(보관)된 항목 포함",
+        value=False,
+        key="list_inc_archived",
+        help="삭제 처리한 항목입니다.",
     )
+    st.caption("삭제 처리한 항목입니다")
 
 # 페이지네이션 리셋: 필터 키가 바뀌면 page=1
 filter_key = (
@@ -264,6 +273,9 @@ else:
         col_objs = st.columns(cols_per_row)
         for col, item in zip(col_objs, row):
             with col:
+                # 삭제(보관) 처리된 항목임을 카드 위에 표시
+                if item.get("archived"):
+                    st.caption("🗑 삭제됨")
                 clicked = components.render_card(
                     item,
                     key_prefix=f"list_p{current_page}_r{row_start}",

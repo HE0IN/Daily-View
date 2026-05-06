@@ -75,15 +75,17 @@ for e in existing_entries:
     if e.author:
         known_names.add(e.author)
 known_names.discard(name)  # 자기 자신은 후보에서 제외 (등록자=담당자 케이스 방지)
-assignee_options = ["(미지정)"] + sorted(known_names) + ["(직접 입력)"]
+# 담당자 필수화: "(미지정)" 옵션을 제거하여 None 저장이 불가능하도록 함.
+# known_names 가 비어있으면 ["(직접 입력)"] 만 남아 사용자가 직접 입력을 강제받는다.
+assignee_options = sorted(known_names) + ["(직접 입력)"]
 
 # 직전에 지정한 담당자를 기본값으로 — "두 명만 쓰는" 환경에선 매번 같은 사람이라
-# 매 등록마다 다시 고르게 하는 건 번거롭다. 직전 값이 후보에 없으면 (미지정).
+# 매 등록마다 다시 고르게 하는 건 번거롭다. 직전 값이 후보에 없으면 첫 번째.
 _last_assignee = st.session_state.get("_last_assignee")
 if _last_assignee and _last_assignee in assignee_options:
     _default_assignee_idx = assignee_options.index(_last_assignee)
 else:
-    _default_assignee_idx = 0  # (미지정)
+    _default_assignee_idx = 0  # 첫 번째 담당자 (또는 "(직접 입력)")
 
 
 # ---------------------------------------------------------------------------
@@ -222,15 +224,17 @@ with right:
         "직접 입력 칸이 채워져 있으면 그 값이 우선 사용됩니다. 비워둬도 무방."
     )
 
-    l1_options = [_NONE] + sorted(_cat_tree.keys())
+    # 평면 카테고리: 대분류와 무관하게 모든 unique 중분류·소분류를 노출.
+    # "대분류가 달라도 중분류 이름이 같으면 다 보고 싶다"는 요구사항 반영.
+    _all_l1, _all_l2, _all_l3 = repository.flat_categories(_cat_tree)
+
+    l1_options = [_NONE] + _all_l1
     cat_l1 = _resolve_category("대분류", l1_options)
 
-    _l2_subtree = _cat_tree.get(cat_l1, {}) if cat_l1 else {}
-    l2_options = [_NONE] + sorted(_l2_subtree.keys())
+    l2_options = [_NONE] + _all_l2
     cat_l2 = _resolve_category("중분류", l2_options)
 
-    _l3_set = _l2_subtree.get(cat_l2, set()) if cat_l2 else set()
-    l3_options = [_NONE] + sorted(_l3_set)
+    l3_options = [_NONE] + _all_l3
     cat_l3 = _resolve_category("소분류", l3_options)
 
     # ------- 본 폼 -------
@@ -295,15 +299,18 @@ if submit:
         st.error("제목과 설명은 필수입니다.")
         st.stop()
 
-    # 담당자 결정
+    # 담당자 결정 — 미지정 옵션을 제거했으므로 항상 값이 있어야 한다.
     final_assignee: str | None = None
-    if assignee_choice == "(미지정)":
-        final_assignee = None
-    elif assignee_choice == "(직접 입력)":
+    if assignee_choice == "(직접 입력)":
         manual = (assignee_manual or "").strip()
         final_assignee = manual or None
     else:
-        final_assignee = assignee_choice
+        final_assignee = (assignee_choice or "").strip() or None
+
+    # 담당자 필수 검증: 빈 값이면 등록 차단
+    if not final_assignee:
+        st.error("담당 개발자를 지정해주세요.")
+        st.stop()
 
     # 역할 정규화 (저장된 user["role"] 은 문자열 "reviewer"/"developer")
     try:
