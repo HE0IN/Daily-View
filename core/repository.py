@@ -592,25 +592,31 @@ def list_projects(participant: str | None = None) -> list[str]:
     Parameters
     ----------
     participant : str | None
-        하위 호환을 위해 시그니처 유지하지만 무시됨. 모든 호출에서 동일한
-        결과 반환. 사용자 격리는 다른 함수 (``last_project_for_user``) 의
-        역할.
+        하위 호환을 위해 시그니처 유지하지만 무시됨. 사용자 격리는 다른
+        함수 (``last_project_for_user``) 의 역할.
 
     Notes
     -----
-    소스: 인덱스의 모든 unique project ∪ user_projects.json 에 등록된
-    *모든 사용자* 의 프로젝트 union. 후자 덕분에 항목이 0 건인 프로젝트도
-    옵션에 노출됨.
+    소스: 인덱스의 **활성 항목** (archived=False) 의 unique project ∪
+    user_projects.json 에 등록된 *모든 사용자* 의 프로젝트 union.
+
+    archived 항목의 프로젝트는 의도적으로 제외 — UI 라벨이 "삭제(보관)"
+    이라 사용자 시점에서 보관 == 삭제이며, 모두 보관 처리한 프로젝트는
+    옵션에서 사라져야 자연스럽다 (그래야 마지막 프로젝트 삭제 후 사이드바에서
+    완전히 제거됨).
     """
     seen: set[str] = set()
     for entry in index_mod.read_index():
+        if entry.get("archived"):
+            continue  # 보관 처리된 항목은 프로젝트 풀에 영향 X
         raw = entry.get("project")
         if not raw:
             continue
         s = str(raw).strip()
         if s:
             seen.add(s)
-    # 모든 사용자가 추가한 프로젝트도 union (항목 0 건도 노출)
+    # 사용자가 명시적으로 추가한 프로젝트도 union (항목 0 건이라도 노출).
+    # remove_project_globally 가 user_projects.json 에서 제거하면 여기서도 빠짐.
     from . import user_projects as up_mod
     seen.update(up_mod.list_all_projects())
     return sorted(seen)
