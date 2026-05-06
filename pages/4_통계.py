@@ -300,7 +300,11 @@ else:
             return "background-color: #FEE2E2; color: #B91C1C; font-weight: 600;"
         return ""
 
-    styled = cat_table.style.applymap(_highlight_stalled, subset=["정체"])
+    # pandas 2.1 에서 Styler.applymap 이 deprecate 되고 2.2 에서 제거됨.
+    # 대체: Styler.map. 구버전 호환을 위해 getattr 로 fallback.
+    _styler = cat_table.style
+    _style_fn = getattr(_styler, "map", None) or _styler.applymap
+    styled = _style_fn(_highlight_stalled, subset=["정체"])
     st.dataframe(styled, use_container_width=True, hide_index=True)
 
     # 누적 막대 차트 — 진행 중 / 정체 / 완료
