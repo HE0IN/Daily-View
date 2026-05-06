@@ -18,18 +18,32 @@ _COOKIE_MGR_KEY = "user_cookie"
 _COOKIE_VALUE_KEY = "user"
 _EDIT_FLAG = "_user_edit"
 _COOKIE_TTL = timedelta(days=30)
+# 비동기 쿠키 읽기 재시도 카운터 — 1 tick rerun 가드
+_COOKIE_INIT_TICK = "_cookie_init_tick"
+_COOKIE_INIT_MAX = 2  # 최대 2회 rerun 후엔 폼 노출 (무한 루프 방지)
+_COOKIE_MGR_CACHE = "_user_cookie_mgr"
 
 
 def _get_cookie_manager() -> Any | None:
-    """CookieManager 인스턴스 반환. 라이브러리 미설치/오류 시 None."""
+    """CookieManager 인스턴스 반환. 라이브러리 미설치/오류 시 None.
+
+    한 페이지 라이프사이클 안에서 같은 key 로 여러 번 만들면 컴포넌트가
+    재마운트되며 비동기 쿠키 읽기 상태가 매번 리셋된다. session_state 에
+    캐시해 처음 한 번만 만든다.
+    """
+    cached = st.session_state.get(_COOKIE_MGR_CACHE)
+    if cached is not None:
+        return cached
     try:
         import extra_streamlit_components as stx  # type: ignore[import-not-found]
     except ImportError:
         return None
     try:
-        return stx.CookieManager(key=_COOKIE_MGR_KEY)
+        mgr = stx.CookieManager(key=_COOKIE_MGR_KEY)
     except Exception:
         return None
+    st.session_state[_COOKIE_MGR_CACHE] = mgr
+    return mgr
 
 
 def _role_label(role: str) -> str:
@@ -94,16 +108,43 @@ def get_or_init_user() -> dict | None:
     cookie_mgr = _get_cookie_manager()
 
     # 1) 쿠키 → session_state 복원
+    #
+    # extra-streamlit-components 의 CookieManager 는 컴포넌트 첫 렌더에서
+    # 비동기로 쿠키를 가져오므로, 첫 호출의 .get() 은 None 일 수 있다.
+    # 1~2회 짧게 rerun 해서 쿠키 도착을 기다린 후, 그래도 없으면 입력 폼.
     if "user" not in st.session_state and cookie_mgr is not None:
+        saved: Any = None
         try:
-            saved = cookie_mgr.get(_COOKIE_VALUE_KEY)
+            # get_all() 이 있으면 한 번에 읽어 1 tick 안에 도착 확률 ↑
+            if hasattr(cookie_mgr, "get_all"):
+                all_cookies = cookie_mgr.get_all() or {}
+                saved = all_cookies.get(_COOKIE_VALUE_KEY)
+            else:
+                saved = cookie_mgr.get(_COOKIE_VALUE_KEY)
         except Exception:
             saved = None
+
+        # 라이브러리가 dict 를 JSON 문자열로 보관할 수 있어 string 도 처리
+        if isinstance(saved, str):
+            try:
+                import json
+                saved = json.loads(saved)
+            except Exception:
+                saved = None
+
         if isinstance(saved, dict) and saved.get("name"):
             st.session_state["user"] = {
                 "name": saved.get("name"),
                 "role": saved.get("role", "reviewer"),
             }
+            st.session_state.pop(_COOKIE_INIT_TICK, None)
+        else:
+            # 쿠키가 아직 도착 안 했을 가능성 — 1~2 tick rerun 가드
+            tick = int(st.session_state.get(_COOKIE_INIT_TICK, 0))
+            if tick < _COOKIE_INIT_MAX:
+                st.session_state[_COOKIE_INIT_TICK] = tick + 1
+                st.rerun()
+            # 한도 초과 → 폼 노출 진행
 
     user: dict | None = st.session_state.get("user")
     edit_mode = bool(st.session_state.get(_EDIT_FLAG, False))

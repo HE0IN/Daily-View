@@ -29,13 +29,21 @@ from core.workflow import (
 EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.requested, Role.developer): {Status.in_progress},
     (Status.requested, Role.reviewer): {Status.closed},
-    (Status.in_progress, Role.developer): {Status.api_check, Status.reviewing},
+    (Status.in_progress, Role.developer): {
+        Status.api_check,
+        Status.reviewing,
+        Status.closed,
+    },
     (Status.in_progress, Role.reviewer): set(),
-    (Status.api_check, Role.developer): {Status.in_progress, Status.reviewing},
+    (Status.api_check, Role.developer): {
+        Status.in_progress,
+        Status.reviewing,
+        Status.closed,
+    },
     (Status.api_check, Role.reviewer): set(),
     (Status.done, Role.developer): set(),
     (Status.done, Role.reviewer): {Status.reviewing, Status.closed, Status.reopened},
-    (Status.reviewing, Role.developer): set(),
+    (Status.reviewing, Role.developer): {Status.closed},
     (Status.reviewing, Role.reviewer): {Status.closed, Status.reopened},
     (Status.reopened, Role.developer): {Status.in_progress},
     (Status.reopened, Role.reviewer): set(),
@@ -93,6 +101,10 @@ def test_terminal_status_has_no_transitions() -> None:
         # 레거시 done 호환 — 검토자가 정리 가능
         (Status.done, Role.reviewer, Status.closed, True),
         (Status.done, Role.reviewer, Status.reviewing, True),
+        # 개발자도 closed 가능 (두 명 환경 단순화)
+        (Status.in_progress, Role.developer, Status.closed, True),
+        (Status.api_check, Role.developer, Status.closed, True),
+        (Status.reviewing, Role.developer, Status.closed, True),
         # 권한 위반
         (Status.requested, Role.reviewer, Status.in_progress, False),
         (Status.in_progress, Role.reviewer, Status.reviewing, False),
@@ -100,7 +112,6 @@ def test_terminal_status_has_no_transitions() -> None:
         # 잘못된 점프
         (Status.requested, Role.developer, Status.reviewing, False),
         (Status.requested, Role.developer, Status.closed, False),
-        (Status.in_progress, Role.developer, Status.closed, False),
         # 새 흐름에서는 in_progress → done 불가 (done 단계 제거됨)
         (Status.in_progress, Role.developer, Status.done, False),
         (Status.api_check, Role.developer, Status.done, False),
@@ -196,6 +207,6 @@ def test_allowed_transitions_returns_independent_list() -> None:
     first = allowed_transitions(Status.in_progress, Role.developer)
     first.clear()  # 호출자가 변형
     second = allowed_transitions(Status.in_progress, Role.developer)
-    assert second == [Status.api_check, Status.reviewing], (
+    assert second == [Status.api_check, Status.reviewing, Status.closed], (
         "내부 TRANSITIONS 가 외부 변형에 노출됨"
     )

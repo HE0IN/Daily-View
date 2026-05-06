@@ -121,9 +121,15 @@ def _role_color(role: str | Role) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 상단: [목록으로] / 항목 ID
+# 상단 헤더: 가로 컴팩트 레이아웃
+#   1행: [← 목록으로]                                              #ID
+#   2행: 제목(긴급도 배지) ............................. 상태 배지
+#   3행: 등록 정보 | 담당자(+변경 popover) | 카테고리(+수정 popover)
+#   4행: SLA 배너 (있을 때만)
+#   5행: 상태 변경 버튼 (가로 한 줄)
 # ---------------------------------------------------------------------------
 
+# --- 1행: 목록으로 / ID ----------------------------------------------------
 top_left, top_right = st.columns([4, 1])
 with top_left:
     st.page_link("pages/1_요청목록.py", label="← 목록으로")
@@ -134,63 +140,196 @@ with top_right:
         unsafe_allow_html=True,
     )
 
-# 제목 + 긴급도 배지 — XSS 방지: 모든 사용자 입력은 escape 후 HTML 으로 렌더
-title_col, badge_col = st.columns([5, 1])
+# --- 2행: 제목 + 긴급도 배지 / 상태 배지 ----------------------------------
+# XSS 방지: 모든 사용자 입력은 escape 후 HTML 으로 렌더
+title_col, status_col = st.columns([5, 2])
 with title_col:
     st.markdown(
-        f'<h2 style="margin-bottom:0.2em;">{html.escape(issue.title)}</h2>',
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        f"{urgency_badge_html(issue.urgency.value)}"
+        f'<h2 style="margin:0;line-height:1.3;">{html.escape(issue.title)}</h2>'
+        f"</div>",
         unsafe_allow_html=True,
     )
-with badge_col:
+with status_col:
     st.markdown(
-        f'<div style="margin-top:18px;text-align:right;">'
-        f"{urgency_badge_html(issue.urgency.value)}</div>",
+        f'<div style="text-align:right;margin-top:6px;font-size:0.95em;">'
+        f"상태: {status_badge_html(issue.status.value)}</div>",
         unsafe_allow_html=True,
     )
 
-# 메타 정보 — XSS 방지: author / assignee 는 escape 후 보간
+# --- 3행: 메타 정보 (등록 / 담당 / 카테고리) 가로 배치 ---------------------
 created_human = humanize_dt(issue.created_at)
 created_abs = _abs_tooltip_dt(issue.created_at)
 safe_author = html.escape(str(issue.author))
 safe_assignee = html.escape(str(issue.assignee)) if issue.assignee else "미배정"
-st.markdown(
-    f'<div style="font-size:0.9em;color:#374151;">'
-    f"등록: <b>{safe_author}</b> ({_role_label(issue.author_role)}) · "
-    f'<span title="{html.escape(created_abs)}">{created_human}</span> · '
-    f"담당: <b>{safe_assignee}</b>"
-    f"</div>",
-    unsafe_allow_html=True,
+
+_cat_path_parts = [
+    p for p in (issue.category_l1, issue.category_l2, issue.category_l3) if p
+]
+_cat_display = (
+    " > ".join(html.escape(p) for p in _cat_path_parts)
+    if _cat_path_parts
+    else "(없음)"
 )
 
-# 담당자 변경 expander
-with st.expander("담당자 변경", expanded=False):
-    with st.form(key="assignee_form", clear_on_submit=False):
-        new_assignee = st.text_input(
-            "담당자 이름",
-            value=issue.assignee or "",
-            placeholder="비워두면 미배정",
-            key="assignee_input",
+meta_c1, meta_c2, meta_c3 = st.columns([2, 1, 2])
+
+with meta_c1:
+    st.markdown(
+        f'<div style="font-size:0.9em;color:#374151;padding-top:6px;">'
+        f"등록: <b>{safe_author}</b> ({_role_label(issue.author_role)}) · "
+        f'<span title="{html.escape(created_abs)}">{created_human}</span>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+with meta_c2:
+    sub_l, sub_r = st.columns([3, 2])
+    with sub_l:
+        st.markdown(
+            f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            f"담당: <b>{safe_assignee}</b></div>",
+            unsafe_allow_html=True,
         )
-        submit = st.form_submit_button("변경", type="primary")
-        if submit:
-            try:
-                repository.update_assignee(
-                    item_id,
-                    new_assignee.strip() or None,
-                    user["name"],
+    with sub_r:
+        with st.popover("변경", use_container_width=True):
+            new_assignee = st.text_input(
+                "담당자 이름",
+                value=issue.assignee or "",
+                placeholder="비워두면 미배정",
+                key="assignee_input",
+            )
+            if st.button("저장", key="assignee_save_btn", type="primary"):
+                try:
+                    repository.update_assignee(
+                        item_id,
+                        new_assignee.strip() or None,
+                        user["name"],
+                    )
+                    st.toast("담당자가 변경되었습니다", icon="✅")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover - 방어적
+                    st.error(f"변경 실패: {exc}")
+
+with meta_c3:
+    sub_l, sub_r = st.columns([4, 1])
+    with sub_l:
+        st.markdown(
+            f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" '
+            f'title="{_cat_display}">'
+            f"카테고리: <b>{_cat_display}</b></div>",
+            unsafe_allow_html=True,
+        )
+    with sub_r:
+        with st.popover("수정", use_container_width=True):
+            _cat_tree_detail = repository.list_categories()
+            _NONE_C = "(없음)"
+
+            # 단순화: 각 단계마다 [기존 selectbox] + [직접 입력 text_input] 항상 노출.
+            # text_input 에 값이 있으면 그 값 우선, 없으면 selectbox 값.
+            st.caption("기존에서 고르거나 직접 입력하세요. 직접 입력값이 우선합니다.")
+
+            # L1
+            l1_opts = [_NONE_C] + sorted(_cat_tree_detail.keys())
+            l1_default = (
+                l1_opts.index(issue.category_l1)
+                if issue.category_l1 and issue.category_l1 in l1_opts
+                else 0
+            )
+            c1a, c1b = st.columns(2)
+            with c1a:
+                l1_pick = st.selectbox(
+                    "대분류 (기존)",
+                    options=l1_opts,
+                    index=l1_default,
+                    key="cat_edit_l1",
                 )
-                st.toast("담당자가 변경되었습니다", icon="✅")
-                st.rerun()
-            except Exception as exc:  # pragma: no cover - 방어적
-                st.error(f"변경 실패: {exc}")
+            with c1b:
+                l1_typed = st.text_input(
+                    "대분류 (직접 입력)",
+                    value="",
+                    key="cat_edit_l1_typed",
+                    placeholder="비우면 위 선택값 사용",
+                )
+            new_l1 = (
+                l1_typed.strip()
+                or (None if l1_pick == _NONE_C else l1_pick)
+            ) or None
 
-# 상태 배지 + SLA 배너
-st.markdown(
-    f'<div style="margin-top:8px;">상태: {status_badge_html(issue.status.value)}</div>',
-    unsafe_allow_html=True,
-)
+            # L2
+            sub2 = _cat_tree_detail.get(new_l1, {}) if new_l1 else {}
+            l2_opts = [_NONE_C] + sorted(sub2.keys())
+            l2_default = (
+                l2_opts.index(issue.category_l2)
+                if issue.category_l2 and issue.category_l2 in l2_opts
+                else 0
+            )
+            c2a, c2b = st.columns(2)
+            with c2a:
+                l2_pick = st.selectbox(
+                    "중분류 (기존)",
+                    options=l2_opts,
+                    index=l2_default,
+                    key="cat_edit_l2",
+                )
+            with c2b:
+                l2_typed = st.text_input(
+                    "중분류 (직접 입력)",
+                    value="",
+                    key="cat_edit_l2_typed",
+                    placeholder="비우면 위 선택값 사용",
+                )
+            new_l2 = (
+                l2_typed.strip()
+                or (None if l2_pick == _NONE_C else l2_pick)
+            ) or None
 
-# SLA 배너
+            # L3
+            sub3 = sub2.get(new_l2, set()) if new_l2 else set()
+            l3_opts = [_NONE_C] + sorted(sub3)
+            l3_default = (
+                l3_opts.index(issue.category_l3)
+                if issue.category_l3 and issue.category_l3 in l3_opts
+                else 0
+            )
+            c3a, c3b = st.columns(2)
+            with c3a:
+                l3_pick = st.selectbox(
+                    "소분류 (기존)",
+                    options=l3_opts,
+                    index=l3_default,
+                    key="cat_edit_l3",
+                )
+            with c3b:
+                l3_typed = st.text_input(
+                    "소분류 (직접 입력)",
+                    value="",
+                    key="cat_edit_l3_typed",
+                    placeholder="비우면 위 선택값 사용",
+                )
+            new_l3 = (
+                l3_typed.strip()
+                or (None if l3_pick == _NONE_C else l3_pick)
+            ) or None
+
+            if st.button("카테고리 저장", key="cat_save_btn", type="primary"):
+                try:
+                    repository.update_categories(
+                        item_id,
+                        category_l1=new_l1,
+                        category_l2=new_l2,
+                        category_l3=new_l3,
+                        actor=user["name"],
+                    )
+                    st.toast("카테고리가 저장되었습니다", icon="✅")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"저장 실패: {exc}")
+
+# --- 4행: SLA 배너 (있을 때만) ---------------------------------------------
 if is_sla_violated(issue.urgency.value, issue.created_at, issue.status.value):
     st.error("⚠ SLA 위반: 첫 응답 시간이 초과되었습니다.")
 elif is_sla_warning(issue.urgency.value, issue.created_at, issue.status.value):
@@ -198,23 +337,19 @@ elif is_sla_warning(issue.urgency.value, issue.created_at, issue.status.value):
 
 
 # ---------------------------------------------------------------------------
-# 상태 변경 영역 (권한 기반)
+# 상태 변경 영역 (권한 기반) — 가로 한 줄 배치
 # ---------------------------------------------------------------------------
 
-st.markdown("### 상태 변경")
 try:
     user_role = Role(user["role"])
 except Exception:
     user_role = Role.reviewer
 
 allowed = allowed_transitions(issue.status, user_role)
-if not allowed:
-    st.caption("현재 상태에서 가능한 동작이 없습니다.")
-else:
+if allowed:
     cols = st.columns(min(len(allowed), 4))
     for idx, next_status in enumerate(allowed):
         next_label = STATUS_LABELS_KO.get(next_status, next_status.value)
-        # closed 진입은 "검토 완료"로 라벨링 (검토자 전용 강조)
         btn_label = f"→ {next_label}"
         with cols[idx % len(cols)]:
             if st.button(
@@ -233,98 +368,6 @@ else:
                     st.error(f"상태 변경 실패: {exc}")
                 except Exception as exc:  # pragma: no cover - 방어적
                     st.error(f"상태 변경 실패: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# 태그
-# ---------------------------------------------------------------------------
-
-# 카테고리 표시 + 수정
-_cat_path_parts = [
-    p for p in (issue.category_l1, issue.category_l2, issue.category_l3) if p
-]
-_cat_display = " > ".join(html.escape(p) for p in _cat_path_parts) if _cat_path_parts else "(없음)"
-
-st.markdown(
-    f'<div style="font-size:0.95em;color:#374151;margin-top:8px;">'
-    f"카테고리: <b>{_cat_display}</b></div>",
-    unsafe_allow_html=True,
-)
-
-with st.expander("카테고리 수정", expanded=False):
-    _cat_tree_detail = repository.list_categories()
-    _NEW_C = "(새로 입력)"
-    _NONE_C = "(없음)"
-
-    # 폼 바깥에서 종속 selectbox — 폼 안이면 L1 변경이 즉시 L2 옵션에 반영 안 됨.
-    cdc1, cdc2, cdc3 = st.columns(3)
-
-    with cdc1:
-        l1_opts = [_NONE_C] + sorted(_cat_tree_detail.keys()) + [_NEW_C]
-        l1_default = (
-            l1_opts.index(issue.category_l1)
-            if issue.category_l1 and issue.category_l1 in l1_opts
-            else 0
-        )
-        l1_pick = st.selectbox(
-            "대분류", options=l1_opts, index=l1_default, key="cat_edit_l1"
-        )
-        if l1_pick == _NEW_C:
-            new_l1 = st.text_input("대분류 (새로 입력)", key="cat_edit_l1_new").strip() or None
-        elif l1_pick == _NONE_C:
-            new_l1 = None
-        else:
-            new_l1 = l1_pick
-
-    with cdc2:
-        sub2 = _cat_tree_detail.get(new_l1, {}) if new_l1 else {}
-        l2_opts = [_NONE_C] + sorted(sub2.keys()) + [_NEW_C]
-        l2_default = (
-            l2_opts.index(issue.category_l2)
-            if issue.category_l2 and issue.category_l2 in l2_opts
-            else 0
-        )
-        l2_pick = st.selectbox(
-            "중분류", options=l2_opts, index=l2_default, key="cat_edit_l2"
-        )
-        if l2_pick == _NEW_C:
-            new_l2 = st.text_input("중분류 (새로 입력)", key="cat_edit_l2_new").strip() or None
-        elif l2_pick == _NONE_C:
-            new_l2 = None
-        else:
-            new_l2 = l2_pick
-
-    with cdc3:
-        sub3 = sub2.get(new_l2, set()) if new_l2 else set()
-        l3_opts = [_NONE_C] + sorted(sub3) + [_NEW_C]
-        l3_default = (
-            l3_opts.index(issue.category_l3)
-            if issue.category_l3 and issue.category_l3 in l3_opts
-            else 0
-        )
-        l3_pick = st.selectbox(
-            "소분류", options=l3_opts, index=l3_default, key="cat_edit_l3"
-        )
-        if l3_pick == _NEW_C:
-            new_l3 = st.text_input("소분류 (새로 입력)", key="cat_edit_l3_new").strip() or None
-        elif l3_pick == _NONE_C:
-            new_l3 = None
-        else:
-            new_l3 = l3_pick
-
-    if st.button("카테고리 저장", key="cat_save_btn", type="primary"):
-        try:
-            repository.update_categories(
-                item_id,
-                category_l1=new_l1,
-                category_l2=new_l2,
-                category_l3=new_l3,
-                actor=user["name"],
-            )
-            st.toast("카테고리가 저장되었습니다", icon="✅")
-            st.rerun()
-        except Exception as exc:  # pragma: no cover
-            st.error(f"저장 실패: {exc}")
 
 
 # 태그 기능은 제거됨 — 카테고리(3 단계) 가 그 자리를 대체.

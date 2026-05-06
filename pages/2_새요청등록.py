@@ -1,6 +1,7 @@
 """새 요청 등록 페이지 — docs/03_ui_design.md 3.6 + docs/07_scenarios.md 7.5.
 
-st.form 컨텍스트로 입력 보존 → 제출 시 검증 → repository.create_issue + 이미지 첨부.
+좌우 분할 레이아웃: 좌측 = 이미지 입력 / 우측 = 폼.
+카테고리는 우측 컬럼 안 / st.form 바깥에 두어 종속 selectbox 즉시 반영.
 폼 nonce 패턴으로 위젯 key 를 회전시켜 제출 후 입력 초기화.
 
 이미지 입력은 file_uploader (다중) + streamlit_paste_button (1회 1장).
@@ -86,141 +87,168 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# 카테고리 트리 (3 단계). 폼 바깥에 둬서 L1 → L2 → L3 종속 선택이 즉시 반영되게.
+# 카테고리 트리 — 후속 처리에서 사용
 # ---------------------------------------------------------------------------
-
-st.markdown("##### 카테고리")
-st.caption(
-    "기존 카테고리에서 고르거나 새로 입력하면 다음 등록부터 드롭다운에 추가됩니다. "
-    "비워둬도 무방."
-)
 
 _cat_tree = repository.list_categories()  # {l1: {l2: {l3,...}}}
-_NEW = "(새로 입력)"
-_NONE = "(없음)"
+_NONE = "(선택 안 함)"
 
 
-def _category_picker(level_key: str, options: list[str]) -> tuple[str | None, str]:
-    """selectbox + 옵션이 새 입력일 때 text_input 으로 자유 입력 받기.
+def _resolve_category(level_key: str, options: list[str]) -> str | None:
+    """selectbox + text_input 를 한 줄에 나란히 표시.
 
-    반환: (실제 값 or None, selectbox 표시값)
+    text_input 이 비어있지 않으면 그 값을, 아니면 selectbox 의 선택값을 사용.
+    selectbox 에서 (선택 안 함) 을 고르고 text_input 도 비었으면 None.
     """
-    pick = st.selectbox(
-        level_key,
-        options=options,
-        key=f"new_cat_{level_key}_{nonce}",
-    )
-    if pick == _NEW:
-        new_val = st.text_input(
-            f"{level_key} (새로 입력)",
-            key=f"new_cat_{level_key}_input_{nonce}",
-            placeholder="새 카테고리 이름",
+    sel_col, txt_col = st.columns([1, 1])
+    with sel_col:
+        pick = st.selectbox(
+            f"{level_key} (기존)",
+            options=options,
+            key=f"new_cat_{level_key}_select_{nonce}",
+            label_visibility="collapsed",
         )
-        return ((new_val or "").strip() or None), pick
+    with txt_col:
+        manual = st.text_input(
+            f"{level_key} (직접 입력)",
+            key=f"new_cat_{level_key}_input_{nonce}",
+            placeholder=f"{level_key} 직접 입력",
+            label_visibility="collapsed",
+        )
+    manual_clean = (manual or "").strip()
+    if manual_clean:
+        return manual_clean
     if pick == _NONE:
-        return None, pick
-    return pick, pick
-
-
-cat_c1, cat_c2, cat_c3 = st.columns(3)
-
-with cat_c1:
-    l1_options = [_NONE] + sorted(_cat_tree.keys()) + [_NEW]
-    cat_l1, l1_pick = _category_picker("대분류", l1_options)
-
-with cat_c2:
-    l2_subtree = _cat_tree.get(cat_l1, {}) if cat_l1 else {}
-    l2_options = [_NONE] + sorted(l2_subtree.keys()) + [_NEW]
-    cat_l2, l2_pick = _category_picker("중분류", l2_options)
-
-with cat_c3:
-    l3_set = l2_subtree.get(cat_l2, set()) if cat_l2 else set()
-    l3_options = [_NONE] + sorted(l3_set) + [_NEW]
-    cat_l3, l3_pick = _category_picker("소분류", l3_options)
+        return None
+    return pick
 
 
 # ---------------------------------------------------------------------------
-# 이미지 입력 — 폼 바깥 (미리보기를 즉시 보이려면 form 바깥에 둬야 함)
+# 좌우 분할 — 좌측: 이미지 / 우측: 카테고리 + 폼
 # ---------------------------------------------------------------------------
 
-st.markdown("##### 스크린샷")
-st.caption(
-    f"파일 업로드(다중 가능) 또는 클립보드 붙여넣기. "
-    f"항목당 최대 {MAX_IMAGES_PER_ITEM}장, 1장당 {MAX_FILE_MB}MB 이내. "
-    f"허용 확장자: {', '.join(sorted(ALLOWED_EXT))}"
-)
+left, right = st.columns([1, 1], gap="large")
 
-img_col1, img_col2 = st.columns([1, 1])
 
-# 파일 업로드
-with img_col1:
-    st.markdown("**파일에서**")
-    uploaded_files = st.file_uploader(
-        "이미지 업로드",
-        type=["png", "jpg", "jpeg", "webp", "gif"],
-        accept_multiple_files=True,
-        key=f"new_files_{nonce}",
-        label_visibility="collapsed",
+# ---------------------------------------------------------------------------
+# 좌측: 이미지 입력 (file_uploader + paste-button + 미리보기)
+# ---------------------------------------------------------------------------
+
+with left:
+    st.markdown("##### 스크린샷")
+    st.caption(
+        f"파일 업로드(다중 가능) 또는 클립보드 붙여넣기. "
+        f"항목당 최대 {MAX_IMAGES_PER_ITEM}장, 1장당 {MAX_FILE_MB}MB 이내. "
+        f"허용 확장자: {', '.join(sorted(ALLOWED_EXT))}"
     )
 
-# 클립보드 붙여넣기
-paste_image = None
-with img_col2:
-    st.markdown("**클립보드 (Ctrl+V)**")
-    if _paste_button is None:
-        st.caption("`streamlit-paste-button` 미설치 — 파일 업로드만 사용 가능합니다.")
-    else:
-        try:
-            paste_result = _paste_button(
-                label="붙여넣기",
-                key=f"new_paste_{nonce}",
-                text_color="#ffffff",
-                background_color="#3B82F6",
-                hover_background_color="#2563EB",
-                errors="ignore",
+    img_col1, img_col2 = st.columns([1, 1])
+
+    # 파일 업로드
+    with img_col1:
+        st.markdown("**파일에서**")
+        uploaded_files = st.file_uploader(
+            "이미지 업로드",
+            type=["png", "jpg", "jpeg", "webp", "gif"],
+            accept_multiple_files=True,
+            key=f"new_files_{nonce}",
+            label_visibility="collapsed",
+        )
+
+    # 클립보드 붙여넣기
+    paste_image = None
+    with img_col2:
+        st.markdown("**클립보드 (Ctrl+V)**")
+        if _paste_button is None:
+            st.caption("`streamlit-paste-button` 미설치 — 파일 업로드만 사용 가능합니다.")
+        else:
+            try:
+                paste_result = _paste_button(
+                    label="붙여넣기",
+                    key=f"new_paste_{nonce}",
+                    text_color="#ffffff",
+                    background_color="#3B82F6",
+                    hover_background_color="#2563EB",
+                    errors="ignore",
+                )
+                if paste_result is not None and getattr(paste_result, "image_data", None) is not None:
+                    paste_image = paste_result.image_data
+            except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
+                st.caption(f"붙여넣기 컴포넌트 오류: {exc}")
+
+            st.caption(
+                "동작 안 되면 `localhost:8501` 으로 접속하거나 좌측 파일 업로드를 사용하세요."
             )
-            if paste_result is not None and getattr(paste_result, "image_data", None) is not None:
-                paste_image = paste_result.image_data
-        except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
-            st.caption(f"붙여넣기 컴포넌트 오류: {exc}")
+            with st.expander("붙여넣기가 안 되시나요?"):
+                st.markdown(
+                    "**브라우저 클립보드 API 는 Secure Context 에서만 동작합니다.**\n\n"
+                    "- OK : `http://localhost:8501`, `http://127.0.0.1:8501`, HTTPS 도메인\n"
+                    "- NG : `http://192.168.x.x:8501` 같은 사내 IP 직접 접속 (HTTP)\n\n"
+                    "**Edge 사용 시 추가 확인**\n"
+                    "- 주소창 자물쇠 아이콘 → 사이트 권한 → 클립보드 → `허용`\n"
+                    "- 그래도 안 되면 한 번 페이지 새로고침\n\n"
+                    "**가장 빠른 우회**: `Win+Shift+S` 로 화면 캡처 후, 캡처 도구에서 "
+                    "`다른 이름으로 저장` → 좌측 **파일 업로드** 에 드래그.\n\n"
+                    "(Win+Shift+S 만으로 클립보드에 들어간 이미지는 위 보안 정책 때문에 "
+                    "사내 IP 환경에서는 붙여넣기 버튼이 읽지 못합니다.)"
+                )
 
-# 미리보기
-preview_files: list = list(uploaded_files or [])
-preview_total = len(preview_files) + (1 if paste_image is not None else 0)
-if preview_total:
-    st.caption(f"미리보기 — {preview_total}장")
-    cols = st.columns(min(preview_total, 4))
-    idx = 0
-    if paste_image is not None:
-        with cols[idx % len(cols)]:
-            st.image(paste_image, caption="(클립보드)", use_container_width=True)
-        idx += 1
-    for f in preview_files:
-        with cols[idx % len(cols)]:
-            st.image(f, caption=f.name, use_container_width=True)
-        idx += 1
+    # 미리보기
+    preview_files: list = list(uploaded_files or [])
+    preview_total = len(preview_files) + (1 if paste_image is not None else 0)
+    if preview_total:
+        st.caption(f"미리보기 — {preview_total}장")
+        cols = st.columns(min(preview_total, 4))
+        idx = 0
+        if paste_image is not None:
+            with cols[idx % len(cols)]:
+                st.image(paste_image, caption="(클립보드)", use_container_width=True)
+            idx += 1
+        for f in preview_files:
+            with cols[idx % len(cols)]:
+                st.image(f, caption=f.name, use_container_width=True)
+            idx += 1
 
 
 # ---------------------------------------------------------------------------
-# 본 폼
+# 우측: 카테고리 (폼 바깥) + 본 폼
 # ---------------------------------------------------------------------------
 
-with st.form(key=f"new_request_form_{nonce}", clear_on_submit=False):
-    title_input = st.text_input(
-        "제목 *",
-        max_chars=120,
-        key=f"new_title_{nonce}",
-        placeholder="간단명료한 한 줄 요약",
-    )
-    description_input = st.text_area(
-        "설명 *",
-        height=180,
-        key=f"new_desc_{nonce}",
-        help="마크다운 지원. 재현 절차/기대 동작/실제 동작을 적어주세요.",
+with right:
+    # ------- 카테고리 (st.form 바깥, 종속 selectbox 즉시 반영) -------
+    st.markdown("##### 카테고리")
+    st.caption(
+        "기존에서 고르거나 우측 칸에 직접 입력하세요. "
+        "직접 입력 칸이 채워져 있으면 그 값이 우선 사용됩니다. 비워둬도 무방."
     )
 
-    fc1, fc2 = st.columns([1, 1])
-    with fc1:
+    l1_options = [_NONE] + sorted(_cat_tree.keys())
+    cat_l1 = _resolve_category("대분류", l1_options)
+
+    _l2_subtree = _cat_tree.get(cat_l1, {}) if cat_l1 else {}
+    l2_options = [_NONE] + sorted(_l2_subtree.keys())
+    cat_l2 = _resolve_category("중분류", l2_options)
+
+    _l3_set = _l2_subtree.get(cat_l2, set()) if cat_l2 else set()
+    l3_options = [_NONE] + sorted(_l3_set)
+    cat_l3 = _resolve_category("소분류", l3_options)
+
+    # ------- 본 폼 -------
+    st.markdown("##### 요청 내용")
+    with st.form(key=f"new_request_form_{nonce}", clear_on_submit=False):
+        title_input = st.text_input(
+            "제목 *",
+            max_chars=120,
+            key=f"new_title_{nonce}",
+            placeholder="간단명료한 한 줄 요약",
+        )
+        description_input = st.text_area(
+            "설명 *",
+            height=180,
+            key=f"new_desc_{nonce}",
+            help="마크다운 지원. 재현 절차/기대 동작/실제 동작을 적어주세요.",
+        )
+
         urgency_value = st.radio(
             "긴급도 *",
             options=[u.value for u in Urgency],
@@ -229,7 +257,7 @@ with st.form(key=f"new_request_form_{nonce}", clear_on_submit=False):
             index=1,  # 보통
             key=f"new_urgency_{nonce}",
         )
-    with fc2:
+
         assignee_choice = st.selectbox(
             "담당 개발자",
             options=assignee_options,
@@ -237,14 +265,14 @@ with st.form(key=f"new_request_form_{nonce}", clear_on_submit=False):
             key=f"new_assignee_select_{nonce}",
         )
 
-    assignee_manual = st.text_input(
-        "담당자 직접 입력",
-        key=f"new_assignee_manual_{nonce}",
-        placeholder="위에서 (직접 입력) 선택 시 사용",
-        help="후보 목록에 없는 새로운 담당자를 지정할 때만 입력하세요.",
-    )
+        assignee_manual = st.text_input(
+            "담당자 직접 입력",
+            key=f"new_assignee_manual_{nonce}",
+            placeholder="위에서 (직접 입력) 선택 시 사용",
+            help="후보 목록에 없는 새로운 담당자를 지정할 때만 입력하세요.",
+        )
 
-    submit = st.form_submit_button("등록", type="primary", use_container_width=True)
+        submit = st.form_submit_button("등록", type="primary", use_container_width=True)
 
 
 # ---------------------------------------------------------------------------

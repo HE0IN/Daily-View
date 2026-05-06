@@ -57,12 +57,12 @@ def _stripe_html(color: str, *, thick: bool = False) -> str:
     )
 
 
-def _placeholder_html() -> str:
+def _placeholder_html(text: str = "썸네일 없음") -> str:
     """썸네일 placeholder."""
     return (
-        '<div style="width:100%;aspect-ratio:16/9;background:#E5E7EB;'
-        'border-radius:4px;display:flex;align-items:center;justify-content:center;'
-        'color:#9CA3AF;font-size:0.85em;">썸네일 없음</div>'
+        f'<div style="width:100%;aspect-ratio:1/1;background:#E5E7EB;'
+        f'border-radius:4px;display:flex;align-items:center;justify-content:center;'
+        f'color:#9CA3AF;font-size:0.7em;text-align:center;">{text}</div>'
     )
 
 
@@ -71,8 +71,10 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
 
     item은 IndexEntry 직렬화 dict. 누락 키는 안전 기본값 사용.
 
-    컴팩트 변경: 썸네일 제거(상세보기에서 보면 충분), 폰트/패딩 축소,
-    한 줄에 등록·담당·상태 모두 표시 → 한 화면에 더 많은 카드.
+    레이아웃 (A 패턴): 좌측 작은 썸네일 (1) + 우측 정보 (2) 가로 분할.
+    컴팩트 유지: 폰트/패딩 축소, 한 줄에 등록·담당·상태 모두 표시.
+    썸네일은 ``thumb_path`` 가 있으면 사용, 없고 ``images_count > 0`` 이면
+    placeholder, 0 이면 "사진 없음" 박스.
     """
     item_id = item.get("id", "")
     title = item.get("title", "(제목 없음)")
@@ -83,6 +85,7 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     created_at = item.get("created_at", "")
     comments_count = int(item.get("comments_count", 0) or 0)
     images_count = int(item.get("images_count", 0) or 0)
+    thumb_path = item.get("thumb_path")
 
     # XSS 방지: HTML로 렌더되는 사용자 입력은 모두 escape.
     safe_title = html.escape(str(title))
@@ -98,46 +101,67 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     stripe_w = 6 if (violated or warning) else 3
 
     with st.container(border=True):
-        # 좌측 색상 띠 + 1줄 헤더(긴급도 배지 + 상태 배지 + 시간)
-        st.markdown(
-            f'<div style="position:relative;padding:2px 0 2px 10px;">'
-            f'<div style="position:absolute;left:0;top:0;bottom:0;width:{stripe_w}px;'
-            f'background:{stripe_color};border-radius:2px;"></div>'
-            f"{urgency_badge_html(urgency)} {status_badge_html(status)} "
-            f'<span style="color:#9CA3AF;font-size:0.75em;float:right;">'
-            f"{humanize_dt(created_at) if created_at else ''}"
-            f"</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        # 좌측 작은 썸네일 + 우측 정보 (1:2 가로 분할)
+        thumb_col, info_col = st.columns([1, 2], gap="small")
 
-        # 제목 (작게)
-        st.markdown(
-            f'<div style="font-weight:600;font-size:0.95em;line-height:1.3;'
-            f'margin:4px 0 2px 0;">{safe_title}</div>',
-            unsafe_allow_html=True,
-        )
+        with thumb_col:
+            if thumb_path:
+                try:
+                    st.image(thumb_path, use_container_width=True)
+                except Exception:
+                    st.markdown(
+                        _placeholder_html(), unsafe_allow_html=True
+                    )
+            elif images_count > 0:
+                st.markdown(_placeholder_html(), unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    _placeholder_html("사진 없음"),
+                    unsafe_allow_html=True,
+                )
 
-        # 한 줄 메타: 등록 · 담당 · 코멘트 N · 이미지 N
-        st.markdown(
-            f'<div style="font-size:0.75em;color:#6B7280;line-height:1.4;">'
-            f"{safe_author} → {safe_assignee} · 💬 {comments_count} · 📷 {images_count}"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
-        # SLA 경고 라벨 (위반·임박만)
-        if violated:
+        with info_col:
+            # 좌측 색상 띠 + 1줄 헤더(긴급도 배지 + 상태 배지 + 시간)
             st.markdown(
-                f'<div style="margin-top:2px;">{render_badge("SLA 위반", "#DC2626")}</div>',
-                unsafe_allow_html=True,
-            )
-        elif warning:
-            st.markdown(
-                f'<div style="margin-top:2px;">{render_badge("SLA 임박", "#F59E0B")}</div>',
+                f'<div style="position:relative;padding:2px 0 2px 10px;">'
+                f'<div style="position:absolute;left:0;top:0;bottom:0;width:{stripe_w}px;'
+                f'background:{stripe_color};border-radius:2px;"></div>'
+                f"{urgency_badge_html(urgency)} {status_badge_html(status)} "
+                f'<span style="color:#9CA3AF;font-size:0.75em;float:right;">'
+                f"{humanize_dt(created_at) if created_at else ''}"
+                f"</span>"
+                f"</div>",
                 unsafe_allow_html=True,
             )
 
+            # 제목 (작게)
+            st.markdown(
+                f'<div style="font-weight:600;font-size:0.95em;line-height:1.3;'
+                f'margin:4px 0 2px 0;">{safe_title}</div>',
+                unsafe_allow_html=True,
+            )
+
+            # 한 줄 메타: 등록 · 담당 · 코멘트 N · 이미지 N
+            st.markdown(
+                f'<div style="font-size:0.75em;color:#6B7280;line-height:1.4;">'
+                f"{safe_author} → {safe_assignee} · 💬 {comments_count} · 📷 {images_count}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            # SLA 경고 라벨 (위반·임박만)
+            if violated:
+                st.markdown(
+                    f'<div style="margin-top:2px;">{render_badge("SLA 위반", "#DC2626")}</div>',
+                    unsafe_allow_html=True,
+                )
+            elif warning:
+                st.markdown(
+                    f'<div style="margin-top:2px;">{render_badge("SLA 임박", "#F59E0B")}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # 버튼은 카드 폭 전체에
         clicked = st.button(
             "열기",
             key=f"{key_prefix}_{item_id}_detail",

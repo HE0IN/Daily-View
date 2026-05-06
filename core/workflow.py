@@ -35,8 +35,18 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
     # 새 흐름
     (Status.requested, Role.developer): [Status.in_progress],
     (Status.requested, Role.reviewer): [Status.closed],  # 검토자 자체 취소
-    (Status.in_progress, Role.developer): [Status.api_check, Status.reviewing],
-    (Status.api_check, Role.developer): [Status.in_progress, Status.reviewing],
+    # 두 명만 쓰는 환경에서 검토자 단계가 형식적인 경우가 많아 개발자도 closed 가능
+    (Status.in_progress, Role.developer): [
+        Status.api_check,
+        Status.reviewing,
+        Status.closed,
+    ],
+    (Status.api_check, Role.developer): [
+        Status.in_progress,
+        Status.reviewing,
+        Status.closed,
+    ],
+    (Status.reviewing, Role.developer): [Status.closed],
     (Status.reviewing, Role.reviewer): [Status.closed, Status.reopened],
     (Status.reopened, Role.developer): [Status.in_progress],
     # 레거시 호환 — 옛 데이터의 done 항목용 (새 흐름에서는 도달 안 함)
