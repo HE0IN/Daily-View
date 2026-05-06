@@ -39,13 +39,13 @@ STATUS_COLORS: dict[str, str] = {
 }
 
 STATUS_LABELS: dict[str, str] = {
-    "requested": "요청됨",
-    "in_progress": "확인중",
+    "requested": "요청중",
+    "in_progress": "작업중",
     "api_check": "API대기",
-    "done": "완료",
+    "done": "작업완료",  # 레거시 — 새 흐름에서는 안 만들어짐
     "reviewing": "검토중",
     "reopened": "재요청",
-    "closed": "검토완료",
+    "closed": "완료",
 }
 
 # ---------------------------------------------------------------------------

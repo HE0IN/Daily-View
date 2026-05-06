@@ -244,12 +244,6 @@ with st.form(key=f"new_request_form_{nonce}", clear_on_submit=False):
         help="후보 목록에 없는 새로운 담당자를 지정할 때만 입력하세요.",
     )
 
-    tags_input = st.text_input(
-        "태그",
-        key=f"new_tags_{nonce}",
-        placeholder="login, auth (콤마로 구분)",
-    )
-
     submit = st.form_submit_button("등록", type="primary", use_container_width=True)
 
 
@@ -283,9 +277,6 @@ if submit:
     else:
         final_assignee = assignee_choice
 
-    # 태그 파싱
-    tags = [t.strip() for t in (tags_input or "").split(",") if t.strip()]
-
     # 역할 정규화 (저장된 user["role"] 은 문자열 "reviewer"/"developer")
     try:
         author_role = Role(role_str)
@@ -301,7 +292,6 @@ if submit:
             author=name,
             author_role=author_role,
             assignee=final_assignee,
-            tags=tags,
             category_l1=cat_l1,
             category_l2=cat_l2,
             category_l3=cat_l3,

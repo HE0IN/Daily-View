@@ -142,7 +142,7 @@ def _entries_to_dicts(entries) -> list[dict]:
     return [e.model_dump(mode="json") for e in entries]
 
 
-def _render_card_grid(items: list[dict], *, key_prefix: str, cols: int = 3) -> None:
+def _render_card_grid(items: list[dict], *, key_prefix: str, cols: int = 4) -> None:
     """카드 그리드 렌더. 클릭 시 상세보기로 이동."""
     if not items:
         st.info("해당 항목이 없습니다.")
@@ -207,14 +207,18 @@ if role == "reviewer":
 
     st.divider()
 
-    # 검토 대기 — done 상태이면서 내가 등록자
+    # 검토 대기 — 검토중 상태이면서 내가 등록자.
+    # 단순화된 흐름에서는 개발자가 작업 완료 시 바로 reviewing 으로 전환됨.
+    # 레거시 done 항목도 포함해서 검토자가 정리할 수 있게.
     review_queue_entries = [
-        e for e in all_active if e.author == name and e.status == Status.done
+        e
+        for e in all_active
+        if e.author == name and e.status in (Status.reviewing, Status.done)
     ]
     review_queue = _entries_to_dicts(review_queue_entries)
 
     st.subheader(f"검토 대기 ({len(review_queue)})")
-    st.caption("개발자가 완료 처리한, 내가 등록한 항목")
+    st.caption("개발자가 작업을 끝내 검토를 기다리는 항목")
     _render_card_grid(review_queue, key_prefix="reviewer_queue")
 
     st.divider()

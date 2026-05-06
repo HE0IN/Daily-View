@@ -327,36 +327,8 @@ with st.expander("카테고리 수정", expanded=False):
             st.error(f"저장 실패: {exc}")
 
 
-st.markdown("### 태그")
-if issue.tags:
-    # XSS 방지: 태그도 사용자 입력이므로 escape
-    tag_html = " ".join(
-        f'<span style="display:inline-block;padding:2px 8px;border-radius:12px;'
-        f'background:#E5E7EB;color:#374151;font-size:0.85em;margin-right:4px;">'
-        f"#{html.escape(str(t))}</span>"
-        for t in issue.tags
-    )
-    st.markdown(tag_html, unsafe_allow_html=True)
-else:
-    st.caption("태그 없음")
-
-with st.expander("태그 수정", expanded=False):
-    with st.form(key="tags_form", clear_on_submit=False):
-        tag_input = st.text_input(
-            "콤마(,)로 구분",
-            value=", ".join(issue.tags),
-            key="tags_input",
-            placeholder="예: login, auth, bug",
-        )
-        submit_tags = st.form_submit_button("저장", type="primary")
-        if submit_tags:
-            new_tags = [t.strip() for t in tag_input.split(",") if t.strip()]
-            try:
-                repository.update_tags(item_id, new_tags, user["name"])
-                st.toast("태그가 저장되었습니다", icon="✅")
-                st.rerun()
-            except Exception as exc:  # pragma: no cover
-                st.error(f"태그 저장 실패: {exc}")
+# 태그 기능은 제거됨 — 카테고리(3 단계) 가 그 자리를 대체.
+# 모델/저장소의 ``tags`` 필드는 옵션이라 그대로 둠 (옛 데이터 호환).
 
 
 # ---------------------------------------------------------------------------

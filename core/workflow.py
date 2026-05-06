@@ -14,26 +14,44 @@ class WorkflowError(Exception):
     """워크플로우 규칙 위반(허용되지 않은 상태 전이 등) 시 발생."""
 
 
-# 4.3 절 권한 매트릭스 — (현재 상태, 역할) → 허용되는 다음 상태들
+# 권한 매트릭스 — (현재 상태, 역할) → 허용되는 다음 상태들.
+#
+# 운영 흐름 (단순화된 버전, 사용자 합의):
+#   요청중 → 작업중 → (API대기) → 검토중 → 완료
+#                                    ↘ 재요청 → 작업중
+#
+# - 검토자 등록 → ``requested`` (요청중)
+# - 개발자 확인 → ``in_progress`` (작업중)  ※ 라벨 의미 변경: 확인중 → 작업중
+# - 작업 중 외부 의존 발견 → ``api_check`` (API대기)
+# - 개발자가 작업 종료 → 바로 ``reviewing`` (검토중) 으로 전환
+#   (기존엔 done 단계를 거쳤으나 중간 단계 제거)
+# - 검토자 OK → ``closed`` (완료)
+# - 검토자 NG → ``reopened`` → ``in_progress`` 로 다시
+#
+# ``done`` 상태는 새 흐름에서는 사용하지 않지만 enum 은 유지 (기존 데이터 호환).
+# 기존 done 항목은 검토자가 직접 검토중/완료/재요청으로 정리할 수 있도록
+# 호환 전이만 남긴다.
 TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
+    # 새 흐름
     (Status.requested, Role.developer): [Status.in_progress],
-    (Status.requested, Role.reviewer): [Status.closed],
-    (Status.in_progress, Role.developer): [Status.api_check, Status.done],
-    (Status.api_check, Role.developer): [Status.in_progress, Status.done],
-    (Status.done, Role.reviewer): [Status.reviewing, Status.closed],
+    (Status.requested, Role.reviewer): [Status.closed],  # 검토자 자체 취소
+    (Status.in_progress, Role.developer): [Status.api_check, Status.reviewing],
+    (Status.api_check, Role.developer): [Status.in_progress, Status.reviewing],
     (Status.reviewing, Role.reviewer): [Status.closed, Status.reopened],
     (Status.reopened, Role.developer): [Status.in_progress],
+    # 레거시 호환 — 옛 데이터의 done 항목용 (새 흐름에서는 도달 안 함)
+    (Status.done, Role.reviewer): [Status.reviewing, Status.closed, Status.reopened],
 }
 
 
 # 한국어 라벨 (UI 표시 전용)
 STATUS_LABELS_KO: dict[Status, str] = {
-    Status.requested: "요청됨",
-    Status.in_progress: "확인중",
+    Status.requested: "요청중",
+    Status.in_progress: "작업중",
     Status.api_check: "API대기",
-    Status.done: "완료",
+    Status.done: "작업완료",  # 레거시 — 새 흐름에서는 안 만들어짐
     Status.reviewing: "검토중",
-    Status.closed: "검토완료",
+    Status.closed: "완료",
     Status.reopened: "재요청",
 }
 

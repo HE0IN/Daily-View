@@ -238,7 +238,7 @@ total = len(items)
 # 페이지네이션
 # ---------------------------------------------------------------------------
 
-PAGE_SIZE = 12
+PAGE_SIZE = 16  # 4 columns × 4 rows
 total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
 st.session_state.setdefault("list_page", 1)
 current_page = min(max(1, int(st.session_state["list_page"])), total_pages)
@@ -258,7 +258,7 @@ st.caption(f"총 {total}건 · {current_page}/{total_pages} 페이지")
 if total == 0:
     st.info("조건에 맞는 항목이 없습니다.")
 else:
-    cols_per_row = 3
+    cols_per_row = 4  # 카드를 컴팩트하게 줄였으니 한 행에 더 많이.
     for row_start in range(0, len(page_items), cols_per_row):
         row = page_items[row_start : row_start + cols_per_row]
         col_objs = st.columns(cols_per_row)

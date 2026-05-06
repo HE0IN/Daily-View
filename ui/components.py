@@ -67,9 +67,12 @@ def _placeholder_html() -> str:
 
 
 def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
-    """요청목록 카드 렌더. 클릭 시 True 반환.
+    """요청목록 카드 렌더 (컴팩트). 클릭 시 True 반환.
 
     item은 IndexEntry 직렬화 dict. 누락 키는 안전 기본값 사용.
+
+    컴팩트 변경: 썸네일 제거(상세보기에서 보면 충분), 폰트/패딩 축소,
+    한 줄에 등록·담당·상태 모두 표시 → 한 화면에 더 많은 카드.
     """
     item_id = item.get("id", "")
     title = item.get("title", "(제목 없음)")
@@ -80,84 +83,63 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     created_at = item.get("created_at", "")
     comments_count = int(item.get("comments_count", 0) or 0)
     images_count = int(item.get("images_count", 0) or 0)
-    thumb_path = item.get("thumb_path")
 
     # XSS 방지: HTML로 렌더되는 사용자 입력은 모두 escape.
     safe_title = html.escape(str(title))
     safe_author = html.escape(str(author))
     safe_assignee = html.escape(str(assignee))
-    safe_item_id = html.escape(str(item_id))
 
-    # SLA 판정 — 좌측 띠 굵기 결정
+    # SLA 판정 — 카드 좌측 색상 띠
     violated = bool(created_at) and is_sla_violated(urgency, created_at, status)
     warning = bool(created_at) and is_sla_warning(urgency, created_at, status)
     stripe_color = (
         "#DC2626" if violated else URGENCY_COLORS.get(urgency, "#9CA3AF")
     )
+    stripe_w = 6 if (violated or warning) else 3
 
     with st.container(border=True):
-        # 좌측 색상 띠 (위치 잡기 위해 wrapper에 position:relative)
+        # 좌측 색상 띠 + 1줄 헤더(긴급도 배지 + 상태 배지 + 시간)
         st.markdown(
-            f'<div style="position:relative;padding-left:12px;">'
-            f"{_stripe_html(stripe_color, thick=violated or warning)}"
+            f'<div style="position:relative;padding:2px 0 2px 10px;">'
+            f'<div style="position:absolute;left:0;top:0;bottom:0;width:{stripe_w}px;'
+            f'background:{stripe_color};border-radius:2px;"></div>'
+            f"{urgency_badge_html(urgency)} {status_badge_html(status)} "
+            f'<span style="color:#9CA3AF;font-size:0.75em;float:right;">'
+            f"{humanize_dt(created_at) if created_at else ''}"
+            f"</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
 
-        # 썸네일
-        if thumb_path:
-            try:
-                st.image(thumb_path, use_container_width=True)
-            except Exception:
-                st.markdown(_placeholder_html(), unsafe_allow_html=True)
-        else:
-            st.markdown(_placeholder_html(), unsafe_allow_html=True)
-
-        # 배지 + ID
+        # 제목 (작게)
         st.markdown(
-            f"{urgency_badge_html(urgency)} &nbsp; "
-            f'<span style="color:#6B7280;font-size:0.8em;">#{safe_item_id}</span>',
+            f'<div style="font-weight:600;font-size:0.95em;line-height:1.3;'
+            f'margin:4px 0 2px 0;">{safe_title}</div>',
             unsafe_allow_html=True,
         )
 
-        # 제목 — markdown 렌더가 아닌 평문 표시(굵기만 유지)
+        # 한 줄 메타: 등록 · 담당 · 코멘트 N · 이미지 N
         st.markdown(
-            f'<div style="font-weight:700;font-size:1.05em;">{safe_title}</div>',
-            unsafe_allow_html=True,
-        )
-
-        # 메타: 등록/담당/상태
-        st.markdown(
-            f'<div style="font-size:0.85em;color:#374151;">'
-            f"등록: {safe_author} · 담당: {safe_assignee}<br/>"
-            f"상태: {status_badge_html(status)}"
+            f'<div style="font-size:0.75em;color:#6B7280;line-height:1.4;">'
+            f"{safe_author} → {safe_assignee} · 💬 {comments_count} · 📷 {images_count}"
             f"</div>",
             unsafe_allow_html=True,
         )
 
-        # 카운트 + 시간
-        st.markdown(
-            f'<div style="font-size:0.8em;color:#6B7280;margin-top:4px;">'
-            f"코멘트 {comments_count} · 이미지 {images_count} · "
-            f"{humanize_dt(created_at) if created_at else '-'}"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
-        # SLA 경고 라벨
+        # SLA 경고 라벨 (위반·임박만)
         if violated:
             st.markdown(
-                render_badge("SLA 위반", "#DC2626"),
+                f'<div style="margin-top:2px;">{render_badge("SLA 위반", "#DC2626")}</div>',
                 unsafe_allow_html=True,
             )
         elif warning:
             st.markdown(
-                render_badge("SLA 임박", "#F59E0B"),
+                f'<div style="margin-top:2px;">{render_badge("SLA 임박", "#F59E0B")}</div>',
                 unsafe_allow_html=True,
             )
 
         clicked = st.button(
-            "상세보기",
+            "열기",
             key=f"{key_prefix}_{item_id}_detail",
             use_container_width=True,
         )

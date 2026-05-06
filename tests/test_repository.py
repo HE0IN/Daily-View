@@ -230,17 +230,14 @@ def test_list_issues_sort_by_updated_at_desc(
 def test_update_status_full_workflow(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """requested → in_progress → done → reviewing → closed 정상 흐름."""
+    """단순화된 흐름: requested → in_progress → reviewing → closed."""
     issue = _make_issue(sample_issue_kwargs)
 
     repository.update_status(
         issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
     )
     repository.update_status(
-        issue.id, Status.done, actor="dev", actor_role=Role.developer
-    )
-    repository.update_status(
-        issue.id, Status.reviewing, actor="rev", actor_role=Role.reviewer
+        issue.id, Status.reviewing, actor="dev", actor_role=Role.developer
     )
     final = repository.update_status(
         issue.id, Status.closed, actor="rev", actor_role=Role.reviewer
@@ -270,12 +267,12 @@ def test_update_status_unauthorized_role(
 def test_update_status_invalid_transition(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """requested → done 직접 점프 시도 (개발자 권한이라도) → WorkflowError."""
+    """requested → reviewing 직접 점프 시도 (in_progress 거치지 않음) → WorkflowError."""
     issue = _make_issue(sample_issue_kwargs)
 
     with pytest.raises(WorkflowError):
         repository.update_status(
-            issue.id, Status.done, actor="dev", actor_role=Role.developer
+            issue.id, Status.reviewing, actor="dev", actor_role=Role.developer
         )
 
 
@@ -290,14 +287,14 @@ def test_status_history_appended_on_each_change(
         issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
     )
     repository.update_status(
-        issue.id, Status.done, actor="dev", actor_role=Role.developer
+        issue.id, Status.reviewing, actor="dev", actor_role=Role.developer
     )
 
     final = repository.get_issue(issue.id)
     statuses = [ev.status for ev in final.status_history]
     bys = [ev.by for ev in final.status_history]
 
-    assert statuses == [Status.requested, Status.in_progress, Status.done]
+    assert statuses == [Status.requested, Status.in_progress, Status.reviewing]
     assert bys == [sample_issue_kwargs["author"], "dev", "dev"]
     # 모든 at 이 timezone-aware 한 datetime
     for ev in final.status_history:
@@ -322,8 +319,8 @@ def test_system_comment_on_status_change(
 
     body = sys_comments[0].body
     assert "상태 변경" in body, f"body 에 '상태 변경' 누락: {body!r}"
-    # 한국어 라벨이 들어가야 함
-    assert "요청됨" in body or "확인중" in body, f"라벨 누락: {body!r}"
+    # 단순화 후 라벨: requested → 요청중, in_progress → 작업중
+    assert "요청중" in body or "작업중" in body, f"라벨 누락: {body!r}"
     # role 은 'system' 문자열
     assert sys_comments[0].role == "system"
 

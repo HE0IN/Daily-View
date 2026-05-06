@@ -20,18 +20,21 @@ from core.workflow import (
 
 
 # ---------------------------------------------------------------------------
-# 4.3 표를 그대로 옮긴 기댓값
+# 단순화된 운영 매트릭스 — done 단계 제거 (in_progress → reviewing 직행)
 # ---------------------------------------------------------------------------
 # (현재 상태, 역할) → 정렬된 next status set. 표에 없으면 빈 집합.
+# done 은 새 흐름에서 사용 안 하지만 enum 은 유지 (기존 데이터 호환).
+# 검토자가 옛 done 항목을 직접 reviewing/closed/reopened 로 정리할 수 있도록
+# 호환 전이만 남긴다.
 EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.requested, Role.developer): {Status.in_progress},
     (Status.requested, Role.reviewer): {Status.closed},
-    (Status.in_progress, Role.developer): {Status.api_check, Status.done},
+    (Status.in_progress, Role.developer): {Status.api_check, Status.reviewing},
     (Status.in_progress, Role.reviewer): set(),
-    (Status.api_check, Role.developer): {Status.in_progress, Status.done},
+    (Status.api_check, Role.developer): {Status.in_progress, Status.reviewing},
     (Status.api_check, Role.reviewer): set(),
     (Status.done, Role.developer): set(),
-    (Status.done, Role.reviewer): {Status.reviewing, Status.closed},
+    (Status.done, Role.reviewer): {Status.reviewing, Status.closed, Status.reopened},
     (Status.reviewing, Role.developer): set(),
     (Status.reviewing, Role.reviewer): {Status.closed, Status.reopened},
     (Status.reopened, Role.developer): {Status.in_progress},
@@ -79,20 +82,28 @@ def test_terminal_status_has_no_transitions() -> None:
 @pytest.mark.parametrize(
     ("current", "role", "target", "should_pass"),
     [
-        # 정상 전이
+        # 정상 전이 (단순화된 흐름)
         (Status.requested, Role.developer, Status.in_progress, True),
-        (Status.in_progress, Role.developer, Status.done, True),
-        (Status.done, Role.reviewer, Status.closed, True),
+        (Status.in_progress, Role.developer, Status.reviewing, True),
+        (Status.in_progress, Role.developer, Status.api_check, True),
+        (Status.api_check, Role.developer, Status.reviewing, True),
+        (Status.reviewing, Role.reviewer, Status.closed, True),
         (Status.reviewing, Role.reviewer, Status.reopened, True),
         (Status.reopened, Role.developer, Status.in_progress, True),
+        # 레거시 done 호환 — 검토자가 정리 가능
+        (Status.done, Role.reviewer, Status.closed, True),
+        (Status.done, Role.reviewer, Status.reviewing, True),
         # 권한 위반
         (Status.requested, Role.reviewer, Status.in_progress, False),
-        (Status.in_progress, Role.reviewer, Status.done, False),
+        (Status.in_progress, Role.reviewer, Status.reviewing, False),
         (Status.done, Role.developer, Status.closed, False),
         # 잘못된 점프
-        (Status.requested, Role.developer, Status.done, False),
+        (Status.requested, Role.developer, Status.reviewing, False),
         (Status.requested, Role.developer, Status.closed, False),
         (Status.in_progress, Role.developer, Status.closed, False),
+        # 새 흐름에서는 in_progress → done 불가 (done 단계 제거됨)
+        (Status.in_progress, Role.developer, Status.done, False),
+        (Status.api_check, Role.developer, Status.done, False),
         # terminal 에서 시도
         (Status.closed, Role.developer, Status.reopened, False),
         (Status.closed, Role.reviewer, Status.reviewing, False),
@@ -121,25 +132,25 @@ def test_can_transition_matches_assert_transition(
 
 
 def test_workflow_error_message_includes_korean_labels() -> None:
-    """closed → reopened 시도 시 메시지에 '검토완료' 와 '재요청' 한글 라벨이 들어감."""
+    """closed → reopened 시도 시 메시지에 '완료' 와 '재요청' 한글 라벨이 들어감."""
     with pytest.raises(WorkflowError) as exc_info:
         assert_transition(Status.closed, Role.developer, Status.reopened)
 
     msg = str(exc_info.value)
-    assert "검토완료" in msg, f"메시지에 'closed' 한글 라벨 누락: {msg!r}"
+    assert "완료" in msg, f"메시지에 'closed' 한글 라벨 누락: {msg!r}"
     assert "재요청" in msg, f"메시지에 'reopened' 한글 라벨 누락: {msg!r}"
     # 화살표 형식
     assert "→" in msg, f"메시지에 '→' 없음: {msg!r}"
 
 
 def test_workflow_error_for_reviewer_to_in_progress() -> None:
-    """검토자가 in_progress 로 바꾸려 하면 명확한 에러 발생."""
+    """검토자가 작업중으로 바꾸려 하면 명확한 에러 발생."""
     with pytest.raises(WorkflowError) as exc_info:
         assert_transition(Status.requested, Role.reviewer, Status.in_progress)
 
     msg = str(exc_info.value)
-    assert "요청됨" in msg
-    assert "확인중" in msg
+    assert "요청중" in msg
+    assert "작업중" in msg
     assert "reviewer" in msg, f"메시지에 역할 'reviewer' 누락: {msg!r}"
 
 
@@ -156,13 +167,13 @@ def test_status_labels_ko_are_complete() -> None:
 
 
 def test_status_labels_ko_specific_values() -> None:
-    """주요 라벨이 docs/04_workflow.md 4.1 절과 일치."""
-    assert STATUS_LABELS_KO[Status.requested] == "요청됨"
-    assert STATUS_LABELS_KO[Status.in_progress] == "확인중"
+    """주요 라벨 — 단순화 후 (요청중/작업중/완료 등으로 변경)."""
+    assert STATUS_LABELS_KO[Status.requested] == "요청중"
+    assert STATUS_LABELS_KO[Status.in_progress] == "작업중"
     assert STATUS_LABELS_KO[Status.api_check] == "API대기"
-    assert STATUS_LABELS_KO[Status.done] == "완료"
+    assert STATUS_LABELS_KO[Status.done] == "작업완료"  # 레거시
     assert STATUS_LABELS_KO[Status.reviewing] == "검토중"
-    assert STATUS_LABELS_KO[Status.closed] == "검토완료"
+    assert STATUS_LABELS_KO[Status.closed] == "완료"
     assert STATUS_LABELS_KO[Status.reopened] == "재요청"
 
 
@@ -185,6 +196,6 @@ def test_allowed_transitions_returns_independent_list() -> None:
     first = allowed_transitions(Status.in_progress, Role.developer)
     first.clear()  # 호출자가 변형
     second = allowed_transitions(Status.in_progress, Role.developer)
-    assert second == [Status.api_check, Status.done], (
+    assert second == [Status.api_check, Status.reviewing], (
         "내부 TRANSITIONS 가 외부 변형에 노출됨"
     )
