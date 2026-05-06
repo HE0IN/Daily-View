@@ -47,10 +47,12 @@ if _st_autorefresh is not None:
 # 사이드바 사용자 위젯 + 가드
 get_or_init_user()
 user = require_user()
-current_project: str | None = render_project_selector()
 
 name: str = user["name"]
 role: str = user.get("role", "reviewer")
+
+# 프로젝트 선택기는 사용자 이름을 받아서 그 사람이 참여한 프로젝트만 노출
+current_project: str | None = render_project_selector(user_name=name)
 
 
 # ---------------------------------------------------------------------------

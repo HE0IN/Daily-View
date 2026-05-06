@@ -586,11 +586,20 @@ def update_project(
     return issue
 
 
-def list_projects() -> list[str]:
+def list_projects(participant: str | None = None) -> list[str]:
     """인덱스에서 사용 중인 프로젝트 식별자 unique 리스트(정렬).
 
-    None / 빈 문자열은 제외. 새 등록 시 드롭다운 옵션 + 사이드바
-    프로젝트 선택용 헬퍼.
+    Parameters
+    ----------
+    participant : str | None
+        지정 시: ``author == participant`` 또는 ``assignee == participant``
+        인 항목들에서만 unique 프로젝트를 추출 (사용자가 참여한 프로젝트만 노출).
+        None 이면 모든 항목 대상.
+
+    Notes
+    -----
+    None / 빈 프로젝트 식별자는 제외. 두 명만 쓰는 환경 + 사용자별 프로젝트
+    소유 모델에서 사이드바 옵션을 사용자별로 좁히는 데 사용.
     """
     seen: set[str] = set()
     for entry in index_mod.read_index():
@@ -598,8 +607,14 @@ def list_projects() -> list[str]:
         if not raw:
             continue
         s = str(raw).strip()
-        if s:
-            seen.add(s)
+        if not s:
+            continue
+        if participant is not None:
+            author = (entry.get("author") or "").strip()
+            assignee = (entry.get("assignee") or "").strip()
+            if participant != author and participant != assignee:
+                continue
+        seen.add(s)
     return sorted(seen)
 
 

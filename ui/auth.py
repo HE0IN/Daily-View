@@ -180,28 +180,45 @@ def require_user() -> dict:
 
 # session_state 키 — 다른 페이지 / 모듈에서 참조할 수 있도록 상수화
 _PROJECT_KEY = "_current_project"
+_LAST_USER_KEY = "_proj_last_user"
 
 
-def render_project_selector() -> str | None:
+def render_project_selector(user_name: str | None = None) -> str | None:
     """사이드바에 현재 프로젝트 선택 위젯을 렌더하고 선택값을 반환.
 
+    Parameters
+    ----------
+    user_name : str | None
+        현재 사용자 이름. 지정 시 사용자가 *참여한 프로젝트* (author 또는
+        assignee 였던 항목들의 unique project) 만 옵션으로 노출.
+        None 이면 모든 프로젝트.
+
+    동작
+    ----
     - ``session_state["_current_project"]`` 에 선택값을 저장.
-    - 옵션: ``["(전체 프로젝트)"] + 기존 프로젝트 + ["(새 프로젝트 추가)"]``
-    - "(새 프로젝트 추가)" 선택 시 텍스트 입력 + [추가] 버튼 — 새 등록 페이지에서
-      해당 이름으로 첫 항목을 만들면 자연스럽게 등록된다.
-    - 반환값: 현재 선택 프로젝트 이름(str), 또는 None ("(전체 프로젝트)" 시).
-      "(새 프로젝트 추가)" 모드에서 아직 추가 버튼을 누르기 전이면 None 을
-      반환해 필터를 미적용 상태로 둔다.
+    - 옵션: ``["(전체 프로젝트)"] + 사용자 참여 프로젝트 + ["(새 프로젝트 추가)"]``
+    - "(새 프로젝트 추가)" 선택 시 텍스트 입력 + [추가] 버튼 — 추가하면
+      그 프로젝트가 즉시 현재 컨텍스트로 선택됨 (다음 새 등록 시점에 자동 적용).
+    - 사용자가 바뀌면 (``_proj_last_user`` 비교) 이전 사용자의 프로젝트 선택을
+      reset 해 다른 사용자의 프로젝트가 선택된 채 남는 사고 방지.
+    - 반환값: 현재 선택 프로젝트 이름(str) 또는 None ("(전체 프로젝트)" 시).
     """
     # 지연 임포트 — 사이클 방지 + 테스트 환경 안전.
     from core import repository
+
+    # 사용자 변경 감지 — 다른 사람으로 바뀌면 프로젝트 컨텍스트 리셋
+    if user_name is not None:
+        last_user = st.session_state.get(_LAST_USER_KEY)
+        if last_user is not None and last_user != user_name:
+            st.session_state.pop(_PROJECT_KEY, None)
+        st.session_state[_LAST_USER_KEY] = user_name
 
     with st.sidebar:
         st.divider()
         st.markdown("**프로젝트**")
 
         try:
-            projects = repository.list_projects()
+            projects = repository.list_projects(participant=user_name)
         except Exception:  # noqa: BLE001 - 인덱스 손상 등은 빈 리스트로 격하
             projects = []
 
@@ -241,6 +258,12 @@ def render_project_selector() -> str | None:
                     st.warning("프로젝트 이름을 입력해주세요.")
             # 추가 버튼을 누르기 전엔 필터 미적용
             return None
+
+        # 빈 프로젝트 목록 + 첫 사용자 — 안내
+        if not projects:
+            st.caption(
+                "참여한 프로젝트가 없습니다. \"(새 프로젝트 추가)\" 로 등록하세요."
+            )
 
         # ALL 또는 기존 프로젝트
         selected = None if pick == ALL else pick

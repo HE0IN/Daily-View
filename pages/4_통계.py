@@ -62,8 +62,8 @@ if _st_autorefresh is not None:
         _st_autorefresh(interval=_refresh_sec * 1000, key="dashboard_autorefresh")
 
 get_or_init_user()
-require_user()  # 사용자 식별 보장만 (값 사용 X)
-current_project: str | None = render_project_selector()
+_user = require_user()
+current_project: str | None = render_project_selector(user_name=_user["name"])
 
 if current_project:
     st.title(f"진척도 대시보드 — {current_project}")

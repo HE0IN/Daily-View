@@ -29,7 +29,7 @@ from components.paste_clipboard import paste_clipboard
 from core import paths, repository
 from core.images import ALLOWED_EXT, MAX_FILE_MB, MAX_IMAGES_PER_ITEM
 from core.models import Role, Urgency
-from ui.auth import get_or_init_user, require_user
+from ui.auth import get_or_init_user, render_project_selector, require_user
 
 # streamlit_paste_button 은 옵션 의존성. 미설치/import 실패면 None.
 try:  # pragma: no cover - 환경 의존
@@ -226,10 +226,25 @@ role_str: str = user.get("role", "reviewer")
 # 헤더 + 안내
 # ---------------------------------------------------------------------------
 
+# 사이드바 프로젝트 선택기 (사용자별). 사용자 ↔ 프로젝트 컨텍스트는
+# 사이드바에서만 변경되며, 새 등록 시 자동으로 그 프로젝트가 적용된다.
+current_project: str | None = render_project_selector(user_name=name)
+
 st.title("새 요청 등록")
 
 if role_str != "reviewer":
     st.warning("주로 검토자가 등록하지만 개발자도 가능합니다.")
+
+# 프로젝트 미선택 시 새 등록 차단. 사용자가 사이드바에서 프로젝트를 먼저
+# 선택/추가해야 한다 — "이미 프로젝트가 정해져 있다" 는 전제 강제.
+if not current_project:
+    st.warning(
+        "먼저 좌측 사이드바에서 **프로젝트** 를 선택하거나 추가해주세요. "
+        "새 요청은 현재 선택된 프로젝트에 등록됩니다."
+    )
+    st.stop()
+
+st.caption(f"프로젝트 **{current_project}** 에 등록됩니다.")
 
 
 # ---------------------------------------------------------------------------
@@ -447,46 +462,9 @@ with left:
 # ---------------------------------------------------------------------------
 
 with right:
-    # ------- 프로젝트 (st.form 바깥, 카테고리 위) -------
-    st.markdown("##### 프로젝트")
-    st.caption(
-        "기존 프로젝트에서 고르거나 우측 칸에 직접 입력하세요. "
-        "직접 입력 칸이 채워져 있으면 그 값이 우선 사용됩니다. 비워둬도 무방."
-    )
-
-    projects = repository.list_projects()
-    default_proj = st.session_state.get("_current_project") or ""
-
-    proj_sel_col, proj_txt_col = st.columns([1, 1])
-    with proj_sel_col:
-        proj_options = [_NONE] + projects
-        proj_default_idx = (
-            proj_options.index(default_proj) if default_proj in proj_options else 0
-        )
-        proj_pick = st.selectbox(
-            "프로젝트 (기존)",
-            options=proj_options,
-            index=proj_default_idx,
-            key=f"new_proj_select_{nonce}",
-            label_visibility="collapsed",
-        )
-    with proj_txt_col:
-        proj_manual = st.text_input(
-            "프로젝트 (직접 입력)",
-            value=default_proj if default_proj and default_proj not in projects else "",
-            key=f"new_proj_input_{nonce}",
-            placeholder="새 프로젝트 이름",
-            label_visibility="collapsed",
-        )
-
-    # 우선순위: text_input > selectbox
-    proj_value: str | None
-    if proj_manual.strip():
-        proj_value = proj_manual.strip()
-    elif proj_pick == _NONE:
-        proj_value = None
-    else:
-        proj_value = proj_pick
+    # 프로젝트는 사이드바에서 이미 선택됨 — 폼 내 입력 X.
+    # current_project 가 그대로 등록 시점에 사용됨.
+    proj_value = current_project
 
     # ------- 카테고리 (st.form 바깥, 종속 selectbox 즉시 반영) -------
     st.markdown("##### 카테고리")
@@ -611,9 +589,8 @@ if submit:
     if final_assignee:
         st.session_state["_last_assignee"] = final_assignee
 
-    # 직전 프로젝트도 기억 — None 이면 기존 값 유지 (담당자와 동일 패턴)
-    if proj_value:
-        st.session_state["_current_project"] = proj_value
+    # 프로젝트는 사이드바에서 관리되므로 별도 갱신 불필요 — current_project 가
+    # 그대로 _current_project session_state 값과 동일.
 
     # 2) 이미지 첨부 — 실패해도 이슈 자체는 살린다 (개별 메시지)
     image_errors: list[str] = []

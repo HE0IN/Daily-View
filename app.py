@@ -132,7 +132,7 @@ role: str = user.get("role", "reviewer")
 role_label = "검토자" if role == "reviewer" else "개발자"
 
 # 프로젝트 사이드바 선택기 — 모든 list_issues 호출에 필터로 전달.
-current_project: str | None = render_project_selector()
+current_project: str | None = render_project_selector(user_name=name)
 
 
 # ---------------------------------------------------------------------------
