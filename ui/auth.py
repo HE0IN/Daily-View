@@ -174,4 +174,78 @@ def require_user() -> dict:
     return user  # type: ignore[return-value]
 
 
-__all__ = ["get_or_init_user", "require_user"]
+# ---------------------------------------------------------------------------
+# 프로젝트 선택 사이드바 위젯
+# ---------------------------------------------------------------------------
+
+# session_state 키 — 다른 페이지 / 모듈에서 참조할 수 있도록 상수화
+_PROJECT_KEY = "_current_project"
+
+
+def render_project_selector() -> str | None:
+    """사이드바에 현재 프로젝트 선택 위젯을 렌더하고 선택값을 반환.
+
+    - ``session_state["_current_project"]`` 에 선택값을 저장.
+    - 옵션: ``["(전체 프로젝트)"] + 기존 프로젝트 + ["(새 프로젝트 추가)"]``
+    - "(새 프로젝트 추가)" 선택 시 텍스트 입력 + [추가] 버튼 — 새 등록 페이지에서
+      해당 이름으로 첫 항목을 만들면 자연스럽게 등록된다.
+    - 반환값: 현재 선택 프로젝트 이름(str), 또는 None ("(전체 프로젝트)" 시).
+      "(새 프로젝트 추가)" 모드에서 아직 추가 버튼을 누르기 전이면 None 을
+      반환해 필터를 미적용 상태로 둔다.
+    """
+    # 지연 임포트 — 사이클 방지 + 테스트 환경 안전.
+    from core import repository
+
+    with st.sidebar:
+        st.divider()
+        st.markdown("**프로젝트**")
+
+        try:
+            projects = repository.list_projects()
+        except Exception:  # noqa: BLE001 - 인덱스 손상 등은 빈 리스트로 격하
+            projects = []
+
+        ALL = "(전체 프로젝트)"
+        NEW = "(새 프로젝트 추가)"
+        options = [ALL] + projects + [NEW]
+
+        current = st.session_state.get(_PROJECT_KEY)
+        # 현재 저장된 프로젝트가 옵션에 없으면 ALL(0) 로 fallback.
+        default_idx = (
+            options.index(current) if current and current in options else 0
+        )
+
+        pick = st.selectbox(
+            "현재",
+            options=options,
+            index=default_idx,
+            key="_proj_select",
+            label_visibility="collapsed",
+        )
+
+        if pick == NEW:
+            new_name = st.text_input(
+                "새 프로젝트 이름",
+                key="_proj_new_name",
+                placeholder="예: Daily View 앱",
+            )
+            if st.button("추가", key="_proj_add"):
+                cleaned = (new_name or "").strip()
+                if cleaned:
+                    st.session_state[_PROJECT_KEY] = cleaned
+                    st.toast(
+                        f"프로젝트 '{cleaned}' 선택됨", icon="📁"
+                    )
+                    st.rerun()
+                else:
+                    st.warning("프로젝트 이름을 입력해주세요.")
+            # 추가 버튼을 누르기 전엔 필터 미적용
+            return None
+
+        # ALL 또는 기존 프로젝트
+        selected = None if pick == ALL else pick
+        st.session_state[_PROJECT_KEY] = selected
+        return selected
+
+
+__all__ = ["get_or_init_user", "require_user", "render_project_selector"]

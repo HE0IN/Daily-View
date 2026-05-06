@@ -13,7 +13,7 @@ import streamlit as st
 from core import paths, repository
 from core.models import Status, Urgency
 from ui import components
-from ui.auth import get_or_init_user, require_user
+from ui.auth import get_or_init_user, render_project_selector, require_user
 from ui.theme import STATUS_LABELS, URGENCY_LABELS
 
 # 자동 새로고침 (M3). 미설치/0 이면 비활성.
@@ -47,6 +47,7 @@ if _st_autorefresh is not None:
 # 사이드바 사용자 위젯 + 가드
 get_or_init_user()
 user = require_user()
+current_project: str | None = render_project_selector()
 
 name: str = user["name"]
 role: str = user.get("role", "reviewer")
@@ -56,7 +57,10 @@ role: str = user.get("role", "reviewer")
 # 헤더
 # ---------------------------------------------------------------------------
 
-st.title("요청목록")
+if current_project:
+    st.title(f"요청목록 — {current_project}")
+else:
+    st.title("요청목록")
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +68,10 @@ st.title("요청목록")
 # ---------------------------------------------------------------------------
 
 # 한 번 전체 로드해서 담당자 옵션 추출 (필터링은 아래에서 다시).
-all_entries_for_options = repository.list_issues(include_archived=True)
+# 현재 프로젝트가 선택돼 있으면 그 프로젝트에 등장한 담당자만 후보로 노출.
+all_entries_for_options = repository.list_issues(
+    include_archived=True, project=current_project
+)
 assignee_set: set[str] = {
     e.assignee for e in all_entries_for_options if e.assignee
 }
@@ -154,6 +161,7 @@ filter_key = (
     sort_choice,
     include_closed,
     include_archived,
+    current_project,
 )
 if prev_filter_key is not None and prev_filter_key != filter_key:
     st.session_state["list_page"] = 1
@@ -172,6 +180,7 @@ def _fetch_entries() -> list[dict]:
         "include_archived": include_archived,
         "include_closed": include_closed,
         "search": search_query.strip() or None,
+        "project": current_project,
     }
 
     # 긴급도

@@ -20,7 +20,7 @@ from core.index import rebuild_index, verify_index
 from core.logger import tail_audit
 from core.models import Status
 from ui import components
-from ui.auth import get_or_init_user
+from ui.auth import get_or_init_user, render_project_selector
 from ui.theme import (
     STATUS_COLORS,
     STATUS_LABELS,
@@ -131,6 +131,9 @@ name: str = user["name"]
 role: str = user.get("role", "reviewer")
 role_label = "검토자" if role == "reviewer" else "개발자"
 
+# 프로젝트 사이드바 선택기 — 모든 list_issues 호출에 필터로 전달.
+current_project: str | None = render_project_selector()
+
 
 # ---------------------------------------------------------------------------
 # 헬퍼
@@ -182,6 +185,8 @@ def _count_by(entries, attr: str) -> dict[str, int]:
 # 헤더
 # ---------------------------------------------------------------------------
 
+if current_project:
+    st.caption(f"{current_project} / 대시보드")
 st.title("대시보드")
 st.write(f"안녕하세요, **{name}**님 ({role_label})")
 
@@ -190,8 +195,12 @@ st.write(f"안녕하세요, **{name}**님 ({role_label})")
 # 데이터 로드 (전체 활성 + 보관함 제외)
 # ---------------------------------------------------------------------------
 
-all_active = repository.list_issues(include_archived=False, include_closed=True)
-active_only = repository.list_issues(include_archived=False, include_closed=False)
+all_active = repository.list_issues(
+    include_archived=False, include_closed=True, project=current_project
+)
+active_only = repository.list_issues(
+    include_archived=False, include_closed=False, project=current_project
+)
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +234,10 @@ if role == "reviewer":
 
     # 내가 등록한 미해결
     my_open_entries = repository.list_issues(
-        author=name, include_closed=False, include_archived=False
+        author=name,
+        include_closed=False,
+        include_archived=False,
+        project=current_project,
     )
     my_open = _entries_to_dicts(my_open_entries)
     st.subheader(f"내가 등록한 미해결 ({len(my_open)})")
@@ -278,10 +290,14 @@ else:
 
     # 처리 큐 — requested + reopened (전체)
     requested_entries = repository.list_issues(
-        status=Status.requested, include_archived=False
+        status=Status.requested,
+        include_archived=False,
+        project=current_project,
     )
     reopened_entries = repository.list_issues(
-        status=Status.reopened, include_archived=False
+        status=Status.reopened,
+        include_archived=False,
+        project=current_project,
     )
     queue_entries = list(requested_entries) + list(reopened_entries)
     # updated_at desc 재정렬
@@ -299,7 +315,9 @@ else:
 
     # 외부 대기 중
     api_entries = repository.list_issues(
-        status=Status.api_check, include_archived=False
+        status=Status.api_check,
+        include_archived=False,
+        project=current_project,
     )
     api_check = _entries_to_dicts(api_entries)
     st.subheader(f"외부 대기 중 ({len(api_check)})")

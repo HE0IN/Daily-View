@@ -27,7 +27,7 @@ import streamlit as st
 from core import paths, repository
 from core.clock import KST, now
 from core.models import IndexEntry, Issue, Status
-from ui.auth import get_or_init_user, require_user
+from ui.auth import get_or_init_user, render_project_selector, require_user
 from ui.components import humanize_dt, render_count_metric
 from ui.theme import (
     STATUS_COLORS,
@@ -65,8 +65,12 @@ if _st_autorefresh is not None:
 
 get_or_init_user()
 require_user()  # 사용자 식별 보장만 (값 사용 X)
+current_project: str | None = render_project_selector()
 
-st.title("진척도 대시보드")
+if current_project:
+    st.title(f"진척도 대시보드 — {current_project}")
+else:
+    st.title("진척도 대시보드")
 st.caption(
     "지금 무엇을 하고 있는지, 카테고리별로 정체된 게 얼마나 있는지 한 눈에 봅니다."
 )
@@ -77,8 +81,9 @@ st.caption(
 # ---------------------------------------------------------------------------
 
 # 아카이브/완료 포함한 전체 항목 (카운트 정확성을 위해)
+# 사이드바 프로젝트 선택기가 켜져 있으면 해당 프로젝트만 집계 대상.
 all_entries: list[IndexEntry] = repository.list_issues(
-    include_archived=True, include_closed=True
+    include_archived=True, include_closed=True, project=current_project
 )
 
 if not all_entries:

@@ -173,7 +173,15 @@ _cat_display = (
     else "(없음)"
 )
 
-meta_c1, meta_c2, meta_c3 = st.columns([2, 1, 2])
+# 프로젝트 표시 — 미지정이면 회색 "(미지정)"
+_project_raw = issue.project if issue.project else None
+if _project_raw:
+    _proj_display_html = f"<b>{html.escape(_project_raw)}</b>"
+else:
+    _proj_display_html = '<span style="color:#9CA3AF;">(미지정)</span>'
+
+# 4 개 메타 컬럼: 등록 / 담당 / 프로젝트 / 카테고리
+meta_c1, meta_c2, meta_c3, meta_c4 = st.columns([2, 1, 1, 2])
 
 with meta_c1:
     st.markdown(
@@ -219,6 +227,56 @@ with meta_c2:
                     st.error(f"변경 실패: {exc}")
 
 with meta_c3:
+    sub_l, sub_r = st.columns([3, 2])
+    with sub_l:
+        st.markdown(
+            f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" '
+            f'title="{html.escape(_project_raw or "(미지정)")}">'
+            f"프로젝트: {_proj_display_html}</div>",
+            unsafe_allow_html=True,
+        )
+    with sub_r:
+        with st.popover("변경", use_container_width=True):
+            _all_projects = repository.list_projects()
+            _NONE_PROJ = "(선택 안 함)"
+            proj_options_d = [_NONE_PROJ] + _all_projects
+            current_idx = (
+                proj_options_d.index(issue.project)
+                if issue.project and issue.project in proj_options_d
+                else 0
+            )
+            sel = st.selectbox(
+                "기존",
+                options=proj_options_d,
+                index=current_idx,
+                key=f"detail_proj_sel_{item_id}",
+            )
+            new_text = st.text_input(
+                "새로 입력",
+                value=issue.project if issue.project and issue.project not in _all_projects else "",
+                key=f"detail_proj_text_{item_id}",
+                placeholder="비우면 위 선택값 사용",
+            )
+            if st.button(
+                "저장",
+                key=f"detail_proj_save_{item_id}",
+                type="primary",
+            ):
+                if new_text.strip():
+                    new_proj = new_text.strip()
+                elif sel == _NONE_PROJ:
+                    new_proj = None
+                else:
+                    new_proj = sel
+                try:
+                    repository.update_project(item_id, new_proj, user["name"])
+                    st.toast("프로젝트가 변경되었습니다", icon="✅")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"변경 실패: {exc}")
+
+with meta_c4:
     sub_l, sub_r = st.columns([4, 1])
     with sub_l:
         st.markdown(

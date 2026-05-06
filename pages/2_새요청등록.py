@@ -232,6 +232,47 @@ with left:
 # ---------------------------------------------------------------------------
 
 with right:
+    # ------- 프로젝트 (st.form 바깥, 카테고리 위) -------
+    st.markdown("##### 프로젝트")
+    st.caption(
+        "기존 프로젝트에서 고르거나 우측 칸에 직접 입력하세요. "
+        "직접 입력 칸이 채워져 있으면 그 값이 우선 사용됩니다. 비워둬도 무방."
+    )
+
+    projects = repository.list_projects()
+    default_proj = st.session_state.get("_current_project") or ""
+
+    proj_sel_col, proj_txt_col = st.columns([1, 1])
+    with proj_sel_col:
+        proj_options = [_NONE] + projects
+        proj_default_idx = (
+            proj_options.index(default_proj) if default_proj in proj_options else 0
+        )
+        proj_pick = st.selectbox(
+            "프로젝트 (기존)",
+            options=proj_options,
+            index=proj_default_idx,
+            key=f"new_proj_select_{nonce}",
+            label_visibility="collapsed",
+        )
+    with proj_txt_col:
+        proj_manual = st.text_input(
+            "프로젝트 (직접 입력)",
+            value=default_proj if default_proj and default_proj not in projects else "",
+            key=f"new_proj_input_{nonce}",
+            placeholder="새 프로젝트 이름",
+            label_visibility="collapsed",
+        )
+
+    # 우선순위: text_input > selectbox
+    proj_value: str | None
+    if proj_manual.strip():
+        proj_value = proj_manual.strip()
+    elif proj_pick == _NONE:
+        proj_value = None
+    else:
+        proj_value = proj_pick
+
     # ------- 카테고리 (st.form 바깥, 종속 selectbox 즉시 반영) -------
     st.markdown("##### 카테고리")
     st.caption(
@@ -345,6 +386,7 @@ if submit:
             category_l1=cat_l1,
             category_l2=cat_l2,
             category_l3=cat_l3,
+            project=proj_value,
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"등록 실패: {exc}")
@@ -353,6 +395,10 @@ if submit:
     # 다음 등록을 위해 직전 담당자 기억 (final_assignee 가 None 이면 그대로 유지)
     if final_assignee:
         st.session_state["_last_assignee"] = final_assignee
+
+    # 직전 프로젝트도 기억 — None 이면 기존 값 유지 (담당자와 동일 패턴)
+    if proj_value:
+        st.session_state["_current_project"] = proj_value
 
     # 2) 이미지 첨부 — 실패해도 이슈 자체는 살린다 (개별 메시지)
     image_errors: list[str] = []
