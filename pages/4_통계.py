@@ -5,7 +5,7 @@
 배치한다.
 
 섹션:
-    1) 핵심 KPI 4 개 (이번 주 완료 / 진행 중 / 대기 중 / SLA 위반)
+    1) 핵심 KPI 4 개 (이번 주 완료 / 진행 중 / 대기 중 / 정체)
     2) 카테고리(L1)별 진행 상황 — 정체 카운트 강조 + 누적 막대 차트
     3) 30 일 등록/완료 트렌드 — 라인 차트 + 지난 7 일 합계 캡션
     4) 정체된 항목 Top 5 — updated_at 오름차순
@@ -32,9 +32,7 @@ from ui.components import humanize_dt, render_count_metric
 from ui.theme import (
     STATUS_COLORS,
     STATUS_LABELS,
-    URGENCY_COLORS,
     URGENCY_LABELS,
-    is_sla_violated,
 )
 
 
@@ -189,14 +187,11 @@ for issue in issues:
 in_progress_count = int(df["status"].isin(IN_PROGRESS_STATUSES).sum())
 requested_count = int((df["status"] == Status.requested.value).sum())
 
-# SLA 위반 — 활성 항목만
-sla_violations = 0
-for _, row in df[active_mask].iterrows():
-    created_at = row["created_at"]
-    if not created_at:
-        continue
-    if is_sla_violated(row["urgency"], created_at, row["status"], now=NOW):
-        sla_violations += 1
+# 정체 — 활성 항목 중 마지막 갱신이 STALE_DAYS 일 이상 경과
+_stale_threshold: datetime = NOW - timedelta(days=STALE_DAYS)
+stale_count = int(
+    (df.loc[active_mask, "updated_at_dt"] < _stale_threshold).sum()
+)
 
 st.subheader("핵심 지표")
 k1, k2, k3, k4 = st.columns(4)
@@ -212,7 +207,7 @@ with k3:
     )
 with k4:
     render_count_metric(
-        "SLA 위반", sla_violations, color=URGENCY_COLORS["high"]
+        f"정체 ({STALE_DAYS}일 이상)", stale_count, color="#DC2626"
     )
 
 st.divider()
@@ -224,8 +219,7 @@ st.divider()
 
 st.subheader("카테고리별 진행 상황")
 st.caption(
-    f"'정체' = 활성 상태(완료/아카이브 제외)인데 마지막 갱신이 {STALE_DAYS}일 이상 지난 항목. "
-    "SLA 위반과는 다른 개념입니다 (SLA = 첫 응답 기준, 정체 = 마지막 갱신 기준)."
+    f"'정체' = 활성 상태(완료/아카이브 제외)인데 마지막 갱신이 {STALE_DAYS}일 이상 지난 항목."
 )
 
 STALE_CUTOFF: datetime = NOW - timedelta(days=STALE_DAYS)
