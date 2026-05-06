@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>paste_clipboard</title>
+  <style>
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+      color: #0F172A;
+      background: transparent;
+    }
+    #paste-area {
+      border: 2px dashed #3B82F6;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      cursor: text;
+      outline: none;
+      user-select: text;
+      background: #F8FAFC;
+      min-height: 100px;
+      transition: background-color .15s ease, border-color .15s ease;
+    }
+    #paste-area:focus,
+    #paste-area.is-focus { background: #EFF6FF; border-color: #1D4ED8; }
+    #label { font-size: 14px; }
+    #label code {
+      background: #E2E8F0;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    #status { margin-top: 8px; font-size: 12px; color: #475569; min-height: 16px; }
+    #preview {
+      max-width: 100%;
+      margin-top: 10px;
+      display: none;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div id="paste-area" tabindex="0" role="textbox" aria-label="paste image area"
+       contenteditable="true" spellcheck="false">
+    <div id="label">
+      <strong>여기를 클릭</strong>하고 <code>Ctrl+V</code> 로 이미지 붙여넣기
+    </div>
+    <div id="status">대기 중&hellip;</div>
+  </div>
+  <canvas id="preview"></canvas>
+
+  <script>
+    (function () {
+      // ---- Streamlit 컴포넌트 통신 프로토콜 (라이브러리 없이 직접 구현) ----
+      // 참고: streamlit ComponentInstance 는 자식이 보내는 메시지의 envelope 으로
+      // isStreamlitMessage===true 를 요구함. apiVersion: 1 사용.
+      function postToParent(msg) {
+        try {
+          window.parent.postMessage(Object.assign({ isStreamlitMessage: true }, msg), "*");
+        } catch (e) { /* parent 통신 실패는 무시 */ }
+      }
+      function sendReady() {
+        postToParent({ type: "streamlit:componentReady", apiVersion: 1 });
+      }
+      function setValue(value) {
+        postToParent({ type: "streamlit:setComponentValue", value: value, dataType: "json" });
+      }
+      function setFrameHeight(h) {
+        postToParent({ type: "streamlit:setFrameHeight", height: h });
+      }
+
+      // ---- 엘리먼트 ----
+      var area = document.getElementById('paste-area');
+      var labelEl = document.getElementById('label');
+      var status = document.getElementById('status');
+      var canvas = document.getElementById('preview');
+      var lastSentDataUrl = null;
+      var componentArgs = { label: null, height: 200 };
+
+      function refreshHeight() {
+        // 약간의 여유를 더해 스크롤바를 피한다.
+        setFrameHeight(document.body.scrollHeight + 20);
+      }
+
+      // contenteditable 이지만 텍스트 입력은 막고 paste 만 허용 (UX)
+      area.addEventListener('keydown', function (e) {
+        // Ctrl+V / Cmd+V 는 통과, 그 외 텍스트 입력 키는 차단
+        var isPaste = (e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V');
+        var isCopyShortcut = (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'a');
+        var isNav = ['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(e.key) !== -1;
+        if (!isPaste && !isCopyShortcut && !isNav) {
+          e.preventDefault();
+        }
+      });
+
+      area.addEventListener('focus', function () { area.classList.add('is-focus'); });
+      area.addEventListener('blur', function () { area.classList.remove('is-focus'); });
+      area.addEventListener('click', function () {
+        try { area.focus(); } catch (e) {}
+      });
+      // 초기 포커스 시도 (iframe 마운트 직후)
+      setTimeout(function () { try { area.focus(); } catch (e) {} }, 100);
+
+      area.addEventListener('paste', function (e) {
+        // 텍스트 / HTML 가 contenteditable 에 들어가는 것을 막는다.
+        e.preventDefault();
+        var cd = e.clipboardData || window.clipboardData;
+        if (!cd) {
+          status.textContent = 'clipboardData 사용 불가';
+          refreshHeight();
+          return;
+        }
+        var items = cd.items || [];
+        var handled = false;
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
+          if (item && item.type && item.type.indexOf('image/') === 0) {
+            var blob = item.getAsFile();
+            if (!blob) continue;
+            handled = true;
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+              var dataUrl = ev.target.result;
+              // 미리보기 그리기
+              var img = new Image();
+              img.onload = function () {
+                var maxW = 480;
+                var ratio = Math.min(1, maxW / img.width);
+                canvas.width = Math.round(img.width * ratio);
+                canvas.height = Math.round(img.height * ratio);
+                var ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.style.display = 'block';
+                refreshHeight();
+              };
+              img.src = dataUrl;
+              status.textContent = '인식 완료 (' + Math.round(blob.size / 1024) + ' KB) — Streamlit 폼에 자동 전달됩니다';
+              // ★ Streamlit Python 으로 dataURL 직접 전달!
+              if (dataUrl !== lastSentDataUrl) {
+                lastSentDataUrl = dataUrl;
+                setValue(dataUrl);
+              }
+            };
+            reader.onerror = function () {
+              status.textContent = '이미지 디코드 실패';
+              refreshHeight();
+            };
+            reader.readAsDataURL(blob);
+            break;
+          }
+        }
+        if (!handled) {
+          status.textContent = '클립보드에 이미지가 없습니다.';
+          refreshHeight();
+        }
+      });
+
+      // 부모로부터의 props/render 메시지 처리
+      window.addEventListener('message', function (e) {
+        var data = e.data || {};
+        if (data.type !== 'streamlit:render') return;
+        // args 에는 paste_clipboard() 의 kwargs (label, height) 가 들어옴.
+        var args = (data.args && typeof data.args === 'object') ? data.args : {};
+        if (typeof args.label === 'string' && args.label !== componentArgs.label) {
+          componentArgs.label = args.label;
+          // 기본 메시지는 HTML 형태이므로, label 만 텍스트로 교체.
+          labelEl.textContent = args.label;
+        }
+        if (typeof args.height === 'number' && args.height > 0) {
+          componentArgs.height = args.height;
+          // min-height 만 조정 (실제 frame height 는 콘텐츠에 맞춰 setFrameHeight 가 결정).
+          area.style.minHeight = (args.height - 60) + 'px';
+        }
+        refreshHeight();
+      });
+
+      // 컴포넌트 준비 완료 알림
+      sendReady();
+      // 초기 frame height
+      setTimeout(refreshHeight, 50);
+      // 폰트/이미지 로드 등으로 높이가 바뀔 수 있어 한 번 더.
+      window.addEventListener('load', refreshHeight);
+    })();
+  </script>
+</body>
+</html>

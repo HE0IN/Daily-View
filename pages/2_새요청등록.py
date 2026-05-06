@@ -25,6 +25,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image as PILImage
 
+from components.paste_clipboard import paste_clipboard
 from core import paths, repository
 from core.images import ALLOWED_EXT, MAX_FILE_MB, MAX_IMAGES_PER_ITEM
 from core.models import Role, Urgency
@@ -116,10 +117,25 @@ _PASTE_AREA_HTML = """
             canvas.style.display = 'block';
           };
           img.src = dataUrl;
-          // base64 textarea 에 채우기
+          // base64 textarea 에 채우고 즉시 보이게 + 자동 클립보드 복사 시도
           out.value = dataUrl;
           outWrap.style.display = 'block';
-          status.textContent = '이미지 인식 완료 (' + Math.round(blob.size/1024) + ' KB). 아래 base64 를 복사하세요.';
+          // 사용자 활성화(paste 이벤트) 직후라 execCommand('copy') 가 HTTP 에서도 동작
+          let copied = false;
+          try {
+            out.focus();
+            out.select();
+            // iOS 호환을 위해 setSelectionRange 도 호출
+            try { out.setSelectionRange(0, dataUrl.length); } catch (e2) {}
+            copied = document.execCommand('copy');
+          } catch (e) { copied = false; }
+          if (copied) {
+            status.textContent = '✅ 이미지 인식 + 클립보드 자동 복사 완료 (' +
+              Math.round(blob.size/1024) + ' KB). 아래 "클립보드 base64 입력" 칸에 Ctrl+V 만 하세요.';
+          } else {
+            status.textContent = '이미지 인식 완료 (' + Math.round(blob.size/1024) +
+              ' KB). 아래 base64 를 [base64 자동 선택] 누르고 Ctrl+C → 외부 칸에 Ctrl+V.';
+          }
         };
         reader.readAsDataURL(blob);
         break;
@@ -320,91 +336,94 @@ with left:
             label_visibility="collapsed",
         )
 
-    # 클립보드 붙여넣기 — 두 경로:
-    #   (a) streamlit-paste-button (HTTPS/localhost 전용, Async Clipboard API)
-    #   (b) HTTP+IP 호환 paste 위젯 (paste 이벤트 + base64 우회)
-    # 둘 다 설치/표시하고, 결과는 동일한 paste_image 변수에 합류시킨다.
+    # 클립보드 붙여넣기 — 정식 declare_component (HTTP+IP 환경 단일 클릭 동작).
+    # paste 이벤트 사용 → Secure Context 무관. iframe ↔ Python 양방향 통신을
+    # 통해 paste 결과 (base64 dataURL) 를 직접 받음 → 외부 textarea 복사 불필요.
     paste_image: PILImage.Image | None = None
     with img_col2:
         st.markdown("**클립보드 (Ctrl+V)**")
+        try:
+            paste_data_url = paste_clipboard(key=f"new_paste_v2_{nonce}")
+        except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
+            paste_data_url = None
+            st.caption(f"paste 컴포넌트 오류: {exc}")
+
+    # 정식 컴포넌트 결과 처리 — 중복 처리 방지 (같은 dataURL 이 rerun 마다 반복 반환됨)
+    _last_pasted_key = f"_last_pasted_v2_{nonce}"
+    if paste_data_url:
+        if st.session_state.get(_last_pasted_key) != paste_data_url:
+            st.session_state[_last_pasted_key] = paste_data_url
+            try:
+                _img, _, _ = _decode_pasted_b64(paste_data_url)
+                st.session_state[f"_decoded_paste_image_{nonce}"] = _img
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"paste 이미지 디코드 실패: {exc}")
+        # 이전에 디코드된 이미지를 paste_image 로 합류
+        paste_image = st.session_state.get(f"_decoded_paste_image_{nonce}")
+
+    # ----- Fallback (1): HTTPS/localhost 전용 streamlit-paste-button -----
+    # ----- Fallback (2): 2-단계 base64 paste (정식 컴포넌트가 안 동작할 때) -----
+    with st.expander("붙여넣기가 안 되시나요? 다른 방법", expanded=False):
+        st.caption(
+            "위 [클립보드] 영역이 동작하지 않으면 아래 두 방식 중 하나를 시도하세요. "
+            "보통 정식 컴포넌트가 모든 환경에서 동작하지만 만약을 위한 backup 입니다."
+        )
+
+        # Fallback 1: streamlit-paste-button (HTTPS/localhost 전용)
+        st.markdown("**A. streamlit-paste-button (HTTPS/localhost 환경)**")
         if _paste_button is None:
-            st.caption("`streamlit-paste-button` 미설치 — 아래 HTTP 호환 위젯을 사용하세요.")
+            st.caption("`streamlit-paste-button` 미설치.")
         else:
             try:
-                paste_result = _paste_button(
-                    label="붙여넣기 (HTTPS/localhost)",
-                    key=f"new_paste_{nonce}",
+                paste_result_fb = _paste_button(
+                    label="붙여넣기 (Async Clipboard API)",
+                    key=f"new_paste_fb_{nonce}",
                     text_color="#ffffff",
                     background_color="#3B82F6",
                     hover_background_color="#2563EB",
                     errors="ignore",
                 )
-                if paste_result is not None and getattr(paste_result, "image_data", None) is not None:
-                    paste_image = paste_result.image_data
-            except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
-                st.caption(f"붙여넣기 버튼 오류: {exc}")
-            st.caption("위 버튼은 HTTPS/localhost 전용. HTTP+IP 환경에선 아래 위젯을 사용.")
+                if (
+                    paste_result_fb is not None
+                    and getattr(paste_result_fb, "image_data", None) is not None
+                    and paste_image is None
+                ):
+                    paste_image = paste_result_fb.image_data
+            except Exception as exc:  # pragma: no cover
+                st.caption(f"버튼 오류: {exc}")
 
-    # ----- HTTP+IP 호환 paste 위젯 (좌측 컬럼 전체 폭) -----
-    # paste 이벤트 자체는 Secure Context 가 불필요 → 사내 IP+HTTP 환경에서 정상 동작.
-    # iframe 내부에서 클립보드 이미지를 base64 로 추출하여 textarea 에 노출 →
-    # 사용자가 그 base64 를 복사하여 외부 text_area 에 붙여넣으면 Python 이 디코드.
-    st.markdown("**HTTP+IP 호환 붙여넣기 (2-단계)**")
-    components.html(_PASTE_AREA_HTML, height=320, scrolling=False)
+        st.divider()
 
-    pasted_b64 = st.text_area(
-        "클립보드 base64 입력",
-        key=f"new_paste_b64_{nonce}",
-        height=80,
-        placeholder="위 영역에 Ctrl+V 한 후, 표시된 base64 를 복사해서 여기에 붙여넣으세요.",
-        help="data:image/...;base64,XXXX 형식 또는 순수 base64 모두 허용됩니다.",
-    )
-    decode_clicked = st.button(
-        "이미지 디코드",
-        key=f"new_paste_decode_{nonce}",
-        help="입력한 base64 를 이미지로 변환하여 미리보기/첨부 대기열에 추가합니다.",
-        use_container_width=True,
-    )
-
-    # 디코드한 결과를 session_state 에 보관 — rerun 사이에도 유지하여
-    # 폼 제출 시 함께 첨부될 수 있도록 한다.
-    _decoded_key = f"_decoded_paste_image_{nonce}"
-    if decode_clicked and (pasted_b64 or "").strip():
-        try:
-            _img, _, _ = _decode_pasted_b64(pasted_b64)
-            st.session_state[_decoded_key] = _img
-            st.success("이미지가 인식되었습니다. 아래 미리보기에서 확인하세요.")
-        except ValueError as exc:
-            st.error(f"디코드 실패: {exc}")
-            st.session_state.pop(_decoded_key, None)
-
-    # 디코드한 paste 이미지를 paste_image (기존 pipeline) 으로 합류
-    if paste_image is None and st.session_state.get(_decoded_key) is not None:
-        paste_image = st.session_state[_decoded_key]
-
-    with st.expander("HTTP+IP 환경에서의 사용법 / 안내"):
-        st.markdown(
-            "**핵심**: 이 페이지는 HTTP+IP (예: `http://192.168.x.x:8501`) 환경에서도 "
-            "클립보드 붙여넣기가 동작합니다. "
-            "기존 `streamlit-paste-button` 은 `navigator.clipboard.read()` (Async Clipboard API) "
-            "를 사용해 Secure Context (HTTPS/localhost) 가 필수이지만, "
-            "위의 **HTTP+IP 호환 위젯** 은 브라우저의 `paste` 이벤트를 사용하므로 "
-            "Secure Context 가 필요하지 않습니다.\n\n"
-            "**사용 흐름 (2-단계)**\n\n"
-            "1. 화면 캡처 (`Win+Shift+S` 또는 `PrtScn`) — 클립보드에 이미지가 들어감\n"
-            "2. 위 점선 영역(파란 점선)을 한 번 클릭하여 포커스 부여\n"
-            "3. `Ctrl+V` — 영역 내부에 미리보기 + base64 텍스트가 나타남\n"
-            "4. 표시된 base64 를 복사 (`base64 자동 선택` 버튼 → `Ctrl+C`)\n"
-            "5. 아래 *클립보드 base64 입력* 칸에 `Ctrl+V` (텍스트 붙여넣기는 항상 OK)\n"
-            "6. **이미지 디코드** 버튼 클릭 → 미리보기에 합류 → 폼 등록\n\n"
-            "**왜 2-단계인가?** Streamlit `components.html` 은 iframe 으로 격리되어 "
-            "iframe 내부 JS 가 직접 Python 으로 데이터를 보낼 수 없습니다 "
-            "(cross-origin postMessage 제약). 텍스트(base64) 한 번 더 붙여넣기를 "
-            "거치면 일반 `text_area` 의 입력 채널을 그대로 사용할 수 있습니다.\n\n"
-            "**대안**: PC 직접 접속 시 `http://localhost:8501` 또는 "
-            "`http://127.0.0.1:8501` 로 접속하면 Secure Context 로 인정되어 "
-            "위쪽 *HTTPS/localhost* 버튼이 즉시 동작합니다."
+        # Fallback 2: 자체 2-단계 base64 paste
+        st.markdown("**B. 2-단계 base64 paste (HTTP+IP 환경 backup)**")
+        st.caption(
+            "점선 영역 클릭 → Ctrl+V → 표시된 base64 자동선택 → Ctrl+C → "
+            "아래 칸에 Ctrl+V → [이미지 디코드]."
         )
+        components.html(_PASTE_AREA_HTML, height=520, scrolling=True)
+
+        pasted_b64 = st.text_area(
+            "클립보드 base64 입력",
+            key=f"new_paste_b64_{nonce}",
+            height=80,
+            placeholder="위 영역에 Ctrl+V 한 후, 표시된 base64 를 복사해서 여기에 붙여넣으세요.",
+        )
+        decode_clicked = st.button(
+            "이미지 디코드",
+            key=f"new_paste_decode_{nonce}",
+            use_container_width=True,
+        )
+        _decoded_key = f"_decoded_paste_image_b_{nonce}"
+        if decode_clicked and (pasted_b64 or "").strip():
+            try:
+                _img, _, _ = _decode_pasted_b64(pasted_b64)
+                st.session_state[_decoded_key] = _img
+                st.success("이미지가 인식되었습니다.")
+            except ValueError as exc:
+                st.error(f"디코드 실패: {exc}")
+                st.session_state.pop(_decoded_key, None)
+        if paste_image is None and st.session_state.get(_decoded_key) is not None:
+            paste_image = st.session_state[_decoded_key]
 
     # 미리보기
     preview_files: list = list(uploaded_files or [])
