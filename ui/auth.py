@@ -208,14 +208,24 @@ def render_project_selector(user_name: str | None = None) -> str | None:
 
     # 사용자 변경 감지 — 다른 사람으로 바뀌면 그 사람의 "마지막 등록 프로젝트"
     # 를 기본으로 새로 채운다 (프로젝트 풀은 글로벌이지만 default 는 사용자별).
-    user_changed = False
     if user_name is not None:
         last_user = st.session_state.get(_LAST_USER_KEY)
         if last_user != user_name:
-            user_changed = True
             st.session_state[_LAST_USER_KEY] = user_name
             # 사용자 바뀌었으니 이전 컨텍스트 무효화 → 아래에서 새로 채움
             st.session_state.pop(_PROJECT_KEY, None)
+            # widget key 도 갱신 (옛 사용자가 selectbox 에 set 한 값 무효화).
+            st.session_state["_proj_nonce"] = (
+                int(st.session_state.get("_proj_nonce", 0)) + 1
+            )
+
+    # widget key 동적 nonce — 추가/삭제/사용자 변경 시 nonce 증가시켜 selectbox
+    # 를 "첫 init" 상태로 다시 생성. 그래야 _proj_select 직접 수정 없이
+    # default index 로 새 선택을 강제할 수 있다 (Streamlit 위젯 key 는
+    # 인스턴스화 후 직접 변경 불가).
+    proj_nonce: int = int(st.session_state.setdefault("_proj_nonce", 0))
+    proj_select_key = f"_proj_select_{proj_nonce}"
+    proj_input_key = f"_proj_new_name_{proj_nonce}"
 
     with st.sidebar:
         st.divider()
@@ -241,8 +251,7 @@ def render_project_selector(user_name: str | None = None) -> str | None:
             if last_proj and last_proj in projects:
                 current = last_proj
                 st.session_state[_PROJECT_KEY] = last_proj
-                # selectbox 도 그 값으로 동기화
-                st.session_state["_proj_select"] = last_proj
+                # selectbox key 는 nonce 기반이라 직접 수정 X — index= 로 default 결정.
 
         # 현재 저장된 프로젝트가 옵션에 없으면 ALL(0) 로 fallback.
         default_idx = (
@@ -253,17 +262,17 @@ def render_project_selector(user_name: str | None = None) -> str | None:
             "현재",
             options=options,
             index=default_idx,
-            key="_proj_select",
+            key=proj_select_key,
             label_visibility="collapsed",
         )
 
         if pick == NEW:
             new_name = st.text_input(
                 "새 프로젝트 이름",
-                key="_proj_new_name",
+                key=proj_input_key,
                 placeholder="예: Daily View 앱",
             )
-            if st.button("추가", key="_proj_add"):
+            if st.button("추가", key=f"_proj_add_{proj_nonce}"):
                 cleaned = (new_name or "").strip()
                 if cleaned and user_name:
                     # 1) 사용자별 프로젝트 파일에 영속화 — 항목 0 건이라도 옵션에 노출
@@ -272,12 +281,12 @@ def render_project_selector(user_name: str | None = None) -> str | None:
                     except Exception as exc:  # noqa: BLE001
                         st.error(f"프로젝트 저장 실패: {exc}")
                         return None
-                    # 2) 현재 컨텍스트로 설정
+                    # 2) 현재 컨텍스트로 설정 — _PROJECT_KEY 만 set (selectbox 의
+                    #    widget key 는 위젯 인스턴스화 후라 직접 수정 X).
                     st.session_state[_PROJECT_KEY] = cleaned
-                    # 3) selectbox 값도 새 프로젝트로 갱신 — NEW 모드에서 빠져나오게
-                    st.session_state["_proj_select"] = cleaned
-                    # 4) 입력 칸 비우기
-                    st.session_state.pop("_proj_new_name", None)
+                    # 3) nonce 증가 → 다음 rerun 에 selectbox/text_input 이
+                    #    새 key 로 첫 init → default_idx 가 cleaned 를 가리킴.
+                    st.session_state["_proj_nonce"] = proj_nonce + 1
                     st.toast(f"프로젝트 '{cleaned}' 추가됨", icon="📁")
                     st.rerun()
                 elif not cleaned:
@@ -316,7 +325,9 @@ def render_project_selector(user_name: str | None = None) -> str | None:
                         try:
                             up_mod.remove_project_globally(selected)
                             st.session_state.pop(_PROJECT_KEY, None)
-                            st.session_state["_proj_select"] = ALL
+                            # selectbox widget key 직접 수정 X — nonce 증가로
+                            # 다음 rerun 에서 ALL(default_idx=0) 로 자연스럽게 fallback.
+                            st.session_state["_proj_nonce"] = proj_nonce + 1
                             st.session_state.pop(confirm_key, None)
                             st.toast(f"'{selected}' 제거됨", icon="🗑")
                             st.rerun()
