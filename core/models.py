@@ -116,6 +116,10 @@ class Issue(BaseModel):
     reviewer_confirmed_at: datetime | None = None
     tags: list[str] = []
     archived: bool = False
+    # 카테고리 3 단계 (대 / 중 / 소). 모두 optional — 기존 meta.json 도 그대로 호환.
+    category_l1: str | None = None
+    category_l2: str | None = None
+    category_l3: str | None = None
 
 
 class IndexEntry(BaseModel):
@@ -136,6 +140,10 @@ class IndexEntry(BaseModel):
     reviewer_confirmed: bool = False
     archived: bool = False
     tags: list[str] = []
+    # 카테고리 3 단계 — 목록 필터·표시용. Issue 와 동일 의미.
+    category_l1: str | None = None
+    category_l2: str | None = None
+    category_l3: str | None = None
 
     @classmethod
     def from_issue(
@@ -159,6 +167,9 @@ class IndexEntry(BaseModel):
             reviewer_confirmed=issue.reviewer_confirmed,
             archived=issue.archived,
             tags=list(issue.tags),
+            category_l1=issue.category_l1,
+            category_l2=issue.category_l2,
+            category_l3=issue.category_l3,
         )
 
 

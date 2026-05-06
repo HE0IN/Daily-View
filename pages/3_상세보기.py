@@ -239,6 +239,94 @@ else:
 # 태그
 # ---------------------------------------------------------------------------
 
+# 카테고리 표시 + 수정
+_cat_path_parts = [
+    p for p in (issue.category_l1, issue.category_l2, issue.category_l3) if p
+]
+_cat_display = " > ".join(html.escape(p) for p in _cat_path_parts) if _cat_path_parts else "(없음)"
+
+st.markdown(
+    f'<div style="font-size:0.95em;color:#374151;margin-top:8px;">'
+    f"카테고리: <b>{_cat_display}</b></div>",
+    unsafe_allow_html=True,
+)
+
+with st.expander("카테고리 수정", expanded=False):
+    _cat_tree_detail = repository.list_categories()
+    _NEW_C = "(새로 입력)"
+    _NONE_C = "(없음)"
+
+    # 폼 바깥에서 종속 selectbox — 폼 안이면 L1 변경이 즉시 L2 옵션에 반영 안 됨.
+    cdc1, cdc2, cdc3 = st.columns(3)
+
+    with cdc1:
+        l1_opts = [_NONE_C] + sorted(_cat_tree_detail.keys()) + [_NEW_C]
+        l1_default = (
+            l1_opts.index(issue.category_l1)
+            if issue.category_l1 and issue.category_l1 in l1_opts
+            else 0
+        )
+        l1_pick = st.selectbox(
+            "대분류", options=l1_opts, index=l1_default, key="cat_edit_l1"
+        )
+        if l1_pick == _NEW_C:
+            new_l1 = st.text_input("대분류 (새로 입력)", key="cat_edit_l1_new").strip() or None
+        elif l1_pick == _NONE_C:
+            new_l1 = None
+        else:
+            new_l1 = l1_pick
+
+    with cdc2:
+        sub2 = _cat_tree_detail.get(new_l1, {}) if new_l1 else {}
+        l2_opts = [_NONE_C] + sorted(sub2.keys()) + [_NEW_C]
+        l2_default = (
+            l2_opts.index(issue.category_l2)
+            if issue.category_l2 and issue.category_l2 in l2_opts
+            else 0
+        )
+        l2_pick = st.selectbox(
+            "중분류", options=l2_opts, index=l2_default, key="cat_edit_l2"
+        )
+        if l2_pick == _NEW_C:
+            new_l2 = st.text_input("중분류 (새로 입력)", key="cat_edit_l2_new").strip() or None
+        elif l2_pick == _NONE_C:
+            new_l2 = None
+        else:
+            new_l2 = l2_pick
+
+    with cdc3:
+        sub3 = sub2.get(new_l2, set()) if new_l2 else set()
+        l3_opts = [_NONE_C] + sorted(sub3) + [_NEW_C]
+        l3_default = (
+            l3_opts.index(issue.category_l3)
+            if issue.category_l3 and issue.category_l3 in l3_opts
+            else 0
+        )
+        l3_pick = st.selectbox(
+            "소분류", options=l3_opts, index=l3_default, key="cat_edit_l3"
+        )
+        if l3_pick == _NEW_C:
+            new_l3 = st.text_input("소분류 (새로 입력)", key="cat_edit_l3_new").strip() or None
+        elif l3_pick == _NONE_C:
+            new_l3 = None
+        else:
+            new_l3 = l3_pick
+
+    if st.button("카테고리 저장", key="cat_save_btn", type="primary"):
+        try:
+            repository.update_categories(
+                item_id,
+                category_l1=new_l1,
+                category_l2=new_l2,
+                category_l3=new_l3,
+                actor=user["name"],
+            )
+            st.toast("카테고리가 저장되었습니다", icon="✅")
+            st.rerun()
+        except Exception as exc:  # pragma: no cover
+            st.error(f"저장 실패: {exc}")
+
+
 st.markdown("### 태그")
 if issue.tags:
     # XSS 방지: 태그도 사용자 입력이므로 escape
@@ -272,22 +360,8 @@ with st.expander("태그 수정", expanded=False):
 
 
 # ---------------------------------------------------------------------------
-# 설명
+# 본문: 좌측 갤러리(1) + 우측 본문(2) 분할 레이아웃
 # ---------------------------------------------------------------------------
-
-st.markdown("### 설명")
-if issue.description.strip():
-    with st.container(border=True):
-        st.markdown(issue.description)
-else:
-    st.caption("설명이 없습니다.")
-
-
-# ---------------------------------------------------------------------------
-# 이미지 갤러리
-# ---------------------------------------------------------------------------
-
-st.markdown(f"### 스크린샷 ({len(issue.images)})")
 
 
 @st.dialog("이미지 보기", width="large")
@@ -300,40 +374,43 @@ def _show_image_dialog(rel_path: str, filename: str) -> None:
         st.error(f"파일을 찾을 수 없습니다: {rel_path}")
 
 
-if issue.images:
-    n_cols = min(4, len(issue.images))
-    cols = st.columns(n_cols)
-    for idx, img_ref in enumerate(issue.images):
-        col = cols[idx % n_cols]
-        with col:
-            thumb_rel = img_ref.thumb or img_ref.file
-            thumb_abs = _abs_image_path(thumb_rel)
-            if thumb_abs.exists():
-                st.image(str(thumb_abs), use_container_width=True)
+gallery_col, body_col = st.columns([1, 2], gap="large")
+
+# ---- 좌측: 스크린샷 + 이미지 추가 ------------------------------------------
+with gallery_col:
+    st.markdown(f"### 스크린샷 ({len(issue.images)})")
+    if issue.images:
+        # 좁은 컬럼이라 1열 세로 나열 — 원본을 컬럼 폭에 맞춰 자연스럽게 축소.
+        for idx, img_ref in enumerate(issue.images):
+            display_rel = img_ref.file
+            display_abs = _abs_image_path(display_rel)
+            if not display_abs.exists() and img_ref.thumb:
+                display_rel = img_ref.thumb
+                display_abs = _abs_image_path(display_rel)
+            if display_abs.exists():
+                st.image(str(display_abs), use_container_width=True)
             else:
-                st.caption("(썸네일 없음)")
+                st.caption("(이미지 파일 없음)")
             filename = Path(img_ref.file).name
             st.caption(filename)
             if st.button("원본 보기", key=f"view_img_{idx}", use_container_width=True):
                 _show_image_dialog(img_ref.file, filename)
-else:
-    st.caption("첨부된 이미지가 없습니다.")
-
-# 이미지 추가
-remaining = MAX_IMAGES_PER_ITEM - len(issue.images)
-with st.expander(
-    f"이미지 추가 (남은 슬롯: {remaining}/{MAX_IMAGES_PER_ITEM})",
-    expanded=False,
-):
-    if remaining <= 0:
-        st.warning(f"이미지 한도({MAX_IMAGES_PER_ITEM}장)에 도달했습니다.")
+            st.markdown("")  # 이미지 사이 간격
     else:
-        # nonce 로 위젯 초기화
-        upload_nonce = st.session_state.setdefault(f"upload_nonce_{item_id}", 0)
-        ext_list = sorted(e.lstrip(".") for e in ALLOWED_EXT)
+        st.caption("첨부된 이미지가 없습니다.")
 
-        col_upload, col_paste = st.columns([2, 1])
-        with col_upload:
+    # 이미지 추가 expander
+    remaining = MAX_IMAGES_PER_ITEM - len(issue.images)
+    with st.expander(
+        f"이미지 추가 (남은 슬롯: {remaining}/{MAX_IMAGES_PER_ITEM})",
+        expanded=False,
+    ):
+        if remaining <= 0:
+            st.warning(f"이미지 한도({MAX_IMAGES_PER_ITEM}장)에 도달했습니다.")
+        else:
+            upload_nonce = st.session_state.setdefault(f"upload_nonce_{item_id}", 0)
+            ext_list = sorted(e.lstrip(".") for e in ALLOWED_EXT)
+
             uploaded = st.file_uploader(
                 f"파일 업로드 (최대 {MAX_FILE_MB}MB, {','.join(ext_list)})",
                 accept_multiple_files=True,
@@ -344,6 +421,7 @@ with st.expander(
                 "업로드",
                 key=f"detail_upload_btn_{item_id}_{upload_nonce}",
                 type="primary",
+                use_container_width=True,
             ):
                 added = 0
                 for uf in uploaded[:remaining]:
@@ -362,7 +440,6 @@ with st.expander(
                     st.session_state[f"upload_nonce_{item_id}"] = upload_nonce + 1
                     st.rerun()
 
-        with col_paste:
             if _paste_image_button is not None:
                 paste_result = _paste_image_button(
                     label="클립보드 붙여넣기",
@@ -391,84 +468,80 @@ with st.expander(
                 )
 
 
-# ---------------------------------------------------------------------------
-# 코멘트 타임라인
-# ---------------------------------------------------------------------------
+# ---- 우측: 설명 + 타임라인 + 코멘트 작성 -----------------------------------
+with body_col:
+    # 설명
+    st.markdown("### 설명")
+    if issue.description.strip():
+        with st.container(border=True):
+            st.markdown(issue.description)
+    else:
+        st.caption("설명이 없습니다.")
 
-st.markdown("### 타임라인")
+    # 코멘트 타임라인
+    st.markdown("### 타임라인")
 
-comments: list[Comment] = repository.list_comments(item_id)
-# 시간순 정렬 (이미 append 순서가 시간순이지만 안전하게)
-comments.sort(key=lambda c: c.at)
+    comments: list[Comment] = repository.list_comments(item_id)
+    comments.sort(key=lambda c: c.at)
 
-if not comments:
-    st.caption("아직 코멘트가 없습니다.")
-else:
-    for comment in comments:
-        when = humanize(comment.at) if hasattr(comment.at, "year") else humanize_dt(comment.at)
-        abs_when = _abs_tooltip_dt(comment.at)
-        if comment.kind == "system":
-            # 시스템 코멘트: 점선 박스. body 안에 사용자 입력(담당자 이름 등)이
-            # 포함될 수 있으므로 반드시 escape.
-            st.markdown(
-                f'<div style="border:1px dashed #9CA3AF;padding:8px 12px;'
-                f"background:#F9FAFB;border-radius:6px;margin:6px 0;"
-                f'color:#6B7280;font-size:0.9em;">'
-                f'<span title="{html.escape(abs_when)}">⚙ 시스템 · {html.escape(when)}</span>'
-                f" · {html.escape(comment.body)}"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            role_color = _role_color(comment.role)
-            role_label = _role_label(comment.role)
-            safe_comment_author = html.escape(str(comment.author))
-            with st.container(border=True):
+    if not comments:
+        st.caption("아직 코멘트가 없습니다.")
+    else:
+        for comment in comments:
+            when = humanize(comment.at) if hasattr(comment.at, "year") else humanize_dt(comment.at)
+            abs_when = _abs_tooltip_dt(comment.at)
+            if comment.kind == "system":
                 st.markdown(
-                    f'<div style="font-size:0.9em;">'
-                    f'<b style="color:{role_color};">{safe_comment_author}</b> '
-                    f'<span style="color:#6B7280;">({role_label})</span> · '
-                    f'<span style="color:#6B7280;" title="{html.escape(abs_when)}">{html.escape(when)}</span>'
+                    f'<div style="border:1px dashed #9CA3AF;padding:8px 12px;'
+                    f"background:#F9FAFB;border-radius:6px;margin:6px 0;"
+                    f'color:#6B7280;font-size:0.9em;">'
+                    f'<span title="{html.escape(abs_when)}">⚙ 시스템 · {html.escape(when)}</span>'
+                    f" · {html.escape(comment.body)}"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-                # 일반 코멘트 본문은 마크다운 렌더 (unsafe_allow_html=False 기본).
-                # Streamlit 의 markdown 은 <script> 등을 sanitize. 단 javascript:
-                # 스킴 링크는 막아주지만 완전 신뢰는 어려움 — 추가 안전장치는
-                # 향후 별도 패치(예: bleach) 에서 진행.
-                st.markdown(comment.body)
+            else:
+                role_color = _role_color(comment.role)
+                role_label = _role_label(comment.role)
+                safe_comment_author = html.escape(str(comment.author))
+                with st.container(border=True):
+                    st.markdown(
+                        f'<div style="font-size:0.9em;">'
+                        f'<b style="color:{role_color};">{safe_comment_author}</b> '
+                        f'<span style="color:#6B7280;">({role_label})</span> · '
+                        f'<span style="color:#6B7280;" title="{html.escape(abs_when)}">{html.escape(when)}</span>'
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(comment.body)
 
+    # 코멘트 입력
+    st.markdown("### 코멘트 작성")
 
-# ---------------------------------------------------------------------------
-# 코멘트 입력
-# ---------------------------------------------------------------------------
-
-st.markdown("### 코멘트 작성")
-
-comment_nonce = st.session_state.setdefault(f"comment_nonce_{item_id}", 0)
-with st.form(key=f"comment_form_{item_id}_{comment_nonce}", clear_on_submit=True):
-    body = st.text_area(
-        "내용 (마크다운 지원)",
-        height=120,
-        key=f"comment_body_{item_id}_{comment_nonce}",
-        placeholder="작성 후 [등록] 버튼을 눌러주세요.",
-    )
-    submit_comment = st.form_submit_button("등록", type="primary")
-    if submit_comment:
-        if not body or not body.strip():
-            st.error("코멘트 내용을 입력해주세요.")
-        else:
-            try:
-                repository.add_comment(
-                    item_id, user["name"], user_role, body.strip()
-                )
-                st.toast("코멘트가 등록되었습니다", icon="✅")
-                st.session_state[f"comment_nonce_{item_id}"] = comment_nonce + 1
-                st.rerun()
-            except ValueError as exc:
-                st.error(str(exc))
-            except Exception as exc:  # pragma: no cover
-                st.error(f"코멘트 등록 실패: {exc}")
+    comment_nonce = st.session_state.setdefault(f"comment_nonce_{item_id}", 0)
+    with st.form(key=f"comment_form_{item_id}_{comment_nonce}", clear_on_submit=True):
+        body = st.text_area(
+            "내용 (마크다운 지원)",
+            height=120,
+            key=f"comment_body_{item_id}_{comment_nonce}",
+            placeholder="작성 후 [등록] 버튼을 눌러주세요.",
+        )
+        submit_comment = st.form_submit_button("등록", type="primary")
+        if submit_comment:
+            if not body or not body.strip():
+                st.error("코멘트 내용을 입력해주세요.")
+            else:
+                try:
+                    repository.add_comment(
+                        item_id, user["name"], user_role, body.strip()
+                    )
+                    st.toast("코멘트가 등록되었습니다", icon="✅")
+                    st.session_state[f"comment_nonce_{item_id}"] = comment_nonce + 1
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"코멘트 등록 실패: {exc}")
 
 
 # ---------------------------------------------------------------------------

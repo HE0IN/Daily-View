@@ -104,11 +104,15 @@ def create_issue(
     author_role: Role | str,
     assignee: str | None = None,
     tags: list[str] | None = None,
+    category_l1: str | None = None,
+    category_l2: str | None = None,
+    category_l3: str | None = None,
 ) -> Issue:
     """새 항목 생성.
 
     폴더/meta.json/빈 comments.jsonl 생성 → audit 로그 → 인덱스 갱신.
     pydantic 검증으로 잘못된 입력은 ValidationError 로 거부.
+    카테고리 3 단계는 모두 optional — 빈 문자열은 None 으로 정규화.
     """
     item_id = _new_item_id()
     item_root = paths.item_dir(item_id)
@@ -135,6 +139,9 @@ def create_issue(
         reviewer_confirmed_at=None,
         tags=list(tags or []),
         archived=False,
+        category_l1=(category_l1.strip() or None) if category_l1 else None,
+        category_l2=(category_l2.strip() or None) if category_l2 else None,
+        category_l3=(category_l3.strip() or None) if category_l3 else None,
     )
 
     # meta.json 작성 (생성이라 경합 가능성은 낮지만 일관성 위해 락 사용)
@@ -470,6 +477,82 @@ def update_tags(
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(issue, comments_count, images_count)
     return issue
+
+
+def update_categories(
+    item_id: str,
+    *,
+    category_l1: str | None,
+    category_l2: str | None,
+    category_l3: str | None,
+    actor: str,
+) -> Issue:
+    """카테고리 3 단계 일괄 변경. 빈 문자열은 None 으로 정규화.
+
+    하위 단계만 비우는 것은 허용 (예: l1 만 지정, l2/l3 None).
+    audit 로그 + 인덱스 갱신 + 시스템 코멘트.
+    """
+    def _norm(v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+    new_l1 = _norm(category_l1)
+    new_l2 = _norm(category_l2)
+    new_l3 = _norm(category_l3)
+
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        old_path = (issue.category_l1, issue.category_l2, issue.category_l3)
+        new_path = (new_l1, new_l2, new_l3)
+        if old_path == new_path:
+            return issue
+        issue.category_l1 = new_l1
+        issue.category_l2 = new_l2
+        issue.category_l3 = new_l3
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    def _fmt(p: tuple[str | None, str | None, str | None]) -> str:
+        parts = [x for x in p if x]
+        return " > ".join(parts) if parts else "(없음)"
+
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CATEGORIES,
+        item_id=item_id,
+        detail={"from": list(old_path), "to": list(new_path)},
+    )
+    _add_system_comment(item_id, f"카테고리 변경: {_fmt(old_path)} → {_fmt(new_path)}")
+
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(issue, comments_count, images_count)
+    return issue
+
+
+def list_categories() -> dict[str, dict[str, set[str]]]:
+    """현재까지 사용된 카테고리를 트리 구조로 반환.
+
+    구조: ``{l1: {l2: {l3, l3, ...}, ...}, ...}``.
+    빈 단계(None) 는 트리에서 제외 — 사용자가 새 등록 시 드롭다운에서
+    재사용할 수 있도록 하위 레벨 unique 추출 용도.
+
+    index.json 1 회 읽기로 끝남 (목록 캐시 활용).
+    """
+    tree: dict[str, dict[str, set[str]]] = {}
+    for entry in index_mod.read_index():
+        l1 = (entry.get("category_l1") or "").strip()
+        l2 = (entry.get("category_l2") or "").strip()
+        l3 = (entry.get("category_l3") or "").strip()
+        if not l1:
+            continue
+        l2_map = tree.setdefault(l1, {})
+        if l2:
+            l3_set = l2_map.setdefault(l2, set())
+            if l3:
+                l3_set.add(l3)
+    return tree
 
 
 # ---------------------------------------------------------------------------

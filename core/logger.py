@@ -31,6 +31,7 @@ CREATE_ISSUE = "create_issue"
 UPDATE_STATUS = "update_status"
 UPDATE_ASSIGNEE = "update_assignee"
 UPDATE_TAGS = "update_tags"
+UPDATE_CATEGORIES = "update_categories"
 ADD_COMMENT = "add_comment"
 UPLOAD_IMAGE = "upload_image"
 CONFIRM_REVIEW = "confirm_review"
@@ -101,6 +102,7 @@ __all__ = [
     "UPDATE_STATUS",
     "UPDATE_ASSIGNEE",
     "UPDATE_TAGS",
+    "UPDATE_CATEGORIES",
     "ADD_COMMENT",
     "UPLOAD_IMAGE",
     "CONFIRM_REVIEW",

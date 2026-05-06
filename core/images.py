@@ -31,8 +31,11 @@ MAX_FILE_MB: int = int(os.environ.get("MAX_UPLOAD_MB", "10"))
 MAX_IMAGES_PER_ITEM: int = int(os.environ.get("MAX_IMAGES_PER_ITEM", "20"))
 ALLOWED_EXT: set[str] = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
-_THUMB_MAX_WIDTH: int = 200
-_THUMB_QUALITY: int = 80
+# 썸네일은 카드/목록의 작은 영역에 보일 뿐 아니라 모바일/HiDPI 디스플레이에서
+# 2배 픽셀로 렌더되므로 800px 정도가 화질·용량 균형이 좋다.
+# (200px 였을 때는 카드 폭으로 늘리면 흐릿하게 보였음.)
+_THUMB_MAX_WIDTH: int = 800
+_THUMB_QUALITY: int = 85
 
 
 # ---------------------------------------------------------------------------

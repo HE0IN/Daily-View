@@ -76,6 +76,68 @@ for e in existing_entries:
 known_names.discard(name)  # 자기 자신은 후보에서 제외 (등록자=담당자 케이스 방지)
 assignee_options = ["(미지정)"] + sorted(known_names) + ["(직접 입력)"]
 
+# 직전에 지정한 담당자를 기본값으로 — "두 명만 쓰는" 환경에선 매번 같은 사람이라
+# 매 등록마다 다시 고르게 하는 건 번거롭다. 직전 값이 후보에 없으면 (미지정).
+_last_assignee = st.session_state.get("_last_assignee")
+if _last_assignee and _last_assignee in assignee_options:
+    _default_assignee_idx = assignee_options.index(_last_assignee)
+else:
+    _default_assignee_idx = 0  # (미지정)
+
+
+# ---------------------------------------------------------------------------
+# 카테고리 트리 (3 단계). 폼 바깥에 둬서 L1 → L2 → L3 종속 선택이 즉시 반영되게.
+# ---------------------------------------------------------------------------
+
+st.markdown("##### 카테고리")
+st.caption(
+    "기존 카테고리에서 고르거나 새로 입력하면 다음 등록부터 드롭다운에 추가됩니다. "
+    "비워둬도 무방."
+)
+
+_cat_tree = repository.list_categories()  # {l1: {l2: {l3,...}}}
+_NEW = "(새로 입력)"
+_NONE = "(없음)"
+
+
+def _category_picker(level_key: str, options: list[str]) -> tuple[str | None, str]:
+    """selectbox + 옵션이 새 입력일 때 text_input 으로 자유 입력 받기.
+
+    반환: (실제 값 or None, selectbox 표시값)
+    """
+    pick = st.selectbox(
+        level_key,
+        options=options,
+        key=f"new_cat_{level_key}_{nonce}",
+    )
+    if pick == _NEW:
+        new_val = st.text_input(
+            f"{level_key} (새로 입력)",
+            key=f"new_cat_{level_key}_input_{nonce}",
+            placeholder="새 카테고리 이름",
+        )
+        return ((new_val or "").strip() or None), pick
+    if pick == _NONE:
+        return None, pick
+    return pick, pick
+
+
+cat_c1, cat_c2, cat_c3 = st.columns(3)
+
+with cat_c1:
+    l1_options = [_NONE] + sorted(_cat_tree.keys()) + [_NEW]
+    cat_l1, l1_pick = _category_picker("대분류", l1_options)
+
+with cat_c2:
+    l2_subtree = _cat_tree.get(cat_l1, {}) if cat_l1 else {}
+    l2_options = [_NONE] + sorted(l2_subtree.keys()) + [_NEW]
+    cat_l2, l2_pick = _category_picker("중분류", l2_options)
+
+with cat_c3:
+    l3_set = l2_subtree.get(cat_l2, set()) if cat_l2 else set()
+    l3_options = [_NONE] + sorted(l3_set) + [_NEW]
+    cat_l3, l3_pick = _category_picker("소분류", l3_options)
+
 
 # ---------------------------------------------------------------------------
 # 이미지 입력 — 폼 바깥 (미리보기를 즉시 보이려면 form 바깥에 둬야 함)
@@ -171,7 +233,7 @@ with st.form(key=f"new_request_form_{nonce}", clear_on_submit=False):
         assignee_choice = st.selectbox(
             "담당 개발자",
             options=assignee_options,
-            index=0,
+            index=_default_assignee_idx,  # 직전 등록 담당자가 기본값 (없으면 미지정)
             key=f"new_assignee_select_{nonce}",
         )
 
@@ -240,10 +302,17 @@ if submit:
             author_role=author_role,
             assignee=final_assignee,
             tags=tags,
+            category_l1=cat_l1,
+            category_l2=cat_l2,
+            category_l3=cat_l3,
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"등록 실패: {exc}")
         st.stop()
+
+    # 다음 등록을 위해 직전 담당자 기억 (final_assignee 가 None 이면 그대로 유지)
+    if final_assignee:
+        st.session_state["_last_assignee"] = final_assignee
 
     # 2) 이미지 첨부 — 실패해도 이슈 자체는 살린다 (개별 메시지)
     image_errors: list[str] = []
