@@ -4,15 +4,9 @@
 카테고리는 우측 컬럼 안 / st.form 바깥에 두어 종속 selectbox 즉시 반영.
 폼 nonce 패턴으로 위젯 key 를 회전시켜 제출 후 입력 초기화.
 
-이미지 입력은 세 경로:
+이미지 입력은 두 경로:
   1) file_uploader (다중) — 항상 동작
-  2) streamlit_paste_button — HTTPS/localhost 만 동작 (Async Clipboard API)
-  3) HTTP+IP 호환 paste 위젯 — paste 이벤트 + base64 우회 (Secure Context 무관)
-
-3) 의 흐름 (2-step paste): iframe 안에서 Ctrl+V 로 paste 이벤트 발생 →
-JS 가 clipboardData.items 에서 이미지 blob 추출 → base64 문자열로 textarea 에 채움 →
-사용자가 그 base64 를 복사 → 외부 Streamlit text_area 에 붙여넣기 (텍스트 paste 는 OK) →
-Python 이 base64 → bytes → PIL.Image 로 디코딩하여 첨부.
+  2) 정식 paste_clipboard 컴포넌트 — HTTP+IP 환경에서도 단일 클릭 paste 동작
 """
 
 from __future__ import annotations
@@ -22,7 +16,6 @@ import io
 import re
 
 import streamlit as st
-import streamlit.components.v1 as components
 from PIL import Image as PILImage
 
 from components.paste_clipboard import paste_clipboard
@@ -31,140 +24,9 @@ from core.images import ALLOWED_EXT, MAX_FILE_MB, MAX_IMAGES_PER_ITEM
 from core.models import Role, Urgency
 from ui.auth import get_or_init_user, render_project_selector, require_user
 
-# streamlit_paste_button 은 옵션 의존성. 미설치/import 실패면 None.
-try:  # pragma: no cover - 환경 의존
-    from streamlit_paste_button import paste_image_button as _paste_button
-except Exception:  # noqa: BLE001
-    _paste_button = None  # type: ignore[assignment]
-
 
 # ---------------------------------------------------------------------------
-# HTTP+IP 호환 paste 위젯용 HTML — paste 이벤트는 Secure Context 가 불필요하므로
-# 사내 IP + HTTP 환경에서도 정상 동작한다. 단 iframe → outer Streamlit 으로의
-# 직접적 데이터 전달 채널이 없어, base64 텍스트를 사용자가 한 번 더 붙여넣는
-# "2-단계 paste" 패턴을 사용한다.
-# ---------------------------------------------------------------------------
-
-_PASTE_AREA_HTML = """
-<div id="paste-host" style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
-  <div id="paste-area" tabindex="0"
-       style="border:2px dashed #3B82F6; border-radius:8px; padding:14px;
-              text-align:center; cursor:text; outline:none; user-select:text;
-              background:#F8FAFC; min-height:70px;">
-    <strong>여기를 클릭</strong>하고 <code>Ctrl+V</code> 로 이미지 붙여넣기
-    <div id="paste-status" style="margin-top:6px; font-size:12px; color:#475569;">
-      대기 중&hellip;
-    </div>
-  </div>
-  <canvas id="paste-preview"
-          style="max-width:100%; margin-top:8px; display:none;
-                 border:1px solid #E2E8F0; border-radius:6px;"></canvas>
-  <div id="paste-output-wrap" style="display:none; margin-top:8px;">
-    <div style="font-size:12px; color:#475569; margin-bottom:4px;">
-      아래 base64 문자열을 <strong>전체 선택 (Ctrl+A) → 복사 (Ctrl+C)</strong> 한 뒤,
-      페이지 아래 <em>"클립보드 base64 입력"</em> 칸에 붙여넣고 <em>"이미지 디코드"</em> 버튼을 누르세요.
-    </div>
-    <textarea id="paste-b64" readonly
-              style="width:100%; height:84px; font-family:monospace; font-size:11px;
-                     border:1px solid #CBD5E1; border-radius:6px; padding:6px;
-                     background:#FFFFFF; resize:vertical;"></textarea>
-    <button id="paste-copy-btn" type="button"
-            style="margin-top:6px; padding:6px 12px; border:0; border-radius:6px;
-                   background:#3B82F6; color:#fff; cursor:pointer; font-size:13px;">
-      base64 자동 선택
-    </button>
-  </div>
-</div>
-<script>
-(function() {
-  const area = document.getElementById('paste-area');
-  const status = document.getElementById('paste-status');
-  const canvas = document.getElementById('paste-preview');
-  const outWrap = document.getElementById('paste-output-wrap');
-  const out = document.getElementById('paste-b64');
-  const copyBtn = document.getElementById('paste-copy-btn');
-
-  // 영역에 자동 포커스 (클릭 없이도 1차로 포커스를 잡아 둔다)
-  setTimeout(function(){ try { area.focus(); } catch (e) {} }, 100);
-
-  area.addEventListener('click', function(){ try { area.focus(); } catch (e) {} });
-
-  area.addEventListener('paste', function(e) {
-    const cd = e.clipboardData || window.clipboardData;
-    if (!cd) {
-      status.textContent = 'clipboardData 를 사용할 수 없는 브라우저입니다.';
-      return;
-    }
-    const items = cd.items || [];
-    let handled = false;
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type && item.type.indexOf('image/') === 0) {
-        const blob = item.getAsFile();
-        if (!blob) continue;
-        handled = true;
-        const reader = new FileReader();
-        reader.onload = function(ev) {
-          const dataUrl = ev.target.result;  // data:image/png;base64,...
-          // 미리보기 그리기
-          const img = new Image();
-          img.onload = function() {
-            const maxW = 480;
-            const ratio = Math.min(1, maxW / img.width);
-            canvas.width = Math.round(img.width * ratio);
-            canvas.height = Math.round(img.height * ratio);
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            canvas.style.display = 'block';
-          };
-          img.src = dataUrl;
-          // base64 textarea 에 채우고 즉시 보이게 + 자동 클립보드 복사 시도
-          out.value = dataUrl;
-          outWrap.style.display = 'block';
-          // 사용자 활성화(paste 이벤트) 직후라 execCommand('copy') 가 HTTP 에서도 동작
-          let copied = false;
-          try {
-            out.focus();
-            out.select();
-            // iOS 호환을 위해 setSelectionRange 도 호출
-            try { out.setSelectionRange(0, dataUrl.length); } catch (e2) {}
-            copied = document.execCommand('copy');
-          } catch (e) { copied = false; }
-          if (copied) {
-            status.textContent = '✅ 이미지 인식 + 클립보드 자동 복사 완료 (' +
-              Math.round(blob.size/1024) + ' KB). 아래 "클립보드 base64 입력" 칸에 Ctrl+V 만 하세요.';
-          } else {
-            status.textContent = '이미지 인식 완료 (' + Math.round(blob.size/1024) +
-              ' KB). 아래 base64 를 [base64 자동 선택] 누르고 Ctrl+C → 외부 칸에 Ctrl+V.';
-          }
-        };
-        reader.readAsDataURL(blob);
-        break;
-      }
-    }
-    if (!handled) {
-      status.textContent = '클립보드에 이미지가 없습니다. 화면 캡처 후 다시 시도하세요.';
-    }
-  });
-
-  copyBtn.addEventListener('click', function() {
-    out.focus();
-    out.select();
-    try {
-      // execCommand('copy') 는 HTTP 에서도 동작 (legacy API)
-      const ok = document.execCommand('copy');
-      copyBtn.textContent = ok ? '복사됨! (이제 아래 칸에 붙여넣기)' : '자동 선택만 완료 - Ctrl+C 로 복사';
-      setTimeout(function(){ copyBtn.textContent = 'base64 자동 선택'; }, 2500);
-    } catch (e) {
-      copyBtn.textContent = '자동 선택만 완료 - Ctrl+C 로 복사';
-    }
-  });
-})();
-</script>
-"""
-
-
-# ---------------------------------------------------------------------------
-# base64 데이터 URL 디코더 — 사용자가 외부 text_area 에 붙여넣은 문자열을
+# base64 데이터 URL 디코더 — 정식 paste_clipboard 컴포넌트가 반환한 dataURL 을
 # bytes / PIL.Image 로 변환한다. 잘못된 입력에 대해 ValueError 를 던진다.
 # ---------------------------------------------------------------------------
 
@@ -291,26 +153,21 @@ _NONE = "(선택 안 함)"
 
 
 def _resolve_category(level_key: str, options: list[str]) -> str | None:
-    """selectbox + text_input 를 한 줄에 나란히 표시.
+    """selectbox 를 위, text_input 을 아래로 배치 (좁은 컬럼에 적합).
 
     text_input 이 비어있지 않으면 그 값을, 아니면 selectbox 의 선택값을 사용.
     selectbox 에서 (선택 안 함) 을 고르고 text_input 도 비었으면 None.
     """
-    sel_col, txt_col = st.columns([1, 1])
-    with sel_col:
-        pick = st.selectbox(
-            f"{level_key} (기존)",
-            options=options,
-            key=f"new_cat_{level_key}_select_{nonce}",
-            label_visibility="collapsed",
-        )
-    with txt_col:
-        manual = st.text_input(
-            f"{level_key} (직접 입력)",
-            key=f"new_cat_{level_key}_input_{nonce}",
-            placeholder=f"{level_key} 직접 입력",
-            label_visibility="collapsed",
-        )
+    pick = st.selectbox(
+        f"{level_key} (기존)",
+        options=options,
+        key=f"new_cat_{level_key}_select_{nonce}",
+    )
+    manual = st.text_input(
+        f"{level_key} (직접 입력)",
+        key=f"new_cat_{level_key}_input_{nonce}",
+        placeholder="새 카테고리",
+    )
     manual_clean = (manual or "").strip()
     if manual_clean:
         return manual_clean
@@ -376,70 +233,6 @@ with left:
         # 이전에 디코드된 이미지를 paste_image 로 합류
         paste_image = st.session_state.get(f"_decoded_paste_image_{nonce}")
 
-    # ----- Fallback (1): HTTPS/localhost 전용 streamlit-paste-button -----
-    # ----- Fallback (2): 2-단계 base64 paste (정식 컴포넌트가 안 동작할 때) -----
-    with st.expander("붙여넣기가 안 되시나요? 다른 방법", expanded=False):
-        st.caption(
-            "위 [클립보드] 영역이 동작하지 않으면 아래 두 방식 중 하나를 시도하세요. "
-            "보통 정식 컴포넌트가 모든 환경에서 동작하지만 만약을 위한 backup 입니다."
-        )
-
-        # Fallback 1: streamlit-paste-button (HTTPS/localhost 전용)
-        st.markdown("**A. streamlit-paste-button (HTTPS/localhost 환경)**")
-        if _paste_button is None:
-            st.caption("`streamlit-paste-button` 미설치.")
-        else:
-            try:
-                paste_result_fb = _paste_button(
-                    label="붙여넣기 (Async Clipboard API)",
-                    key=f"new_paste_fb_{nonce}",
-                    text_color="#ffffff",
-                    background_color="#3B82F6",
-                    hover_background_color="#2563EB",
-                    errors="ignore",
-                )
-                if (
-                    paste_result_fb is not None
-                    and getattr(paste_result_fb, "image_data", None) is not None
-                    and paste_image is None
-                ):
-                    paste_image = paste_result_fb.image_data
-            except Exception as exc:  # pragma: no cover
-                st.caption(f"버튼 오류: {exc}")
-
-        st.divider()
-
-        # Fallback 2: 자체 2-단계 base64 paste
-        st.markdown("**B. 2-단계 base64 paste (HTTP+IP 환경 backup)**")
-        st.caption(
-            "점선 영역 클릭 → Ctrl+V → 표시된 base64 자동선택 → Ctrl+C → "
-            "아래 칸에 Ctrl+V → [이미지 디코드]."
-        )
-        components.html(_PASTE_AREA_HTML, height=520, scrolling=True)
-
-        pasted_b64 = st.text_area(
-            "클립보드 base64 입력",
-            key=f"new_paste_b64_{nonce}",
-            height=80,
-            placeholder="위 영역에 Ctrl+V 한 후, 표시된 base64 를 복사해서 여기에 붙여넣으세요.",
-        )
-        decode_clicked = st.button(
-            "이미지 디코드",
-            key=f"new_paste_decode_{nonce}",
-            use_container_width=True,
-        )
-        _decoded_key = f"_decoded_paste_image_b_{nonce}"
-        if decode_clicked and (pasted_b64 or "").strip():
-            try:
-                _img, _, _ = _decode_pasted_b64(pasted_b64)
-                st.session_state[_decoded_key] = _img
-                st.success("이미지가 인식되었습니다.")
-            except ValueError as exc:
-                st.error(f"디코드 실패: {exc}")
-                st.session_state.pop(_decoded_key, None)
-        if paste_image is None and st.session_state.get(_decoded_key) is not None:
-            paste_image = st.session_state[_decoded_key]
-
     # 미리보기
     preview_files: list = list(uploaded_files or [])
     preview_total = len(preview_files) + (1 if paste_image is not None else 0)
@@ -478,13 +271,16 @@ with right:
     _all_l1, _all_l2, _all_l3 = repository.flat_categories(_cat_tree)
 
     l1_options = [_NONE] + _all_l1
-    cat_l1 = _resolve_category("대분류", l1_options)
-
     l2_options = [_NONE] + _all_l2
-    cat_l2 = _resolve_category("중분류", l2_options)
-
     l3_options = [_NONE] + _all_l3
-    cat_l3 = _resolve_category("소분류", l3_options)
+
+    cat_c1, cat_c2, cat_c3 = st.columns(3, gap="small")
+    with cat_c1:
+        cat_l1 = _resolve_category("대분류", l1_options)
+    with cat_c2:
+        cat_l2 = _resolve_category("중분류", l2_options)
+    with cat_c3:
+        cat_l3 = _resolve_category("소분류", l3_options)
 
     # ------- 본 폼 -------
     st.markdown("##### 요청 내용")
@@ -496,10 +292,10 @@ with right:
             placeholder="간단명료한 한 줄 요약",
         )
         description_input = st.text_area(
-            "설명 *",
+            "설명",
             height=180,
             key=f"new_desc_{nonce}",
-            help="마크다운 지원. 재현 절차/기대 동작/실제 동작을 적어주세요.",
+            help="마크다운 지원. 재현 절차/기대 동작/실제 동작을 적어주세요. (선택)",
         )
 
         urgency_value = st.radio(
@@ -544,8 +340,8 @@ if submit:
     title = (title_input or "").strip()
     description = (description_input or "").strip()
 
-    if not title or not description:
-        st.error("제목과 설명은 필수입니다.")
+    if not title:
+        st.error("제목은 필수입니다.")
         st.stop()
 
     # 담당자 결정 — 미지정 옵션을 제거했으므로 항상 값이 있어야 한다.

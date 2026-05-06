@@ -124,9 +124,13 @@ def _role_color(role: str | Role) -> str:
 # 상단 헤더: 가로 컴팩트 레이아웃
 #   1행: [← 목록으로]                                              #ID
 #   2행: 제목(긴급도 배지) ............................. 상태 배지
-#   3행: 등록 정보 | 담당자(+변경 popover) | 카테고리(+수정 popover)
+#   3행: [등록자·담당자·변경] | [프로젝트·변경] | [카테고리·수정] | [→ 완료]
+#        - meta_c1 (4): 등록자/시간/담당자(붙어) + 담당자 변경 popover (붙어)
+#        - meta_c2 (2): 프로젝트 표시 + 변경 popover
+#        - meta_c3 (2): 카테고리 표시 + 수정 popover
+#        - meta_c4 (1): 우측 끝 [→ 완료] 버튼 (closed 전이 가능 시)
 #   4행: SLA 배너 (있을 때만)
-#   5행: 상태 변경 버튼 (가로 한 줄)
+#   5행: 상태 변경 버튼 (closed 제외, 가로 한 줄)
 # ---------------------------------------------------------------------------
 
 # --- 1행: 목록으로 / ID ----------------------------------------------------
@@ -180,24 +184,27 @@ if _project_raw:
 else:
     _proj_display_html = '<span style="color:#9CA3AF;">(미지정)</span>'
 
-# 4 개 메타 컬럼: 등록 / 담당 / 프로젝트 / 카테고리
-meta_c1, meta_c2, meta_c3, meta_c4 = st.columns([2, 1, 1, 2])
+# 사용자 role 미리 계산 — meta_c4 의 [→ 완료] 버튼 노출 판정에 필요
+try:
+    user_role = Role(user["role"])
+except Exception:
+    user_role = Role.reviewer
+
+# 4 개 메타 컬럼:
+#   c1 = 등록자 + 담당자 + [변경] (한 그룹 — 붙어 있어야 함)
+#   c2 = 프로젝트 + [변경]
+#   c3 = 카테고리 + [수정]
+#   c4 = [→ 완료] 버튼 (우측 끝, 짧게)
+meta_c1, meta_c2, meta_c3, meta_c4 = st.columns([4, 2, 2, 1], gap="medium")
 
 with meta_c1:
-    st.markdown(
-        f'<div style="font-size:0.9em;color:#374151;padding-top:6px;">'
-        f"등록: <b>{safe_author}</b> ({_role_label(issue.author_role)}) · "
-        f'<span title="{html.escape(created_abs)}">{created_human}</span>'
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-with meta_c2:
-    sub_l, sub_r = st.columns([3, 2])
+    sub_l, sub_r = st.columns([5, 1])
     with sub_l:
         st.markdown(
             f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            f"등록: <b>{safe_author}</b> ({_role_label(issue.author_role)}) · "
+            f'<span title="{html.escape(created_abs)}">{created_human}</span> · '
             f"담당: <b>{safe_assignee}</b></div>",
             unsafe_allow_html=True,
         )
@@ -226,7 +233,7 @@ with meta_c2:
                 except Exception as exc:  # pragma: no cover - 방어적
                     st.error(f"변경 실패: {exc}")
 
-with meta_c3:
+with meta_c2:
     sub_l, sub_r = st.columns([3, 2])
     with sub_l:
         st.markdown(
@@ -276,8 +283,8 @@ with meta_c3:
                 except Exception as exc:  # pragma: no cover
                     st.error(f"변경 실패: {exc}")
 
-with meta_c4:
-    sub_l, sub_r = st.columns([4, 1])
+with meta_c3:
+    sub_l, sub_r = st.columns([3, 2])
     with sub_l:
         st.markdown(
             f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
@@ -393,6 +400,32 @@ with meta_c4:
                 except Exception as exc:  # pragma: no cover
                     st.error(f"저장 실패: {exc}")
 
+with meta_c4:
+    # 우측 끝 [→ 완료] 버튼: closed 전이 가능한 사용자에게만 노출.
+    # "### 상태 변경" 섹션의 closed 버튼은 중복 노출 혼란 방지로 제거됨.
+    if Status.closed in allowed_transitions(issue.status, user_role):
+        # 라벨 위 빈 줄로 메타 텍스트 baseline 과 시각적 정렬.
+        st.markdown(
+            '<div style="height:0.25em;"></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            "→ 완료",
+            key="finish_btn",
+            type="primary",
+            use_container_width=True,
+        ):
+            try:
+                repository.update_status(
+                    item_id, Status.closed, user["name"], user_role
+                )
+                st.toast("완료 처리되었습니다", icon="✅")
+                st.rerun()
+            except WorkflowError as exc:
+                st.error(f"완료 처리 실패: {exc}")
+            except Exception as exc:  # pragma: no cover - 방어적
+                st.error(f"완료 처리 실패: {exc}")
+
 # --- 4행: SLA 배너 (있을 때만) ---------------------------------------------
 if is_sla_violated(issue.urgency.value, issue.created_at, issue.status.value):
     st.error("⚠ SLA 위반: 첫 응답 시간이 초과되었습니다.")
@@ -402,14 +435,11 @@ elif is_sla_warning(issue.urgency.value, issue.created_at, issue.status.value):
 
 # ---------------------------------------------------------------------------
 # 상태 변경 영역 (권한 기반) — 가로 한 줄 배치
+#   주의: closed 전이는 헤더 우측 [→ 완료] 버튼으로 분리 노출되므로
+#         이 섹션에서는 closed 만 제외한다 (중복 노출 방지).
 # ---------------------------------------------------------------------------
 
-try:
-    user_role = Role(user["role"])
-except Exception:
-    user_role = Role.reviewer
-
-allowed = allowed_transitions(issue.status, user_role)
+allowed = [s for s in allowed_transitions(issue.status, user_role) if s != Status.closed]
 if allowed:
     cols = st.columns(min(len(allowed), 4))
     for idx, next_status in enumerate(allowed):
@@ -420,7 +450,7 @@ if allowed:
                 btn_label,
                 key=f"transition_{next_status.value}",
                 use_container_width=True,
-                type="primary" if next_status == Status.closed else "secondary",
+                type="secondary",
             ):
                 try:
                     repository.update_status(

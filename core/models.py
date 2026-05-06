@@ -149,6 +149,11 @@ class IndexEntry(BaseModel):
     category_l3: str | None = None
     # 프로젝트 식별자 — 사이드바 프로젝트 선택용 필터.
     project: str | None = None
+    # 첫 첨부 이미지의 thumb 또는 file 상대 경로 (item_dir 기준).
+    # 카드에서 paths.item_dir(id) 와 결합해 절대경로로 변환.
+    first_image_thumb: str | None = None
+    # 길면 잘라낸 설명 미리보기 (예: 200자). 카드 노출용.
+    description_preview: str = ""
 
     @classmethod
     def from_issue(
@@ -158,6 +163,12 @@ class IndexEntry(BaseModel):
         images_count: int,
     ) -> IndexEntry:
         """Issue 와 카운트로부터 인덱스 엔트리 생성."""
+        first_image_thumb = None
+        if issue.images:
+            img0 = issue.images[0]
+            first_image_thumb = img0.thumb or img0.file
+        desc = issue.description or ""
+        description_preview = desc[:200]
         return cls(
             id=issue.id,
             title=issue.title,
@@ -176,6 +187,8 @@ class IndexEntry(BaseModel):
             category_l2=issue.category_l2,
             category_l3=issue.category_l3,
             project=issue.project,
+            first_image_thumb=first_image_thumb,
+            description_preview=description_preview,
         )
 
 

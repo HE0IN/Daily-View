@@ -85,12 +85,26 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     created_at = item.get("created_at", "")
     comments_count = int(item.get("comments_count", 0) or 0)
     images_count = int(item.get("images_count", 0) or 0)
-    thumb_path = item.get("thumb_path")
+
+    # 썸네일 절대 경로 변환: first_image_thumb (item_dir 기준 상대) → 절대.
+    # 옛 인덱스 호환을 위해 thumb_path 키도 fallback 으로 받음.
+    thumb_path: str | None = item.get("thumb_path")
+    thumb_rel = item.get("first_image_thumb")
+    if not thumb_path and thumb_rel and item_id:
+        try:
+            from pathlib import Path
+
+            from core import paths as _paths  # 지연 import (테스트 격리)
+
+            thumb_path = str(_paths.item_dir(item_id) / Path(thumb_rel))
+        except Exception:
+            thumb_path = None
 
     # XSS 방지: HTML로 렌더되는 사용자 입력은 모두 escape.
     safe_title = html.escape(str(title))
     safe_author = html.escape(str(author))
     safe_assignee = html.escape(str(assignee))
+    safe_desc = html.escape(str(item.get("description_preview") or ""))
 
     # SLA 판정 — 카드 좌측 색상 띠
     violated = bool(created_at) and is_sla_violated(urgency, created_at, status)
@@ -148,6 +162,16 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
                 f"</div>",
                 unsafe_allow_html=True,
             )
+
+            # 설명 미리보기 (2 줄 line-clamp)
+            if safe_desc:
+                st.markdown(
+                    f'<div style="font-size:0.8em;color:#475569;line-height:1.4;'
+                    f'margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;'
+                    f'-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;">'
+                    f"{safe_desc}</div>",
+                    unsafe_allow_html=True,
+                )
 
             # SLA 경고 라벨 (위반·임박만)
             if violated:
