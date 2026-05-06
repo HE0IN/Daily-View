@@ -32,7 +32,7 @@ def paste_clipboard(
     *,
     key: str | None = None,
     label: str = "여기를 클릭하고 Ctrl+V 로 이미지 붙여넣기",
-    height: int = 200,
+    height: int = 110,
 ) -> str | None:
     """클립보드 paste 컴포넌트.
 

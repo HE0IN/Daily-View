@@ -13,32 +13,25 @@
     #paste-area {
       border: 2px dashed #3B82F6;
       border-radius: 8px;
-      padding: 20px;
+      padding: 14px 16px;
       text-align: center;
       cursor: text;
       outline: none;
       user-select: text;
       background: #F8FAFC;
-      min-height: 100px;
+      min-height: 50px;
       transition: background-color .15s ease, border-color .15s ease;
     }
     #paste-area:focus,
     #paste-area.is-focus { background: #EFF6FF; border-color: #1D4ED8; }
-    #label { font-size: 14px; }
+    #label { font-size: 13px; }
     #label code {
       background: #E2E8F0;
       padding: 1px 6px;
       border-radius: 4px;
       font-size: 12px;
     }
-    #status { margin-top: 8px; font-size: 12px; color: #475569; min-height: 16px; }
-    #preview {
-      max-width: 100%;
-      margin-top: 10px;
-      display: none;
-      border: 1px solid #E2E8F0;
-      border-radius: 6px;
-    }
+    #status { margin-top: 6px; font-size: 12px; color: #475569; min-height: 14px; }
   </style>
 </head>
 <body>
@@ -49,7 +42,6 @@
     </div>
     <div id="status">대기 중&hellip;</div>
   </div>
-  <canvas id="preview"></canvas>
 
   <script>
     (function () {
@@ -75,9 +67,8 @@
       var area = document.getElementById('paste-area');
       var labelEl = document.getElementById('label');
       var status = document.getElementById('status');
-      var canvas = document.getElementById('preview');
       var lastSentDataUrl = null;
-      var componentArgs = { label: null, height: 200 };
+      var componentArgs = { label: null, height: 110 };
 
       function refreshHeight() {
         // 약간의 여유를 더해 스크롤바를 피한다.
@@ -123,21 +114,10 @@
             var reader = new FileReader();
             reader.onload = function (ev) {
               var dataUrl = ev.target.result;
-              // 미리보기 그리기
-              var img = new Image();
-              img.onload = function () {
-                var maxW = 480;
-                var ratio = Math.min(1, maxW / img.width);
-                canvas.width = Math.round(img.width * ratio);
-                canvas.height = Math.round(img.height * ratio);
-                var ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                canvas.style.display = 'block';
-                refreshHeight();
-              };
-              img.src = dataUrl;
-              status.textContent = '인식 완료 (' + Math.round(blob.size / 1024) + ' KB) — Streamlit 폼에 자동 전달됩니다';
+              // 미리보기는 컴포넌트 안에서 안 그림 — 외부 Streamlit 페이지의
+              // 메인 미리보기 영역에 자동 합류되므로 중복 회피.
+              status.textContent = '인식 완료 (' + Math.round(blob.size / 1024) + ' KB) — 아래 미리보기에 자동 추가됨';
+              refreshHeight();
               // ★ Streamlit Python 으로 dataURL 직접 전달!
               if (dataUrl !== lastSentDataUrl) {
                 lastSentDataUrl = dataUrl;
@@ -172,7 +152,7 @@
         if (typeof args.height === 'number' && args.height > 0) {
           componentArgs.height = args.height;
           // min-height 만 조정 (실제 frame height 는 콘텐츠에 맞춰 setFrameHeight 가 결정).
-          area.style.minHeight = (args.height - 60) + 'px';
+          area.style.minHeight = Math.max(40, args.height - 50) + 'px';
         }
         refreshHeight();
       });
