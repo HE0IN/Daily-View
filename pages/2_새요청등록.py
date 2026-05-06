@@ -270,5 +270,8 @@ if submit:
     # 3) 성공 토스트 + 폼 초기화 + 상세보기 이동
     st.toast("등록되었습니다", icon="✅")
     st.session_state["new_form_nonce"] = nonce + 1
+    # st.switch_page 가 query_params 를 유실하는 케이스가 있어
+    # session_state 로도 함께 전달 (상세보기에서 둘 다 체크).
+    st.session_state["_detail_item_id"] = issue.id
     st.query_params["id"] = issue.id
     st.switch_page("pages/3_상세보기.py")

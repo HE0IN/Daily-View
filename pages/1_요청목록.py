@@ -269,7 +269,11 @@ else:
                     key_prefix=f"list_p{current_page}_r{row_start}",
                 )
                 if clicked:
-                    st.query_params["id"] = item.get("id", "")
+                    # st.switch_page 가 query_params 를 유실하는 케이스가 있어
+                    # session_state 로도 함께 전달 (상세보기에서 둘 다 체크).
+                    _iid = item.get("id", "")
+                    st.session_state["_detail_item_id"] = _iid
+                    st.query_params["id"] = _iid
                     st.switch_page("pages/3_상세보기.py")
 
 # 페이지 컨트롤

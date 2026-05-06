@@ -47,11 +47,21 @@ paths.ensure_data_dirs()
 get_or_init_user()
 user = require_user()
 
-# query param 에서 항목 id 추출
+# 항목 ID 추출 — 두 경로 모두 지원:
+#  1) query_params["id"]  (직접 URL 입력 / 북마크 / 새로고침 후)
+#  2) session_state["_detail_item_id"]  (목록·등록 페이지에서 st.switch_page 로 전달.
+#     Streamlit 의 switch_page 가 직전에 세팅한 query_params 를 유실하는 케이스가
+#     있어 session_state 로 함께 전달하고 여기서 둘 다 시도한다.)
 _qp_id = st.query_params.get("id")
 if isinstance(_qp_id, list):  # 옛 streamlit 호환
     _qp_id = _qp_id[0] if _qp_id else None
-item_id: str | None = _qp_id
+item_id: str | None = _qp_id or st.session_state.get("_detail_item_id")
+
+# session_state 로 도착했다면 query_params 에도 반영 — 사용자가 새로고침해도 유지.
+if item_id and not _qp_id:
+    st.query_params["id"] = item_id
+# 한 번 사용한 session_state 슬롯은 정리 (다른 항목으로 이동 시 stale 방지).
+st.session_state.pop("_detail_item_id", None)
 
 if not item_id:
     st.warning("항목 ID가 지정되지 않았습니다. 요청 목록에서 항목을 선택해주세요.")

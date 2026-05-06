@@ -157,7 +157,11 @@ def _render_card_grid(items: list[dict], *, key_prefix: str, cols: int = 3) -> N
                     item, key_prefix=f"{key_prefix}_{row_start}"
                 )
                 if clicked:
-                    st.query_params["id"] = item.get("id", "")
+                    # st.switch_page 가 query_params 를 유실하는 케이스가 있어
+                    # session_state 로 ID 를 함께 전달한다 (상세보기에서 둘 다 체크).
+                    _iid = item.get("id", "")
+                    st.session_state["_detail_item_id"] = _iid
+                    st.query_params["id"] = _iid
                     st.switch_page("pages/3_상세보기.py")
         # 빈 칼럼은 그대로 둔다 (Streamlit 자동 처리).
 
