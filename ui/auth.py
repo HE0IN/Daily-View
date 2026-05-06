@@ -341,8 +341,8 @@ def render_project_selector(user_name: str | None = None) -> str | None:
                 # 1단계: 트리거 버튼
                 if item_count > 0:
                     st.caption(
-                        f"이 프로젝트에 {item_count} 건의 요청이 있어 삭제할 수 없습니다. "
-                        f"먼저 모든 요청을 보관 처리하세요."
+                        f"이 프로젝트에 활성 요청 {item_count} 건이 있어 삭제할 수 없습니다. "
+                        f"먼저 모두 [🗑 삭제(보관)] 처리하세요."
                     )
                 else:
                     if st.button(

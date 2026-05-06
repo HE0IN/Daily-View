@@ -639,8 +639,19 @@ def last_project_for_user(user: str) -> str | None:
     return latest_project
 
 
-def count_project_items(project: str) -> int:
-    """프로젝트의 전체 항목 수 (활성/보관 모두). 글로벌 삭제 가드용."""
+def count_project_items(project: str, *, include_archived: bool = False) -> int:
+    """프로젝트의 항목 수. 글로벌 삭제 가드용.
+
+    Parameters
+    ----------
+    project : str
+        대상 프로젝트 이름.
+    include_archived : bool, default False
+        ``False`` (기본): 활성 항목만 카운트. 보관(archive) 처리된 항목은 제외.
+        UI 라벨이 "삭제(보관)" 이라 사용자 시점에서 보관 == 삭제이며, 모두
+        보관 처리했으면 프로젝트 자체도 삭제 가능해야 한다.
+        ``True``: 활성 + 보관 모두 카운트 (감사/통계 용도).
+    """
     if not project:
         return 0
     project = project.strip()
@@ -648,8 +659,11 @@ def count_project_items(project: str) -> int:
         return 0
     n = 0
     for entry in index_mod.read_index():
-        if (entry.get("project") or "").strip() == project:
-            n += 1
+        if (entry.get("project") or "").strip() != project:
+            continue
+        if not include_archived and entry.get("archived"):
+            continue
+        n += 1
     return n
 
 
