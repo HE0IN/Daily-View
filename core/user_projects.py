@@ -5,7 +5,7 @@
 
 - 저장 위치: ``{data_dir}/user_projects.json``
 - 구조: ``{user_name: [project_name, ...], ...}``
-- 동시성: ``atomic_write_json`` + 파일 락.
+- 동시성: 파일 락 + 락 보유 unlocked write (재진입 데드락 회피).
 
 ``repository.list_projects(participant=name)`` 가 인덱스 기반 추출 결과와
 이 파일의 사용자별 프로젝트를 union 해서 반환한다.
@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from . import paths
-from .locking import atomic_write_json, file_lock
+from .locking import _write_json_unlocked, file_lock
 
 
 def _file_path() -> Path:
@@ -51,9 +51,8 @@ def _load_all() -> dict[str, list[str]]:
 def _save_all(data: dict[str, list[str]]) -> None:
     """전체 매핑을 atomic 으로 저장. 파일 락."""
     with file_lock(_lock_path()):
-        # _load_all → modify → write 패턴이라 외부 호출자 책임.
-        # 단순 atomic write 만 수행 (디렉토리 자동 생성).
-        atomic_write_json(_file_path(), data)
+        # 락 보유 중 — _write_json_unlocked 사용 (같은 lock 재획득 데드락 회피).
+        _write_json_unlocked(_file_path(), data)
 
 
 def list_user_projects(user: str) -> list[str]:
@@ -95,7 +94,7 @@ def remove_project_globally(project: str) -> None:
                 else:
                     data.pop(user, None)
         if changed:
-            atomic_write_json(_file_path(), data)
+            _write_json_unlocked(_file_path(), data)
 
 
 def add_user_project(user: str, project: str) -> None:
@@ -113,7 +112,7 @@ def add_user_project(user: str, project: str) -> None:
         if project not in existing:
             existing.append(project)
             data[user] = existing
-            atomic_write_json(_file_path(), data)
+            _write_json_unlocked(_file_path(), data)
 
 
 def remove_user_project(user: str, project: str) -> None:
@@ -135,7 +134,7 @@ def remove_user_project(user: str, project: str) -> None:
                 data[user] = existing
             else:
                 data.pop(user, None)
-            atomic_write_json(_file_path(), data)
+            _write_json_unlocked(_file_path(), data)
 
 
 __all__ = [
