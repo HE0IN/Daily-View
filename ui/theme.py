@@ -13,15 +13,17 @@ from datetime import datetime, timedelta
 # ---------------------------------------------------------------------------
 
 URGENCY_COLORS: dict[str, str] = {
-    "high": "#E53935",
-    "normal": "#FB8C00",
-    "low": "#43A047",
+    "critical": "#DC2626",  # 빨강 (긴급)
+    "high":     "#E53935",  # 진빨강 (상)
+    "normal":   "#FB8C00",  # 주황 (중)
+    "low":      "#43A047",  # 초록 (하)
 }
 
 URGENCY_LABELS: dict[str, str] = {
-    "high": "긴급",
-    "normal": "보통",
-    "low": "낮음",
+    "critical": "긴급",
+    "high": "상",
+    "normal": "중",
+    "low": "하",
 }
 
 # ---------------------------------------------------------------------------
@@ -55,12 +57,14 @@ STATUS_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 SLA_FIRST_RESPONSE: dict[str, timedelta] = {
+    "critical": timedelta(hours=1),
     "high": timedelta(hours=2),
     "normal": timedelta(hours=8),
     "low": timedelta(hours=24) * 3,
 }
 
 SLA_RESOLUTION: dict[str, timedelta | None] = {
+    "critical": timedelta(hours=4),
     "high": timedelta(hours=24),
     "normal": timedelta(hours=72),
     "low": None,

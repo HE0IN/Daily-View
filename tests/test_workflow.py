@@ -189,11 +189,12 @@ def test_status_labels_ko_specific_values() -> None:
 
 
 def test_urgency_labels_ko_are_complete() -> None:
-    """긴급도 한글 라벨이 정의되어 있다."""
+    """긴급도 한글 라벨이 정의되어 있다 — 4 단계 (critical/high/normal/low)."""
     assert URGENCY_LABELS_KO == {
-        "high": "긴급",
-        "normal": "보통",
-        "low": "낮음",
+        "critical": "긴급",
+        "high": "상",
+        "normal": "중",
+        "low": "하",
     }
 
 

@@ -295,15 +295,22 @@ with right:
             "설명",
             height=180,
             key=f"new_desc_{nonce}",
-            help="마크다운 지원. 재현 절차/기대 동작/실제 동작을 적어주세요. (선택)",
+            placeholder=(
+                "마크다운 지원 — 재현 절차 / 기대 동작 / 실제 동작 등을 적으면 좋습니다.\n"
+                "비워둬도 됩니다."
+            ),
         )
 
+        # 긴급도 4 단계 — 라벨은 ui.theme.URGENCY_LABELS 사용 (백엔드 갱신 반영)
+        from ui.theme import URGENCY_LABELS as _URGENCY_LABELS
+        _urg_options = [u.value for u in Urgency]
         urgency_value = st.radio(
             "긴급도 *",
-            options=[u.value for u in Urgency],
-            format_func=lambda v: {"high": "긴급", "normal": "보통", "low": "낮음"}[v],
+            options=_urg_options,
+            format_func=lambda v: _URGENCY_LABELS.get(v, v),
             horizontal=True,
-            index=1,  # 보통
+            # 4 단계 [critical, high, normal, low] 중 default 는 "중" (normal)
+            index=_urg_options.index("normal") if "normal" in _urg_options else 0,
             key=f"new_urgency_{nonce}",
         )
 
@@ -317,8 +324,7 @@ with right:
         assignee_manual = st.text_input(
             "담당자 직접 입력",
             key=f"new_assignee_manual_{nonce}",
-            placeholder="위에서 (직접 입력) 선택 시 사용",
-            help="후보 목록에 없는 새로운 담당자를 지정할 때만 입력하세요.",
+            placeholder="위에서 (직접 입력) 선택 시 — 후보 목록에 없는 새 담당자만 사용",
         )
 
         submit = st.form_submit_button("등록", type="primary", use_container_width=True)

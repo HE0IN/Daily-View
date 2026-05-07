@@ -673,17 +673,31 @@ def count_project_items(project: str, *, include_archived: bool = False) -> int:
     return n
 
 
-def list_categories() -> dict[str, dict[str, set[str]]]:
-    """현재까지 사용된 카테고리를 트리 구조로 반환.
+def list_categories(project: str | None = None) -> dict[str, dict[str, set[str]]]:
+    """현재까지 사용된 카테고리 트리.
 
-    구조: ``{l1: {l2: {l3, l3, ...}, ...}, ...}``.
-    빈 단계(None) 는 트리에서 제외 — 사용자가 새 등록 시 드롭다운에서
-    재사용할 수 있도록 하위 레벨 unique 추출 용도.
+    구조: ``{l1: {l2: {l3, l3, ...}, ...}, ...}``. 빈 단계(None) 는 트리에서
+    제외 — 사용자가 새 등록 시 드롭다운에서 재사용할 수 있도록 하위 레벨
+    unique 추출 용도. index.json 1 회 읽기로 끝남 (목록 캐시 활용).
 
-    index.json 1 회 읽기로 끝남 (목록 캐시 활용).
+    Parameters
+    ----------
+    project : str | None
+        지정 시 *그 프로젝트* 의 항목만 추출. None 이면 전체.
+
+    Notes
+    -----
+    archived=True 항목은 제외. UI 라벨이 "삭제(보관)" 이라
+    사용자 시점에서 보관 == 삭제 — 모두 보관 처리한 카테고리는 옵션에서
+    자동으로 사라진다 (= 명시적 카테고리 삭제 기능 불필요).
     """
     tree: dict[str, dict[str, set[str]]] = {}
     for entry in index_mod.read_index():
+        if entry.get("archived"):
+            continue  # archived 제외 — 보관 == 삭제
+        if project is not None:
+            if (entry.get("project") or "").strip() != project:
+                continue
         l1 = (entry.get("category_l1") or "").strip()
         l2 = (entry.get("category_l2") or "").strip()
         l3 = (entry.get("category_l3") or "").strip()

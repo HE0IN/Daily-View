@@ -23,9 +23,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Urgency(str, Enum):
-    """긴급도. docs/04_workflow.md 4.4 절."""
+    """긴급도. docs/04_workflow.md 4.4 절.
 
-    high = "high"
+    4 단계: critical (긴급) > high (상) > normal (중) > low (하).
+    기존 데이터의 ``high`` 는 의미가 "상" 으로 재해석된다 (라벨만 변경).
+    새 ``critical`` 은 신규 등록자만 사용.
+    """
+
+    critical = "critical"  # 신규: 긴급 (가장 높음)
+    high = "high"          # 라벨 "긴급" → "상" 변경
     normal = "normal"
     low = "low"
 

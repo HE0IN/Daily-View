@@ -114,7 +114,7 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     )
     stripe_w = 6 if (violated or warning) else 3
 
-    with st.container(border=True):
+    with st.container(border=True, height=220):
         # 좌측 작은 썸네일 + 우측 정보 (1:2 가로 분할)
         thumb_col, info_col = st.columns([1, 2], gap="small")
 

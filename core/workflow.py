@@ -66,9 +66,10 @@ STATUS_LABELS_KO: dict[Status, str] = {
 }
 
 URGENCY_LABELS_KO: dict[str, str] = {
-    "high": "긴급",
-    "normal": "보통",
-    "low": "낮음",
+    "critical": "긴급",
+    "high": "상",
+    "normal": "중",
+    "low": "하",
 }
 
 

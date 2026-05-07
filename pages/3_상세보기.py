@@ -676,7 +676,6 @@ elif _can_delete:
         if st.button(
             "🗑 삭제(보관)",
             key="archive_btn",
-            help="삭제 처리한 항목입니다. 목록에서는 '삭제(보관)된 항목 포함' 체크 시에만 보입니다.",
         ):
             st.session_state[_confirm_key] = True
             st.rerun()

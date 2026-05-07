@@ -638,3 +638,33 @@ def test_auto_archive_skips_recent_closed(
     n = repository.auto_archive_closed(days=14)
     assert n == 0
     assert repository.get_issue(issue.id).archived is False
+
+
+# ---------------------------------------------------------------------------
+# Urgency: critical (4 단계 확장)
+# ---------------------------------------------------------------------------
+
+
+def test_create_issue_with_critical_urgency(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """``urgency='critical'`` 로 생성 → meta.json/index 라운드트립 + 필터 동작."""
+    sample_issue_kwargs["urgency"] = "critical"
+    issue = repository.create_issue(**sample_issue_kwargs)
+
+    # enum 으로 정규화
+    assert issue.urgency == Urgency.critical
+    assert issue.urgency.value == "critical"
+
+    # meta.json 라운드트립
+    fetched = repository.get_issue(issue.id)
+    assert fetched.urgency == Urgency.critical
+
+    # 인덱스에도 critical 로 저장
+    raw = index_mod.read_index()
+    entry = next(e for e in raw if e["id"] == issue.id)
+    assert entry["urgency"] == "critical"
+
+    # urgency 필터링도 동작
+    crits = repository.list_issues(urgency="critical")
+    assert {e.id for e in crits} == {issue.id}

@@ -1,6 +1,6 @@
 """요청 목록 페이지 — docs/03_ui_design.md 3.4 절.
 
-필터(긴급도/상태/담당자/검색/정렬) + 카드 그리드(3×4 = 12) 페이지네이션.
+필터(긴급도/상태/담당자/검색/정렬/카테고리) + 카드 그리드(4×4 = 16) 페이지네이션.
 session_state 로 현재 페이지 추적, 필터 변경 시 1페이지로 리셋.
 """
 
@@ -137,6 +137,33 @@ with f5:
         key="list_sort",
     )
 
+# 카테고리 대분류 옵션 (현재 프로젝트로 좁힘).
+# repository.list_categories 의 시그니처가 project 인자를 받도록 갱신될 예정 —
+# 구버전(인자 없음)에서도 동작하도록 try/except 로 폴백.
+try:
+    cat_tree = repository.list_categories(project=current_project)
+except TypeError:
+    cat_tree = repository.list_categories()
+except Exception:  # noqa: BLE001
+    cat_tree = {}
+category_l1_options = ["(전체)"] + sorted(cat_tree.keys())
+
+f6, f7 = st.columns([1.5, 4.5])
+with f6:
+    # 직전에 선택된 값이 옵션에서 사라졌으면(프로젝트 전환 등) 기본값으로 복귀.
+    if (
+        st.session_state.get("list_category_l1")
+        and st.session_state["list_category_l1"] not in category_l1_options
+    ):
+        st.session_state["list_category_l1"] = "(전체)"
+    category_l1_choice = st.selectbox(
+        "카테고리(대분류)",
+        options=category_l1_options,
+        key="list_category_l1",
+    )
+with f7:
+    pass  # 향후 다른 필터용 여유 공간
+
 opt_col1, opt_col2 = st.columns([1, 1])
 with opt_col1:
     include_closed = st.checkbox(
@@ -164,6 +191,7 @@ filter_key = (
     include_closed,
     include_archived,
     current_project,
+    category_l1_choice,
 )
 if prev_filter_key is not None and prev_filter_key != filter_key:
     st.session_state["list_page"] = 1
@@ -218,12 +246,18 @@ def _fetch_entries() -> list[dict]:
             if (e.status.value if hasattr(e.status, "value") else str(e.status))
             in status_filter_post
         ]
+    # 카테고리 대분류 필터 (list_issues 가 카테고리 인자를 받지 않으므로 후처리).
+    if category_l1_choice and category_l1_choice != "(전체)":
+        entries = [
+            e for e in entries if (e.category_l1 or "") == category_l1_choice
+        ]
 
     items = [e.model_dump(mode="json") for e in entries]
 
     # 정렬
     if sort_choice == "긴급도순":
-        urgency_order = {"high": 0, "normal": 1, "low": 2}
+        # 4 단계: critical(긴급) > high(상) > normal(중) > low(하).
+        urgency_order = {"critical": 0, "high": 1, "normal": 2, "low": 3}
         items.sort(
             key=lambda d: (
                 urgency_order.get(d.get("urgency", ""), 9),
