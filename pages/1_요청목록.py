@@ -312,6 +312,8 @@ st.caption(f"총 {total}건 · {current_page}/{total_pages} 페이지")
 if total == 0:
     st.info("조건에 맞는 항목이 없습니다.")
 else:
+    # 같은 행 카드들이 가장 긴 카드 높이로 stretch — 한 번만 주입.
+    components.render_card_grid_css()
     cols_per_row = 4  # 카드를 컴팩트하게 줄였으니 한 행에 더 많이.
     for row_start in range(0, len(page_items), cols_per_row):
         row = page_items[row_start : row_start + cols_per_row]

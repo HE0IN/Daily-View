@@ -114,7 +114,11 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     )
     stripe_w = 6 if (violated or warning) else 3
 
-    with st.container(border=True, height=220):
+    # height 인자 제거: 고정 220px 는 짧은 카드는 빈 공간, 긴 카드는 스크롤이
+    # 생기는 문제 — 같은 행에서 가장 긴 카드의 자연스러운 높이로 통일하기 위해
+    # 높이는 콘텐츠가 결정. 같은 행의 카드들이 동일 높이로 stretch 되도록
+    # 페이지 측 (app.py / pages/1) 에서 _grid_stretch_css() 를 1 회 주입한다.
+    with st.container(border=True):
         # 좌측 작은 썸네일 + 우측 정보 (1:2 가로 분할)
         thumb_col, info_col = st.columns([1, 2], gap="small")
 
@@ -173,15 +177,21 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
                     unsafe_allow_html=True,
                 )
 
-            # SLA 경고 라벨 (위반·임박만)
+            # SLA 경고 라벨 (위반·임박만). 없을 때도 같은 자리 차지하도록 invisible
+            # spacer — 행 높이 변동 폭 줄이기.
             if violated:
                 st.markdown(
-                    f'<div style="margin-top:2px;">{render_badge("SLA 위반", "#DC2626")}</div>',
+                    f'<div style="margin-top:2px;height:22px;">{render_badge("SLA 위반", "#DC2626")}</div>',
                     unsafe_allow_html=True,
                 )
             elif warning:
                 st.markdown(
-                    f'<div style="margin-top:2px;">{render_badge("SLA 임박", "#F59E0B")}</div>',
+                    f'<div style="margin-top:2px;height:22px;">{render_badge("SLA 임박", "#F59E0B")}</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<div style="margin-top:2px;height:22px;"></div>',
                     unsafe_allow_html=True,
                 )
 
@@ -192,6 +202,49 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
             use_container_width=True,
         )
     return clicked
+
+
+# ---------------------------------------------------------------------------
+# CSS 헬퍼 — 페이지 1 회 주입으로 같은 행 카드들이 같은 높이로 stretch 되게
+# ---------------------------------------------------------------------------
+
+
+def render_card_grid_css() -> None:
+    """카드 그리드를 그리는 페이지에서 1 회 호출. 같은 행의 ``st.columns``
+    내부 카드 컨테이너가 자연스럽게 동일 높이로 늘어나도록 flex stretch.
+
+    Streamlit 의 columns DOM (data-testid="stHorizontalBlock" / "column" /
+    "stVerticalBlock") 을 의도적으로 타겟. Streamlit 버전이 바뀌면
+    selector 가 깨질 수 있어 함수 한 곳에 모아두고 fragile 함을 명시.
+    """
+    st.markdown(
+        """
+        <style>
+        /* 같은 행의 columns 가 stretch (가장 긴 카드 높이에 맞춤) */
+        div[data-testid="stHorizontalBlock"] {
+            align-items: stretch;
+        }
+        /* 각 column 이 세로로 100% 채우게 */
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+            display: flex;
+            flex-direction: column;
+        }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        /* 카드 내부의 stVerticalBlock 도 stretch — st.container(border=True) 안 콘텐츠 영역 */
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]
+            div[data-testid="stVerticalBlockBorderWrapper"] {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_count_metric(
@@ -216,6 +269,7 @@ def render_count_metric(
 # 상태/긴급도 라벨도 외부에서 재사용 가능하도록 노출
 __all__ = [
     "render_card",
+    "render_card_grid_css",
     "render_badge",
     "render_count_metric",
     "humanize_dt",
