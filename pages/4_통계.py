@@ -394,3 +394,186 @@ else:
     st.dataframe(
         pd.DataFrame(rows), width="stretch", hide_index=True
     )
+
+st.divider()
+
+
+# ---------------------------------------------------------------------------
+# 5) 카테고리 상세 분석 — 긴급도 매트릭스 / 상태 누적 / 평균 처리·정체율·재요청
+# ---------------------------------------------------------------------------
+
+st.subheader("카테고리 상세 분석")
+st.caption(
+    "카테고리(L1) 별로 긴급도 분포, 상태 분포, 평균 처리 시간/정체율/재요청을 확인합니다. "
+    "미분류 항목은 통계에서 제외합니다."
+)
+
+
+URGENCY_ORDER: list[str] = ["critical", "high", "normal", "low"]
+STATUS_ORDER_FOR_STACK: list[str] = [
+    "requested",
+    "in_progress",
+    "api_check",
+    "reviewing",
+    "reopened",
+    "closed",
+]
+
+
+@st.cache_data(ttl=30)
+def _build_category_detail(records_payload: list[dict]) -> dict[str, pd.DataFrame]:
+    """카테고리(L1)별 상세 통계 3 종을 한 번에 계산.
+
+    반환:
+        - "urgency_matrix": L1 × 긴급도 카운트 (라벨 컬럼)
+        - "status_stack": L1 × 상태 카운트 (라벨 컬럼)
+        - "summary": L1 별 평균 처리 시간(시간) / 정체율 / 재요청 횟수
+    """
+    # 카테고리 → 긴급도 카운트
+    urgency_counts: dict[str, dict[str, int]] = defaultdict(
+        lambda: {u: 0 for u in URGENCY_ORDER}
+    )
+    # 카테고리 → 상태 카운트
+    status_counts: dict[str, dict[str, int]] = defaultdict(
+        lambda: {s: 0 for s in STATUS_ORDER_FOR_STACK}
+    )
+    # 카테고리 → 처리 시간(초) 리스트 / 활성·정체 카운트 / 재요청 카운트
+    proc_secs: dict[str, list[float]] = defaultdict(list)
+    active_cnt: dict[str, int] = defaultdict(int)
+    stale_cnt: dict[str, int] = defaultdict(int)
+    reopen_cnt: dict[str, int] = defaultdict(int)
+    total_cnt: dict[str, int] = defaultdict(int)
+
+    for data in records_payload:
+        try:
+            issue = Issue.model_validate(data)
+        except Exception:  # noqa: BLE001
+            continue
+        l1 = (issue.category_l1 or "").strip()
+        if not l1:
+            # 미분류 — 통계에서 제외
+            continue
+
+        total_cnt[l1] += 1
+
+        # 긴급도 분포 — done(레거시) 등 4 값에 포함된 것만 집계
+        u = issue.urgency.value
+        if u in urgency_counts[l1]:
+            urgency_counts[l1][u] += 1
+
+        # 상태 분포 — done 은 closed 로 합산 (레거시 호환)
+        s = issue.status.value
+        if s == Status.done.value:
+            status_counts[l1]["closed"] += 1
+        elif s in status_counts[l1]:
+            status_counts[l1][s] += 1
+
+        # 평균 처리 시간 (closed 항목만)
+        is_closed_like = issue.archived or s in (Status.closed.value, Status.done.value)
+        if is_closed_like:
+            ca = _closed_at(issue)
+            if ca is not None and issue.created_at is not None:
+                delta = (ca - issue.created_at).total_seconds()
+                if delta >= 0:
+                    proc_secs[l1].append(delta)
+
+        # 활성 / 정체 (정체율 계산용)
+        if (s in ACTIVE_STATUSES) and (not issue.archived) and (s != Status.closed.value):
+            active_cnt[l1] += 1
+            if issue.updated_at <= STALE_CUTOFF:
+                stale_cnt[l1] += 1
+
+        # 재요청 횟수: status_history 안에 reopened 가 한 번이라도 등장하는 항목 수
+        if any(ev.status == Status.reopened for ev in issue.status_history):
+            reopen_cnt[l1] += 1
+
+    if not total_cnt:
+        return {
+            "urgency_matrix": pd.DataFrame(),
+            "status_stack": pd.DataFrame(),
+            "summary": pd.DataFrame(),
+        }
+
+    cats: list[str] = sorted(total_cnt.keys(), key=lambda k: (-total_cnt[k], k))
+
+    # 긴급도 매트릭스 — 라벨 컬럼명, 0 은 빈 문자열로
+    urg_rows = []
+    for c in cats:
+        row: dict[str, object] = {"카테고리": c}
+        for u in URGENCY_ORDER:
+            n = urgency_counts[c][u]
+            row[URGENCY_LABELS.get(u, u)] = n if n > 0 else ""
+        row["전체"] = total_cnt[c]
+        urg_rows.append(row)
+    urgency_matrix = pd.DataFrame(urg_rows)
+
+    # 상태 누적 — 인덱스가 카테고리, 컬럼은 한글 라벨
+    stk_rows = []
+    for c in cats:
+        row = {"카테고리": c}
+        for s in STATUS_ORDER_FOR_STACK:
+            row[STATUS_LABELS.get(s, s)] = status_counts[c][s]
+        stk_rows.append(row)
+    status_stack = pd.DataFrame(stk_rows).set_index("카테고리")
+
+    # 요약 — 평균 처리 / 정체율 / 재요청
+    sum_rows = []
+    for c in cats:
+        secs = proc_secs[c]
+        avg_h = round(sum(secs) / len(secs) / 3600.0, 1) if secs else None
+        if active_cnt[c] > 0:
+            stall_pct = round(stale_cnt[c] / active_cnt[c] * 100.0, 1)
+        else:
+            stall_pct = 0.0
+        sum_rows.append(
+            {
+                "카테고리": c,
+                "전체": total_cnt[c],
+                "평균 처리 (시간)": avg_h if avg_h is not None else "-",
+                "정체 (활성 중 %)": f"{stall_pct}%"
+                if active_cnt[c] > 0
+                else "-",
+                "재요청 횟수": reopen_cnt[c],
+            }
+        )
+    summary = pd.DataFrame(sum_rows)
+
+    return {
+        "urgency_matrix": urgency_matrix,
+        "status_stack": status_stack,
+        "summary": summary,
+    }
+
+
+_detail = _build_category_detail(_issue_payload)
+
+if _detail["summary"].empty:
+    st.caption("분류된(L1 카테고리 있음) 항목이 아직 없습니다.")
+else:
+    # ---- § 5.1 카테고리 × 긴급도 매트릭스 ----
+    st.markdown("**카테고리 × 긴급도 매트릭스**")
+    st.caption("0 인 셀은 빈 칸으로 표시.")
+    st.dataframe(
+        _detail["urgency_matrix"], width="stretch", hide_index=True
+    )
+
+    # ---- § 5.2 카테고리 × 상태 누적 막대 ----
+    st.markdown("**카테고리 × 상태 분포 (누적 막대)**")
+    # 모두 0 인 컬럼은 차트 가독성을 위해 제거
+    _stk = _detail["status_stack"]
+    _stk = _stk.loc[:, (_stk.sum(axis=0) > 0)]
+    if _stk.empty:
+        st.caption("표시할 상태 데이터가 없습니다.")
+    else:
+        st.bar_chart(_stk)
+
+    # ---- § 5.3 평균 처리 / 정체율 / 재요청 요약 ----
+    st.markdown("**카테고리별 평균 처리 시간 / 정체율 / 재요청**")
+    st.caption(
+        f"평균 처리: 완료(closed/archived) 항목의 (closed_at − created_at) 평균 시간. "
+        f"정체율: 활성 중 마지막 갱신이 {STALE_DAYS}일 이상 지난 비율. "
+        "재요청 횟수: status_history 에 reopened 가 한 번이라도 등장한 항목 수."
+    )
+    st.dataframe(
+        _detail["summary"], width="stretch", hide_index=True
+    )

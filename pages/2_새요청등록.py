@@ -15,7 +15,7 @@ import streamlit as st
 from PIL import Image as PILImage
 
 from components.paste_clipboard import paste_clipboard
-from core import paths, repository
+from core import paths, project_settings as ps_mod, repository
 from core.images import (
     ALLOWED_EXT,
     MAX_FILE_MB,
@@ -109,10 +109,9 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# 카테고리 트리 — 후속 처리에서 사용
+# 카테고리 — 옵션은 프로젝트별 project_settings 에서 가져옴 (아래 우측 폼 영역)
 # ---------------------------------------------------------------------------
 
-_cat_tree = repository.list_categories()  # {l1: {l2: {l3,...}}}
 _NONE = "(선택 안 함)"
 
 
@@ -245,13 +244,18 @@ with right:
     # ------- 카테고리 (st.form 바깥, 종속 selectbox 즉시 반영) -------
     st.markdown("##### 카테고리")
     st.caption(
-        "기존에서 고르거나 우측 칸에 직접 입력하세요. "
-        "직접 입력 칸이 채워져 있으면 그 값이 우선 사용됩니다. 비워둬도 무방."
+        "사이드바 [⚙ 설정] 에서 추가한 카테고리만 옵션으로 노출됩니다. 직접 입력도 가능."
     )
 
-    # 평면 카테고리: 대분류와 무관하게 모든 unique 중분류·소분류를 노출.
-    # "대분류가 달라도 중분류 이름이 같으면 다 보고 싶다"는 요구사항 반영.
-    _all_l1, _all_l2, _all_l3 = repository.flat_categories(_cat_tree)
+    # 프로젝트별 카테고리 풀: 사이드바 [⚙ 설정] 에서 명시 등록된 항목만 노출.
+    # 직접 입력은 그대로 허용 — 단, 자동 등록되지는 않음.
+    if current_project:
+        _cats = ps_mod.list_project_categories(current_project)
+        _all_l1 = _cats.get("l1", [])
+        _all_l2 = _cats.get("l2", [])
+        _all_l3 = _cats.get("l3", [])
+    else:
+        _all_l1 = _all_l2 = _all_l3 = []
 
     l1_options = [_NONE] + _all_l1
     l2_options = [_NONE] + _all_l2

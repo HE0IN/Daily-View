@@ -13,7 +13,7 @@ from pathlib import Path
 import streamlit as st
 
 from components.paste_clipboard import paste_clipboard
-from core import paths, repository
+from core import paths, project_settings as ps_mod, repository
 from core.clock import from_iso, humanize
 from core.images import (
     ALLOWED_EXT,
@@ -288,11 +288,17 @@ with meta_c3:
         )
     with sub_r:
         with st.popover("수정", width="stretch"):
-            _cat_tree_detail = repository.list_categories()
             _NONE_C = "(없음)"
 
-            # 평면 카테고리 옵션: 대분류 종속 없이 모든 unique 값을 노출.
-            _all_l1, _all_l2, _all_l3 = repository.flat_categories(_cat_tree_detail)
+            # 프로젝트별 카테고리 풀: 사이드바 [⚙ 설정] 에서 명시 등록된 항목만 노출.
+            # 직접 입력은 그대로 허용.
+            if issue.project:
+                _cats = ps_mod.list_project_categories(issue.project)
+                _all_l1 = _cats.get("l1", [])
+                _all_l2 = _cats.get("l2", [])
+                _all_l3 = _cats.get("l3", [])
+            else:
+                _all_l1 = _all_l2 = _all_l3 = []
 
             # 단순화: 각 단계마다 [기존 selectbox] + [직접 입력 text_input] 항상 노출.
             # text_input 에 값이 있으면 그 값 우선, 없으면 selectbox 값.

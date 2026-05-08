@@ -668,3 +668,244 @@ def test_create_issue_with_critical_urgency(
     # urgency 필터링도 동작
     crits = repository.list_issues(urgency="critical")
     assert {e.id for e in crits} == {issue.id}
+
+
+# ---------------------------------------------------------------------------
+# 프로젝트 설정 (api_assignee + 카테고리 풀)
+# ---------------------------------------------------------------------------
+
+
+def test_set_get_api_assignee(temp_data_dir: Path) -> None:
+    """set/get api_assignee 라운드트립 + None 으로 제거."""
+    from core import project_settings as ps
+
+    assert ps.get_api_assignee("P") is None
+
+    ps.set_api_assignee("P", "외부김")
+    assert ps.get_api_assignee("P") == "외부김"
+
+    # 빈 문자열도 정규화되어 None 으로 처리
+    ps.set_api_assignee("P", "  ")
+    assert ps.get_api_assignee("P") is None
+
+    # None 으로 명시 제거
+    ps.set_api_assignee("P", "외부김")
+    assert ps.get_api_assignee("P") == "외부김"
+    ps.set_api_assignee("P", None)
+    assert ps.get_api_assignee("P") is None
+
+
+def test_project_categories_add_remove(temp_data_dir: Path) -> None:
+    """add/remove_project_category 가 단계별 정확히 동작."""
+    from core import project_settings as ps
+
+    # 초기 빈 상태
+    cats0 = ps.list_project_categories("P")
+    assert cats0 == {"l1": [], "l2": [], "l3": []}
+
+    # 3 단계 동시 추가
+    ps.add_project_category("P", l1="로그인", l2="OAuth", l3="토큰")
+    cats = ps.list_project_categories("P")
+    assert "로그인" in cats["l1"]
+    assert "OAuth" in cats["l2"]
+    assert "토큰" in cats["l3"]
+
+    # l1 만 추가 (다른 단계는 빈 인자)
+    ps.add_project_category("P", l1="결제")
+    cats = ps.list_project_categories("P")
+    assert sorted(cats["l1"]) == ["결제", "로그인"]
+    assert "OAuth" in cats["l2"]  # l2 영향 없음
+
+    # 중복 추가는 noop
+    ps.add_project_category("P", l1="로그인")
+    cats = ps.list_project_categories("P")
+    assert cats["l1"].count("로그인") == 1
+
+    # l1 제거 → l2/l3 영향 없음
+    ps.remove_project_category("P", l1="로그인")
+    cats2 = ps.list_project_categories("P")
+    assert "로그인" not in cats2["l1"]
+    assert "결제" in cats2["l1"]
+    assert "OAuth" in cats2["l2"]
+    assert "토큰" in cats2["l3"]
+
+    # 없는 라벨 제거는 noop
+    ps.remove_project_category("P", l3="존재안함")
+    cats3 = ps.list_project_categories("P")
+    assert "토큰" in cats3["l3"]
+
+
+def test_remove_project_settings(temp_data_dir: Path) -> None:
+    """프로젝트 자체 정리 — api_assignee + 모든 카테고리 일괄 제거."""
+    from core import project_settings as ps
+
+    ps.set_api_assignee("P", "외부김")
+    ps.add_project_category("P", l1="로그인", l2="OAuth")
+    assert ps.get_api_assignee("P") == "외부김"
+    assert "로그인" in ps.list_project_categories("P")["l1"]
+
+    ps.remove_project_settings("P")
+
+    assert ps.get_api_assignee("P") is None
+    cats = ps.list_project_categories("P")
+    assert cats == {"l1": [], "l2": [], "l3": []}
+
+
+def test_project_settings_isolated_per_project(temp_data_dir: Path) -> None:
+    """프로젝트 간 설정 격리 — A 변경이 B 에 영향 없음."""
+    from core import project_settings as ps
+
+    ps.set_api_assignee("A", "김외부")
+    ps.set_api_assignee("B", "이외부")
+    ps.add_project_category("A", l1="로그인")
+    ps.add_project_category("B", l1="결제")
+
+    assert ps.get_api_assignee("A") == "김외부"
+    assert ps.get_api_assignee("B") == "이외부"
+    assert ps.list_project_categories("A")["l1"] == ["로그인"]
+    assert ps.list_project_categories("B")["l1"] == ["결제"]
+
+    # A 를 정리해도 B 는 그대로
+    ps.remove_project_settings("A")
+    assert ps.get_api_assignee("B") == "이외부"
+    assert ps.list_project_categories("B")["l1"] == ["결제"]
+
+
+# ---------------------------------------------------------------------------
+# api_check 진입 시 자동 assignee 전환
+# ---------------------------------------------------------------------------
+
+
+def test_update_status_api_check_auto_assignee(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """api_check 진입 시 프로젝트의 api_assignee 로 자동 전환."""
+    from core import project_settings
+
+    project_settings.set_api_assignee("PROJ-X", "외부김")
+
+    # 항목 생성: project=PROJ-X, assignee=내부이
+    kw = dict(sample_issue_kwargs)
+    kw["assignee"] = "내부이"
+    issue = repository.create_issue(project="PROJ-X", **kw)
+
+    repository.update_status(
+        issue.id, Status.in_progress, actor="내부이", actor_role=Role.developer
+    )
+
+    # api_check 으로 변경 → assignee 자동 변경
+    issue2 = repository.update_status(
+        issue.id, Status.api_check, actor="내부이", actor_role=Role.developer
+    )
+    assert issue2.assignee == "외부김"
+
+    # 디스크 라운드트립도 OK
+    refreshed = repository.get_issue(issue.id)
+    assert refreshed.assignee == "외부김"
+    assert refreshed.status == Status.api_check
+
+    # 시스템 코멘트도 추가됨
+    comments = repository.list_comments(issue.id)
+    assert any("API 담당자로 자동 변경" in c.body for c in comments), (
+        f"자동 변경 시스템 코멘트 누락: {[c.body for c in comments]}"
+    )
+    target = next(c for c in comments if "API 담당자로 자동 변경" in c.body)
+    assert "내부이" in target.body and "외부김" in target.body
+
+    # audit 로그에 UPDATE_ASSIGNEE (auto=True) 기록
+    audit_lines = [
+        json.loads(line)
+        for line in paths.audit_log_path().read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    auto_assignee_audits = [
+        a for a in audit_lines
+        if a.get("action") == "update_assignee"
+        and a.get("item_id") == issue.id
+        and (a.get("detail") or {}).get("auto") is True
+    ]
+    assert len(auto_assignee_audits) == 1
+    assert auto_assignee_audits[0]["detail"]["from"] == "내부이"
+    assert auto_assignee_audits[0]["detail"]["to"] == "외부김"
+
+
+def test_api_check_no_api_assignee(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """프로젝트에 api_assignee 미설정이면 그대로 유지."""
+    kw = dict(sample_issue_kwargs)
+    kw["assignee"] = "이OO"
+    kw["author"] = "dev"
+
+    issue = repository.create_issue(project="PROJ-Y", **kw)
+    repository.update_status(
+        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+    issue2 = repository.update_status(
+        issue.id, Status.api_check, actor="dev", actor_role=Role.developer
+    )
+    assert issue2.assignee == "이OO"  # 변경 없음
+
+    # 자동 전환 시스템 코멘트가 없어야 함
+    comments = repository.list_comments(issue.id)
+    assert not any("API 담당자로 자동 변경" in c.body for c in comments)
+
+
+def test_api_check_assignee_already_matches(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """이미 api_assignee 와 동일한 assignee 면 자동 전환 코멘트/audit 미생성."""
+    from core import project_settings
+
+    project_settings.set_api_assignee("PROJ-Z", "외부김")
+
+    kw = dict(sample_issue_kwargs)
+    kw["assignee"] = "외부김"  # 처음부터 일치
+    kw["author"] = "외부김"
+
+    issue = repository.create_issue(project="PROJ-Z", **kw)
+    repository.update_status(
+        issue.id, Status.in_progress, actor="외부김", actor_role=Role.developer
+    )
+    issue2 = repository.update_status(
+        issue.id, Status.api_check, actor="외부김", actor_role=Role.developer
+    )
+    assert issue2.assignee == "외부김"
+
+    comments = repository.list_comments(issue.id)
+    assert not any("API 담당자로 자동 변경" in c.body for c in comments)
+
+    # UPDATE_ASSIGNEE auto=True audit 도 없어야 함
+    audit_lines = [
+        json.loads(line)
+        for line in paths.audit_log_path().read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    auto_assignee_audits = [
+        a for a in audit_lines
+        if a.get("action") == "update_assignee"
+        and a.get("item_id") == issue.id
+        and (a.get("detail") or {}).get("auto") is True
+    ]
+    assert auto_assignee_audits == []
+
+
+def test_api_check_no_project_set(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """project 가 None 이면 자동 전환 로직이 건드리지 않음."""
+    kw = dict(sample_issue_kwargs)
+    kw["assignee"] = "내부이"
+    kw["author"] = "dev"
+
+    issue = repository.create_issue(**kw)  # project 미지정
+    repository.update_status(
+        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+    )
+    issue2 = repository.update_status(
+        issue.id, Status.api_check, actor="dev", actor_role=Role.developer
+    )
+    assert issue2.assignee == "내부이"
+
+    comments = repository.list_comments(issue.id)
+    assert not any("API 담당자로 자동 변경" in c.body for c in comments)

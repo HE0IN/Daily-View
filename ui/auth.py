@@ -8,6 +8,7 @@ docs/03_ui_design.md 3.2 절 + docs/07_scenarios.md 7.1 절 참조.
 
 from __future__ import annotations
 
+import html
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -415,6 +416,108 @@ def render_project_selector(user_name: str | None = None) -> str | None:
                     ):
                         st.session_state[confirm_key] = True
                         st.rerun()
+
+        # ── 프로젝트별 설정 expander — API 담당자 + 카테고리 관리 ────────
+        if selected:
+            # 지연 import — 백엔드 모듈 로드 사이클 / 부재 환경 안전.
+            from core import project_settings as ps_mod
+
+            with st.expander(f"⚙ '{selected}' 설정", expanded=False):
+                # === API 담당자 ===
+                st.markdown("**API 담당자**")
+                st.caption(
+                    "api_check 상태로 전환 시 담당자가 자동으로 이 사람으로 변경됩니다."
+                )
+                try:
+                    current_api = ps_mod.get_api_assignee(selected) or ""
+                except Exception:
+                    current_api = ""
+                new_api = st.text_input(
+                    "API 담당자 이름",
+                    value=current_api,
+                    key=f"_api_assignee_input_{selected}",
+                    placeholder="예: 김외부 (비우면 자동 전환 비활성)",
+                    label_visibility="collapsed",
+                )
+                if st.button(
+                    "API 담당자 저장",
+                    key=f"_api_assignee_save_{selected}",
+                ):
+                    try:
+                        ps_mod.set_api_assignee(
+                            selected, new_api.strip() or None
+                        )
+                        st.toast("저장되었습니다", icon="✅")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"저장 실패: {exc}")
+
+                st.divider()
+
+                # === 카테고리 관리 ===
+                st.markdown("**카테고리**")
+                st.caption(
+                    "프로젝트별 카테고리 풀 — 추가/삭제. 새 요청 등록 시 옵션으로 노출."
+                )
+
+                try:
+                    cats = ps_mod.list_project_categories(selected)
+                except Exception:
+                    cats = {"l1": [], "l2": [], "l3": []}
+
+                for level, label in [
+                    ("l1", "대분류"),
+                    ("l2", "중분류"),
+                    ("l3", "소분류"),
+                ]:
+                    st.markdown(f"_{label}_")
+                    existing = cats.get(level, [])
+                    if existing:
+                        # 기존 목록 + 각 옆에 [×] 삭제 버튼
+                        for cat_name in existing:
+                            cc1, cc2 = st.columns([4, 1])
+                            with cc1:
+                                st.markdown(f"· {html.escape(cat_name)}")
+                            with cc2:
+                                if st.button(
+                                    "×",
+                                    key=f"_cat_del_{selected}_{level}_{cat_name}",
+                                ):
+                                    try:
+                                        ps_mod.remove_project_category(
+                                            selected, **{level: cat_name}
+                                        )
+                                        st.toast(
+                                            f"'{cat_name}' 제거됨", icon="🗑"
+                                        )
+                                        st.rerun()
+                                    except Exception as exc:  # noqa: BLE001
+                                        st.error(f"제거 실패: {exc}")
+                    else:
+                        st.caption("(없음)")
+                    # 추가 입력
+                    new_cat = st.text_input(
+                        f"{label} 추가",
+                        key=f"_cat_add_input_{selected}_{level}",
+                        placeholder=f"새 {label} 이름",
+                        label_visibility="collapsed",
+                    )
+                    if st.button(
+                        f"{label} 추가",
+                        key=f"_cat_add_btn_{selected}_{level}",
+                    ):
+                        cleaned = (new_cat or "").strip()
+                        if cleaned:
+                            try:
+                                ps_mod.add_project_category(
+                                    selected, **{level: cleaned}
+                                )
+                                st.toast(f"'{cleaned}' 추가됨", icon="✅")
+                                st.rerun()
+                            except Exception as exc:  # noqa: BLE001
+                                st.error(f"추가 실패: {exc}")
+                        else:
+                            st.warning("이름을 입력하세요.")
 
         return selected
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 
+import pandas as pd
 import streamlit as st
 
 from core import paths, repository
@@ -181,6 +182,14 @@ with opt_col2:
     )
     st.caption("삭제 처리한 항목입니다")
 
+# 보기 모드 토글 — 카드/테이블
+view_mode = st.radio(
+    "보기",
+    options=["카드", "테이블"],
+    horizontal=True,
+    key="list_view_mode",
+)
+
 # 페이지네이션 리셋: 필터 키가 바뀌면 page=1
 filter_key = (
     urgency_choice,
@@ -309,14 +318,13 @@ page_items = items[start:end]
 
 st.caption(f"총 {total}건 · {current_page}/{total_pages} 페이지")
 
-if total == 0:
-    st.info("조건에 맞는 항목이 없습니다.")
-else:
+def _render_card_view(page_items_local: list[dict], current_page_local: int) -> None:
+    """카드 그리드 (4열) 렌더링."""
     # 같은 행 카드들이 가장 긴 카드 높이로 stretch — 한 번만 주입.
     components.render_card_grid_css()
     cols_per_row = 4  # 카드를 컴팩트하게 줄였으니 한 행에 더 많이.
-    for row_start in range(0, len(page_items), cols_per_row):
-        row = page_items[row_start : row_start + cols_per_row]
+    for row_start in range(0, len(page_items_local), cols_per_row):
+        row = page_items_local[row_start : row_start + cols_per_row]
         col_objs = st.columns(cols_per_row)
         for col, item in zip(col_objs, row):
             with col:
@@ -325,7 +333,7 @@ else:
                     st.caption("🗑 삭제됨")
                 clicked = components.render_card(
                     item,
-                    key_prefix=f"list_p{current_page}_r{row_start}",
+                    key_prefix=f"list_p{current_page_local}_r{row_start}",
                 )
                 if clicked:
                     # st.switch_page 가 query_params 를 유실하는 케이스가 있어
@@ -334,6 +342,68 @@ else:
                     st.session_state["_detail_item_id"] = _iid
                     st.query_params["id"] = _iid
                     st.switch_page("pages/3_상세보기.py")
+
+
+def _render_table_view(page_items_local: list[dict]) -> None:
+    """st.dataframe 으로 테이블 표시 + 항목 선택 → 상세보기 이동."""
+    rows = []
+    for item in page_items_local:
+        urgency = item.get("urgency", "normal")
+        urgency_label = URGENCY_LABELS.get(urgency, urgency)
+        status_label = STATUS_LABELS.get(item.get("status", ""), "")
+        desc_preview = (item.get("description_preview") or "")[:80]
+        rows.append({
+            "긴급도": urgency_label,
+            "제목": item.get("title", ""),
+            "담당자": item.get("assignee") or "(미배정)",
+            "상태": status_label,
+            "비고": desc_preview,
+            "등록": components.humanize_dt(item.get("created_at", "")),
+            "ID": item.get("id", ""),
+        })
+    df = pd.DataFrame(rows)
+
+    # 긴급도별 row 배경색 (Styler.apply 로 행 단위 적용).
+    def _row_style(row: pd.Series) -> list[str]:
+        urg_label = row.get("긴급도", "")
+        bg = ""
+        if urg_label == "긴급":
+            bg = "background-color: #FEE2E2;"  # 빨강 옅음
+        elif urg_label == "상":
+            bg = "background-color: #FEF3C7;"  # 주황 옅음
+        elif urg_label == "하":
+            bg = "background-color: #DCFCE7;"  # 초록 옅음
+        return [bg] * len(row)
+
+    styler = df.style.apply(_row_style, axis=1)
+    st.dataframe(styler, width="stretch", hide_index=True)
+
+    # 항목 열기 — selectbox + 버튼 (st.dataframe 자체는 클릭 셀 불가).
+    open_col1, open_col2 = st.columns([4, 1])
+    with open_col1:
+        target_id = st.selectbox(
+            "열어볼 항목",
+            options=[item.get("id") for item in page_items_local],
+            format_func=lambda i: next(
+                (it.get("title", i) for it in page_items_local if it.get("id") == i),
+                i,
+            ),
+            key="list_table_open_target",
+        )
+    with open_col2:
+        st.markdown("&nbsp;", unsafe_allow_html=True)  # 라벨 높이 맞추기
+        if st.button("상세보기", key="list_table_open_btn", width="stretch"):
+            st.session_state["_detail_item_id"] = target_id
+            st.query_params["id"] = target_id
+            st.switch_page("pages/3_상세보기.py")
+
+
+if total == 0:
+    st.info("조건에 맞는 항목이 없습니다.")
+elif view_mode == "테이블":
+    _render_table_view(page_items)
+else:
+    _render_card_view(page_items, current_page)
 
 # 페이지 컨트롤
 if total > 0:

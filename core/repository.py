@@ -385,9 +385,18 @@ def update_status(
     → audit → 인덱스 갱신.
 
     new_status 가 ``closed`` 이면 reviewer_confirmed=True, reviewer_confirmed_at=now.
+
+    new_status 가 ``api_check`` 이고 issue.project 의 ``api_assignee`` 가
+    설정되어 있으며 현재 assignee 와 다르면 같은 트랜잭션 내에서
+    issue.assignee 도 자동 전환한다 (시스템 코멘트 + UPDATE_ASSIGNEE audit
+    별도 기록).
     """
     new_status_e = Status(new_status) if not isinstance(new_status, Status) else new_status
     actor_role_e = Role(actor_role) if not isinstance(actor_role, Role) else actor_role
+
+    auto_assignee_old: str | None = None
+    auto_assignee_new: str | None = None
+    auto_assignee_changed = False
 
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
@@ -406,12 +415,34 @@ def update_status(
             issue.reviewer_confirmed = True
             issue.reviewer_confirmed_at = timestamp
 
+        # api_check 진입 시 프로젝트의 api_assignee 로 자동 전환.
+        # 같은 meta 락 내부에서 처리하고 _write_meta_unlocked 는 한 번만 호출.
+        if new_status_e == Status.api_check and issue.project:
+            try:
+                from . import project_settings as ps_mod
+                api_assignee = ps_mod.get_api_assignee(issue.project)
+            except Exception:
+                api_assignee = None
+            if api_assignee and issue.assignee != api_assignee:
+                auto_assignee_old = issue.assignee
+                auto_assignee_new = api_assignee
+                issue.assignee = api_assignee
+                auto_assignee_changed = True
+
         _write_meta_unlocked(issue)
 
     # 시스템 코멘트 (한국어 라벨)
     old_label = STATUS_LABELS_KO.get(old_status, old_status.value)
     new_label = STATUS_LABELS_KO.get(new_status_e, new_status_e.value)
     _add_system_comment(item_id, f"상태 변경: {old_label} → {new_label}")
+
+    # 자동 assignee 전환 시스템 코멘트 — 상태 변경 직후에 자연스럽게 위치
+    if auto_assignee_changed:
+        _add_system_comment(
+            item_id,
+            f"API 담당자로 자동 변경: {auto_assignee_old or '(없음)'} → "
+            f"{auto_assignee_new or '(없음)'}",
+        )
 
     # audit
     audit.audit_log(
@@ -430,6 +461,18 @@ def update_status(
             action=audit.CONFIRM_REVIEW,
             item_id=item_id,
             detail=None,
+        )
+    if auto_assignee_changed:
+        audit.audit_log(
+            actor=actor,
+            action=audit.UPDATE_ASSIGNEE,
+            item_id=item_id,
+            detail={
+                "from": auto_assignee_old,
+                "to": auto_assignee_new,
+                "auto": True,
+                "trigger": "api_check",
+            },
         )
 
     comments_count, images_count = index_mod.get_counts(item_id)
