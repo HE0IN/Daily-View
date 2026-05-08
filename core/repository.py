@@ -164,6 +164,20 @@ def create_issue(
         detail={"urgency": issue.urgency.value, "title": title},
     )
 
+    # 카테고리 풀 자동 누적 — 새 요청 등록 시 입력한 카테고리가 사이드바
+    # selectbox 옵션 풀에 자동으로 추가됨. 별도 [가져오기] 동작 불필요.
+    if issue.project and (issue.category_l1 or issue.category_l2 or issue.category_l3):
+        try:
+            from . import project_settings as _ps
+            if issue.category_l1:
+                _ps.add_project_category(issue.project, l1=issue.category_l1)
+            if issue.category_l2:
+                _ps.add_project_category(issue.project, l2=issue.category_l2)
+            if issue.category_l3:
+                _ps.add_project_category(issue.project, l3=issue.category_l3)
+        except Exception:
+            pass  # 풀 누적 실패는 항목 생성 자체를 막지 않음
+
     # 인덱스
     index_mod.update_index_entry(issue, comments_count=0, images_count=0)
     return issue
@@ -619,6 +633,20 @@ def update_categories(
         detail={"from": list(old_path), "to": list(new_path)},
     )
     _add_system_comment(item_id, f"카테고리 변경: {_fmt(old_path)} → {_fmt(new_path)}")
+
+    # 카테고리 풀 자동 누적 — 사용자가 변경 popover 에서 *새* 카테고리를
+    # 입력한 경우 사이드바 옵션 풀에도 추가됨. 같은 흐름.
+    if issue.project and (new_l1 or new_l2 or new_l3):
+        try:
+            from . import project_settings as _ps
+            if new_l1:
+                _ps.add_project_category(issue.project, l1=new_l1)
+            if new_l2:
+                _ps.add_project_category(issue.project, l2=new_l2)
+            if new_l3:
+                _ps.add_project_category(issue.project, l3=new_l3)
+        except Exception:
+            pass
 
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(issue, comments_count, images_count)
