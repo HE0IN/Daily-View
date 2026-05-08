@@ -210,7 +210,7 @@ with left:
         if st.button(
             f"클립보드 이미지 비우기 ({len(paste_images)}장)",
             key=f"new_paste_clear_{nonce}",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state.pop(_pasted_list_key, None)
             st.session_state.pop(_last_pasted_key, None)
@@ -225,11 +225,11 @@ with left:
         idx = 0
         for i, p_img in enumerate(paste_images, start=1):
             with cols[idx % len(cols)]:
-                st.image(p_img, caption=f"(클립보드 #{i})", use_container_width=True)
+                st.image(p_img, caption=f"(클립보드 #{i})", width="stretch")
             idx += 1
         for f in preview_files:
             with cols[idx % len(cols)]:
-                st.image(f, caption=f.name, use_container_width=True)
+                st.image(f, caption=f.name, width="stretch")
             idx += 1
 
 
@@ -310,7 +310,7 @@ with right:
             placeholder="위에서 (직접 입력) 선택 시 — 후보 목록에 없는 새 담당자만 사용",
         )
 
-        submit = st.form_submit_button("등록", type="primary", use_container_width=True)
+        submit = st.form_submit_button("등록", type="primary", width="stretch")
 
 
 # ---------------------------------------------------------------------------

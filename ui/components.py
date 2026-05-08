@@ -224,7 +224,7 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
         clicked = st.button(
             "열기",
             key=f"{key_prefix}_{item_id}_detail",
-            use_container_width=True,
+            width="stretch",
         )
     return clicked
 

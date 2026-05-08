@@ -207,7 +207,7 @@ with meta_c1:
             unsafe_allow_html=True,
         )
     with sub_r:
-        with st.popover("변경", use_container_width=True):
+        with st.popover("변경", width="stretch"):
             new_assignee = st.text_input(
                 "담당자 이름",
                 value=issue.assignee or "",
@@ -242,7 +242,7 @@ with meta_c2:
             unsafe_allow_html=True,
         )
     with sub_r:
-        with st.popover("변경", use_container_width=True):
+        with st.popover("변경", width="stretch"):
             _all_projects = repository.list_projects()
             _NONE_PROJ = "(선택 안 함)"
             proj_options_d = [_NONE_PROJ] + _all_projects
@@ -292,7 +292,7 @@ with meta_c3:
             unsafe_allow_html=True,
         )
     with sub_r:
-        with st.popover("수정", use_container_width=True):
+        with st.popover("수정", width="stretch"):
             _cat_tree_detail = repository.list_categories()
             _NONE_C = "(없음)"
 
@@ -411,7 +411,7 @@ with meta_c4:
             "→ 완료",
             key="finish_btn",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         ):
             try:
                 repository.update_status(
@@ -443,7 +443,7 @@ if allowed:
             if st.button(
                 btn_label,
                 key=f"transition_{next_status.value}",
-                use_container_width=True,
+                width="stretch",
                 type="secondary",
             ):
                 try:
@@ -472,7 +472,7 @@ def _show_image_dialog(rel_path: str, filename: str) -> None:
     """원본 이미지 모달."""
     abs_path = _abs_image_path(rel_path)
     if abs_path.exists():
-        st.image(str(abs_path), caption=filename, use_container_width=True)
+        st.image(str(abs_path), caption=filename, width="stretch")
     else:
         st.error(f"파일을 찾을 수 없습니다: {rel_path}")
 
@@ -491,12 +491,12 @@ with gallery_col:
                 display_rel = img_ref.thumb
                 display_abs = _abs_image_path(display_rel)
             if display_abs.exists():
-                st.image(str(display_abs), use_container_width=True)
+                st.image(str(display_abs), width="stretch")
             else:
                 st.caption("(이미지 파일 없음)")
             filename = Path(img_ref.file).name
             st.caption(filename)
-            if st.button("원본 보기", key=f"view_img_{idx}", use_container_width=True):
+            if st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
                 _show_image_dialog(img_ref.file, filename)
             st.markdown("")  # 이미지 사이 간격
     else:
@@ -524,7 +524,7 @@ with gallery_col:
                 "업로드",
                 key=f"detail_upload_btn_{item_id}_{upload_nonce}",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             ):
                 added = 0
                 for uf in uploaded[:remaining]:
@@ -687,7 +687,7 @@ elif _can_delete:
                 "확인 (삭제)",
                 key="archive_confirm_btn",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             ):
                 try:
                     repository.archive_issue(item_id, user["name"])
@@ -701,7 +701,7 @@ elif _can_delete:
             if st.button(
                 "취소",
                 key="archive_cancel_btn",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state.pop(_confirm_key, None)
                 st.rerun()

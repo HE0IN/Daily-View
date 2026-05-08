@@ -342,7 +342,7 @@ if total > 0:
     with pc1:
         prev_disabled = current_page <= 1
         if st.button(
-            "← 이전", disabled=prev_disabled, key="list_prev", use_container_width=True
+            "← 이전", disabled=prev_disabled, key="list_prev", width="stretch"
         ):
             st.session_state["list_page"] = current_page - 1
             st.rerun()
@@ -355,7 +355,7 @@ if total > 0:
     with pc3:
         next_disabled = current_page >= total_pages
         if st.button(
-            "다음 →", disabled=next_disabled, key="list_next", use_container_width=True
+            "다음 →", disabled=next_disabled, key="list_next", width="stretch"
         ):
             st.session_state["list_page"] = current_page + 1
             st.rerun()

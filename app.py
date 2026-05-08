@@ -218,7 +218,7 @@ if role == "reviewer":
     # ── 검토자 화면 (07_scenarios.md 7.3) ─────────────────────────────────
     cta_col, _ = st.columns([1, 4])
     with cta_col:
-        if st.button("+ 새 요청 등록", type="primary", use_container_width=True):
+        if st.button("+ 새 요청 등록", type="primary", width="stretch"):
             st.switch_page("pages/2_새요청등록.py")
 
     st.divider()
@@ -288,7 +288,7 @@ else:
     # ── 개발자 화면 (07_scenarios.md 7.4) ────────────────────────────────
     cta_col, _ = st.columns([1, 4])
     with cta_col:
-        if st.button("내 큐 전체 보기", type="primary", use_container_width=True):
+        if st.button("내 큐 전체 보기", type="primary", width="stretch"):
             # 요청목록의 담당자 필터를 자기 자신으로 미리 세팅
             st.session_state["list_default_assignee"] = name
             st.switch_page("pages/1_요청목록.py")

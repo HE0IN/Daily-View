@@ -305,7 +305,7 @@ else:
     _styler = cat_table.style
     _style_fn = getattr(_styler, "map", None) or _styler.applymap
     styled = _style_fn(_highlight_stalled, subset=["정체"])
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width="stretch", hide_index=True)
 
     # 누적 막대 차트 — 진행 중 / 정체 / 완료
     chart_df = cat_table.set_index("카테고리")[["진행 중", "정체", "완료"]]
@@ -392,5 +392,5 @@ else:
             }
         )
     st.dataframe(
-        pd.DataFrame(rows), use_container_width=True, hide_index=True
+        pd.DataFrame(rows), width="stretch", hide_index=True
     )
