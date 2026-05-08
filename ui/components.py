@@ -185,38 +185,89 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
 
 
 def render_card_grid_css() -> None:
-    """카드 그리드를 그리는 페이지에서 1 회 호출. 같은 행의 ``st.columns``
-    내부 카드 컨테이너가 자연스럽게 동일 높이로 늘어나도록 flex stretch.
+    """카드 그리드를 그리는 페이지에서 1 회 호출.
 
-    Streamlit 의 columns DOM (data-testid="stHorizontalBlock" / "column" /
-    "stVerticalBlock") 을 의도적으로 타겟. Streamlit 버전이 바뀌면
-    selector 가 깨질 수 있어 함수 한 곳에 모아두고 fragile 함을 명시.
+    같은 행 카드들이 가장 긴 카드 높이로 stretch 되도록 두 단계로 보강:
+
+    1) **CSS flex stretch** — Streamlit columns DOM 의 모든 중간 div 를
+       flex column 으로 만들고 height:100% / flex:1 적용.
+    2) **JS ResizeObserver fallback** — CSS 가 Streamlit DOM 깊이를 따라
+       잡지 못하는 경우를 대비, JS 가 같은 행 카드들의 offsetHeight 를 측정
+       해 max 로 통일. ResizeObserver 로 콘텐츠 크기 변동에 자동 재계산.
+
+    fragile 한 selector 들은 본 함수 한 곳에 모아둠. Streamlit 버전이
+    바뀌어 selector 가 깨지면 여기만 수정.
     """
     st.markdown(
         """
         <style>
         /* 같은 행의 columns 가 stretch (가장 긴 카드 높이에 맞춤) */
         div[data-testid="stHorizontalBlock"] {
-            align-items: stretch;
+            align-items: stretch !important;
         }
-        /* 각 column 이 세로로 100% 채우게 */
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        /* 컬럼 자체 + 안쪽 모든 div 를 height:100% 로 채우게 */
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"],
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div,
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div > div {
+            height: 100% !important;
             display: flex;
             flex-direction: column;
         }
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        /* 카드 내부의 stVerticalBlock 도 stretch — st.container(border=True) 안 콘텐츠 영역 */
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]
+        /* st.container(border=True) 의 wrapper 도 flex column */
+        div[data-testid="stHorizontalBlock"]
             div[data-testid="stVerticalBlockBorderWrapper"] {
-            flex: 1;
+            flex: 1 1 auto !important;
+            height: 100% !important;
+            display: flex;
+            flex-direction: column;
+        }
+        div[data-testid="stHorizontalBlock"]
+            div[data-testid="stVerticalBlockBorderWrapper"] > div {
+            flex: 1 1 auto;
             display: flex;
             flex-direction: column;
         }
         </style>
+
+        <script>
+        (function() {
+            // CSS 만으로 stretch 가 안 잡히는 케이스 대비. 같은 행 카드
+            // (stVerticalBlockBorderWrapper) 의 max offsetHeight 로 통일.
+            // ResizeObserver 로 이미지 로드/콘텐츠 변동 감지 → 재계산.
+            function equalize() {
+                const rows = document.querySelectorAll(
+                    'div[data-testid="stHorizontalBlock"]'
+                );
+                rows.forEach(function(row) {
+                    const cards = row.querySelectorAll(
+                        'div[data-testid="stVerticalBlockBorderWrapper"]'
+                    );
+                    if (cards.length < 2) return;
+                    cards.forEach(function(c) { c.style.minHeight = ''; });
+                    let maxH = 0;
+                    cards.forEach(function(c) {
+                        if (c.offsetHeight > maxH) maxH = c.offsetHeight;
+                    });
+                    if (maxH > 0) {
+                        cards.forEach(function(c) {
+                            c.style.minHeight = maxH + 'px';
+                        });
+                    }
+                });
+            }
+            // 초기 + 지연 + 변동 감지 — Streamlit rerun 시 DOM 재구성에도
+            // 안전하게 다시 측정.
+            equalize();
+            setTimeout(equalize, 100);
+            setTimeout(equalize, 400);
+            setTimeout(equalize, 1000);
+            try {
+                const ro = new ResizeObserver(function() { equalize(); });
+                ro.observe(document.body);
+            } catch (e) { /* 구형 브라우저 fallback */ }
+            window.addEventListener('load', equalize);
+        })();
+        </script>
         """,
         unsafe_allow_html=True,
     )
