@@ -30,6 +30,7 @@ from .locking import atomic_append_jsonl
 CREATE_ISSUE = "create_issue"
 UPDATE_STATUS = "update_status"
 UPDATE_ASSIGNEE = "update_assignee"
+UPDATE_URGENCY = "update_urgency"
 UPDATE_TAGS = "update_tags"
 UPDATE_CATEGORIES = "update_categories"
 UPDATE_PROJECT = "update_project"
@@ -102,6 +103,7 @@ __all__ = [
     "CREATE_ISSUE",
     "UPDATE_STATUS",
     "UPDATE_ASSIGNEE",
+    "UPDATE_URGENCY",
     "UPDATE_TAGS",
     "UPDATE_CATEGORIES",
     "UPDATE_PROJECT",

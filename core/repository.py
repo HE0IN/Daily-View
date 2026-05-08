@@ -467,6 +467,43 @@ def update_assignee(
     return issue
 
 
+def update_urgency(
+    item_id: str,
+    new_urgency: Urgency | str,
+    actor: str,
+) -> Issue:
+    """긴급도 변경. 4 단계 (critical / high / normal / low) 중 하나."""
+    new_urg = (
+        Urgency(new_urgency) if not isinstance(new_urgency, Urgency) else new_urgency
+    )
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        old = issue.urgency
+        if old == new_urg:
+            return issue  # 변경 없음
+        issue.urgency = new_urg
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    # 시스템 코멘트 + audit 로 추적성 보장
+    from .workflow import URGENCY_LABELS_KO  # 지연 import (순환 회피)
+    _add_system_comment(
+        item_id,
+        f"긴급도 변경: {URGENCY_LABELS_KO.get(old.value, old.value)} → "
+        f"{URGENCY_LABELS_KO.get(new_urg.value, new_urg.value)}",
+    )
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_URGENCY,
+        item_id=item_id,
+        detail={"from": old.value, "to": new_urg.value},
+    )
+
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(issue, comments_count, images_count)
+    return issue
+
+
 def update_tags(
     item_id: str,
     tags: list[str],

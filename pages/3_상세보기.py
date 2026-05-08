@@ -21,7 +21,7 @@ from core.images import (
     MAX_IMAGES_PER_ITEM,
     decode_image_data_url,
 )
-from core.models import Comment, Issue, Role, Status
+from core.models import Comment, Issue, Role, Status, Urgency
 from core.workflow import (
     STATUS_LABELS_KO,
     URGENCY_LABELS_KO,
@@ -188,15 +188,20 @@ try:
 except Exception:
     user_role = Role.reviewer
 
+# 페이지 상단에 프로젝트 정보 (변경은 사이드바에서만 — 메타 영역에서 제거)
+if _project_raw:
+    st.caption(f"프로젝트: **{_project_raw}**")
+
 # 4 개 메타 컬럼:
-#   c1 = 등록자 + 담당자 + [변경] (한 그룹 — 붙어 있어야 함)
-#   c2 = 프로젝트 + [변경]
+#   c1 = 등록자 + 담당자 + [변경] (sub_columns 비율 [3,1] 로 [변경]을 텍스트
+#        끝에 가깝게 — 사용자 요구: "변경 버튼이 너무 멀다")
+#   c2 = 긴급도 + [수정]  (NEW — 프로젝트 변경은 사이드바에서만)
 #   c3 = 카테고리 + [수정]
 #   c4 = [→ 완료] 버튼 (우측 끝, 짧게)
-meta_c1, meta_c2, meta_c3, meta_c4 = st.columns([4, 2, 2, 1], gap="medium")
+meta_c1, meta_c2, meta_c3, meta_c4 = st.columns([3, 2, 2, 1], gap="small")
 
 with meta_c1:
-    sub_l, sub_r = st.columns([5, 1])
+    sub_l, sub_r = st.columns([3, 1])
     with sub_l:
         st.markdown(
             f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
@@ -232,51 +237,41 @@ with meta_c1:
                     st.error(f"변경 실패: {exc}")
 
 with meta_c2:
-    sub_l, sub_r = st.columns([3, 2])
+    # 긴급도 표시 + 변경 popover (프로젝트 변경 자리를 대체)
+    from ui.theme import URGENCY_LABELS as _URG_LABELS
+    sub_l, sub_r = st.columns([2, 1])
     with sub_l:
+        _urg_label = _URG_LABELS.get(issue.urgency.value, issue.urgency.value)
         st.markdown(
             f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
-            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" '
-            f'title="{html.escape(_project_raw or "(미지정)")}">'
-            f"프로젝트: {_proj_display_html}</div>",
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            f"긴급도: {urgency_badge_html(issue.urgency.value)}</div>",
             unsafe_allow_html=True,
         )
     with sub_r:
-        with st.popover("변경", width="stretch"):
-            _all_projects = repository.list_projects()
-            _NONE_PROJ = "(선택 안 함)"
-            proj_options_d = [_NONE_PROJ] + _all_projects
-            current_idx = (
-                proj_options_d.index(issue.project)
-                if issue.project and issue.project in proj_options_d
+        with st.popover("수정", width="stretch"):
+            _urg_options = [u.value for u in Urgency]
+            _urg_default_idx = (
+                _urg_options.index(issue.urgency.value)
+                if issue.urgency.value in _urg_options
                 else 0
             )
-            sel = st.selectbox(
-                "기존",
-                options=proj_options_d,
-                index=current_idx,
-                key=f"detail_proj_sel_{item_id}",
-            )
-            new_text = st.text_input(
-                "새로 입력",
-                value=issue.project if issue.project and issue.project not in _all_projects else "",
-                key=f"detail_proj_text_{item_id}",
-                placeholder="비우면 위 선택값 사용",
+            new_urg = st.radio(
+                "긴급도",
+                options=_urg_options,
+                format_func=lambda v: _URG_LABELS.get(v, v),
+                index=_urg_default_idx,
+                key=f"detail_urg_radio_{item_id}",
+                horizontal=True,
             )
             if st.button(
                 "저장",
-                key=f"detail_proj_save_{item_id}",
+                key=f"detail_urg_save_{item_id}",
                 type="primary",
             ):
-                if new_text.strip():
-                    new_proj = new_text.strip()
-                elif sel == _NONE_PROJ:
-                    new_proj = None
-                else:
-                    new_proj = sel
                 try:
-                    repository.update_project(item_id, new_proj, user["name"])
-                    st.toast("프로젝트가 변경되었습니다", icon="✅")
+                    repository.update_urgency(item_id, new_urg, user["name"])
+                    st.toast("긴급도가 변경되었습니다", icon="✅")
                     st.rerun()
                 except Exception as exc:  # pragma: no cover
                     st.error(f"변경 실패: {exc}")
