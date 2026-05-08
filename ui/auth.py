@@ -23,6 +23,48 @@ _COOKIE_INIT_TICK = "_cookie_init_tick"
 _COOKIE_INIT_MAX = 2  # 최대 2회 rerun 후엔 폼 노출 (무한 루프 방지)
 _COOKIE_MGR_CACHE = "_user_cookie_mgr"
 
+# URL query parameter 키 — 쿠키가 동작 안 하는 환경 (HTTP+IP / samesite /
+# 라이브러리 미설치 등) 에서도 새로고침 후 user 복원이 가능하도록 fallback.
+_QP_NAME = "u"
+_QP_ROLE = "r"
+
+
+def _restore_user_from_query_params() -> dict | None:
+    """URL query parameter (?u=...&r=...) 에서 user 복원. 없거나 잘못되면 None."""
+    try:
+        qp_name = st.query_params.get(_QP_NAME)
+        qp_role = st.query_params.get(_QP_ROLE)
+    except Exception:
+        return None
+    if isinstance(qp_name, list):
+        qp_name = qp_name[0] if qp_name else None
+    if isinstance(qp_role, list):
+        qp_role = qp_role[0] if qp_role else None
+    if not qp_name:
+        return None
+    role = qp_role if qp_role in ("reviewer", "developer") else "reviewer"
+    return {"name": str(qp_name).strip(), "role": role}
+
+
+def _persist_user_to_query_params(user: dict) -> None:
+    """user 정보를 URL query parameter 에 set — 새로고침 후에도 보존."""
+    try:
+        st.query_params[_QP_NAME] = user.get("name", "")
+        st.query_params[_QP_ROLE] = user.get("role", "reviewer")
+    except Exception:
+        pass  # query_params 미지원 streamlit 버전 graceful
+
+
+def _clear_user_from_query_params() -> None:
+    """user 변경/삭제 시 query parameter 도 정리."""
+    try:
+        if _QP_NAME in st.query_params:
+            del st.query_params[_QP_NAME]
+        if _QP_ROLE in st.query_params:
+            del st.query_params[_QP_ROLE]
+    except Exception:
+        pass
+
 
 def _get_cookie_manager() -> Any | None:
     """CookieManager 인스턴스 반환. 라이브러리 미설치/오류 시 None.
@@ -77,6 +119,10 @@ def _render_edit_form(cookie_mgr: Any | None, current: dict | None) -> None:
         if save and name.strip():
             user = {"name": name.strip(), "role": role}
             st.session_state["user"] = user
+            # 영속화 — 두 채널 동시 저장:
+            #   1) URL query parameter (의존성 0, HTTP+IP 환경에서도 확실히 동작)
+            #   2) Cookie (extra-streamlit-components, 가능하면 30일 보존)
+            _persist_user_to_query_params(user)
             if cookie_mgr is not None:
                 try:
                     expires = datetime.now(timezone.utc) + _COOKIE_TTL
@@ -87,7 +133,7 @@ def _render_edit_form(cookie_mgr: Any | None, current: dict | None) -> None:
                         key="_user_cookie_set",
                     )
                 except Exception:
-                    pass  # 쿠키 실패는 무시 — session_state만 유지
+                    pass  # 쿠키 실패는 무시 — query param 으로 새로고침 보존
             st.session_state.pop(_EDIT_FLAG, None)
             st.rerun()
         elif save and not name.strip():
@@ -101,13 +147,22 @@ def _render_edit_form(cookie_mgr: Any | None, current: dict | None) -> None:
 def get_or_init_user() -> dict | None:
     """사이드바에 사용자 위젯을 그리고 현재 user 정보를 반환.
 
-    1. 쿠키에서 user 복원 시도
-    2. session_state에 user 있으면 "현재: 김OO (검토자) [변경]" 표시
-    3. 변경/미설정 시 입력 폼 노출
+    복원 우선순위:
+      1) ``st.session_state["user"]`` — 같은 세션 내에서는 그대로
+      2) URL query parameter (?u=...&r=...) — 새로고침 후에도 즉시 복원,
+         의존성 0, HTTP+IP 환경에서도 확실히 동작
+      3) Cookie (extra-streamlit-components) — 가능하면 30 일 보존
+      4) 모두 실패 시 입력 폼 노출
     """
     cookie_mgr = _get_cookie_manager()
 
-    # 1) 쿠키 → session_state 복원
+    # 1) URL query parameter 에서 우선 복원 — 의존성 / 비동기 이슈 없음.
+    if "user" not in st.session_state:
+        qp_user = _restore_user_from_query_params()
+        if qp_user and qp_user.get("name"):
+            st.session_state["user"] = qp_user
+
+    # 2) cookie → session_state 복원 (1) 에서 못 찾았을 때만)
     #
     # extra-streamlit-components 의 CookieManager 는 컴포넌트 첫 렌더에서
     # 비동기로 쿠키를 가져오므로, 첫 호출의 .get() 은 None 일 수 있다.
@@ -138,6 +193,9 @@ def get_or_init_user() -> dict | None:
                 "role": saved.get("role", "reviewer"),
             }
             st.session_state.pop(_COOKIE_INIT_TICK, None)
+            # 쿠키에서 복원했으면 query param 도 동기화 — 이후 새로고침에서
+            # 비동기 이슈 없이 즉시 복원되도록.
+            _persist_user_to_query_params(st.session_state["user"])
         else:
             # 쿠키가 아직 도착 안 했을 가능성 — 1~2 tick rerun 가드
             tick = int(st.session_state.get(_COOKIE_INIT_TICK, 0))
@@ -145,6 +203,11 @@ def get_or_init_user() -> dict | None:
                 st.session_state[_COOKIE_INIT_TICK] = tick + 1
                 st.rerun()
             # 한도 초과 → 폼 노출 진행
+
+    # session_state 에 user 가 있는데 query param 에 없으면 동기화 — 이전 세션
+    # 에서 cookie 로 복원된 user 가 새로고침 시 즉시 잡히도록.
+    if "user" in st.session_state and not _restore_user_from_query_params():
+        _persist_user_to_query_params(st.session_state["user"])
 
     user: dict | None = st.session_state.get("user")
     edit_mode = bool(st.session_state.get(_EDIT_FLAG, False))
