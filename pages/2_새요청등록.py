@@ -11,58 +11,22 @@
 
 from __future__ import annotations
 
-import base64
-import io
-import re
-
 import streamlit as st
 from PIL import Image as PILImage
 
 from components.paste_clipboard import paste_clipboard
 from core import paths, repository
-from core.images import ALLOWED_EXT, MAX_FILE_MB, MAX_IMAGES_PER_ITEM
+from core.images import (
+    ALLOWED_EXT,
+    MAX_FILE_MB,
+    MAX_IMAGES_PER_ITEM,
+    decode_image_data_url,
+)
 from core.models import Role, Urgency
 from ui.auth import get_or_init_user, render_project_selector, require_user
 
-
-# ---------------------------------------------------------------------------
-# base64 데이터 URL 디코더 — 정식 paste_clipboard 컴포넌트가 반환한 dataURL 을
-# bytes / PIL.Image 로 변환한다. 잘못된 입력에 대해 ValueError 를 던진다.
-# ---------------------------------------------------------------------------
-
-_DATA_URL_RE = re.compile(r"^data:image/[A-Za-z0-9.+-]+;base64,", re.IGNORECASE)
-
-
-def _decode_pasted_b64(text: str) -> tuple[PILImage.Image, bytes, str]:
-    """data:image/...;base64,... 또는 순수 base64 문자열을 (PIL, bytes, mime) 로 디코드.
-
-    공백/개행 모두 허용. 잘못된 형식이면 ValueError.
-    """
-    if not text:
-        raise ValueError("입력이 비어 있습니다.")
-    cleaned = "".join(text.split())
-    mime = "image/png"
-    m = _DATA_URL_RE.match(cleaned)
-    if m:
-        header = m.group(0)
-        # data:image/png;base64, 에서 image/png 추출
-        try:
-            mime = header.split(":", 1)[1].split(";", 1)[0]
-        except Exception:  # noqa: BLE001
-            mime = "image/png"
-        cleaned = cleaned[len(header):]
-    try:
-        raw = base64.b64decode(cleaned, validate=False)
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"base64 디코드 실패: {exc}") from exc
-    if not raw:
-        raise ValueError("디코드된 바이트가 비어 있습니다.")
-    try:
-        img = PILImage.open(io.BytesIO(raw))
-        img.load()
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"이미지로 열 수 없습니다: {exc}") from exc
-    return img, raw, mime
+# 페이지 내 호출 호환 — 기존 변수명 유지
+_decode_pasted_b64 = decode_image_data_url
 
 
 # ---------------------------------------------------------------------------

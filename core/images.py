@@ -10,6 +10,7 @@ docs/02_storage.md 2.4 절을 따른다.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import os
@@ -21,6 +22,48 @@ from PIL import Image, ImageOps
 from . import paths
 from .clock import now
 from .models import ImageRef
+
+
+# ---------------------------------------------------------------------------
+# data URL 디코더 — paste_clipboard 컴포넌트가 반환하는
+# "data:image/png;base64,XXXX" 형식 또는 순수 base64 문자열을 PIL.Image 로 변환
+# ---------------------------------------------------------------------------
+
+_DATA_URL_RE = re.compile(r"^data:image/[A-Za-z0-9.+-]+;base64,", re.IGNORECASE)
+
+
+def decode_image_data_url(text: str) -> tuple[Image.Image, bytes, str]:
+    """data URL 또는 순수 base64 → ``(PIL.Image, raw_bytes, mime)`` 디코드.
+
+    공백/개행 모두 허용. 잘못된 형식이면 ``ValueError``.
+
+    새 요청 등록 + 상세보기 양쪽 페이지가 paste_clipboard 컴포넌트의 결과를
+    공통 처리하는 데 사용.
+    """
+    if not text:
+        raise ValueError("입력이 비어 있습니다.")
+    cleaned = "".join(text.split())
+    mime = "image/png"
+    m = _DATA_URL_RE.match(cleaned)
+    if m:
+        header = m.group(0)
+        try:
+            mime = header.split(":", 1)[1].split(";", 1)[0]
+        except Exception:  # noqa: BLE001
+            mime = "image/png"
+        cleaned = cleaned[len(header):]
+    try:
+        raw = base64.b64decode(cleaned, validate=False)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"base64 디코드 실패: {exc}") from exc
+    if not raw:
+        raise ValueError("디코드된 바이트가 비어 있습니다.")
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"이미지로 열 수 없습니다: {exc}") from exc
+    return img, raw, mime
 
 
 # ---------------------------------------------------------------------------

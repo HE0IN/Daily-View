@@ -12,9 +12,15 @@ from pathlib import Path
 
 import streamlit as st
 
+from components.paste_clipboard import paste_clipboard
 from core import paths, repository
 from core.clock import from_iso, humanize
-from core.images import ALLOWED_EXT, MAX_FILE_MB, MAX_IMAGES_PER_ITEM
+from core.images import (
+    ALLOWED_EXT,
+    MAX_FILE_MB,
+    MAX_IMAGES_PER_ITEM,
+    decode_image_data_url,
+)
 from core.models import Comment, Issue, Role, Status
 from core.workflow import (
     STATUS_LABELS_KO,
@@ -28,12 +34,6 @@ from ui.theme import (
     status_badge_html,
     urgency_badge_html,
 )
-
-# streamlit-paste-button 은 옵션 (HTTP 환경에서는 동작 안 할 수 있음)
-try:
-    from streamlit_paste_button import paste_image_button as _paste_image_button
-except Exception:  # pragma: no cover - 라이브러리 미설치 시
-    _paste_image_button = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -543,32 +543,38 @@ with gallery_col:
                     st.session_state[f"upload_nonce_{item_id}"] = upload_nonce + 1
                     st.rerun()
 
-            if _paste_image_button is not None:
-                paste_result = _paste_image_button(
-                    label="클립보드 붙여넣기",
-                    key=f"detail_paste_{item_id}_{upload_nonce}",
-                    background_color="#3B82F6",
-                    errors="ignore",
+            # 정식 declare_component (HTTP+IP 환경 단일 클릭). 새 요청 등록과
+            # 동일 패턴 — base64 dataURL → PIL 변환 → 즉시 add_image_from_pil.
+            st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
+            try:
+                paste_data_url = paste_clipboard(
+                    key=f"detail_paste_v2_{item_id}_{upload_nonce}"
                 )
-                if paste_result is not None and getattr(paste_result, "image_data", None) is not None:
-                    try:
-                        repository.add_image_from_pil(
-                            item_id,
-                            paste_result.image_data,
-                            "pasted.png",
-                            user["name"],
-                        )
-                        st.toast("붙여넣기 이미지가 추가되었습니다", icon="✅")
-                        st.session_state[f"upload_nonce_{item_id}"] = upload_nonce + 1
-                        st.rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
-                    except Exception as exc:  # pragma: no cover
-                        st.error(f"붙여넣기 실패: {exc}")
-            else:
-                st.caption(
-                    "(붙여넣기 라이브러리 미설치 — 파일 업로드만 가능)"
-                )
+            except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
+                paste_data_url = None
+                st.caption(f"paste 컴포넌트 오류: {exc}")
+
+            # 같은 dataURL 이 rerun 마다 반복 반환 → 중복 처리 방지
+            _last_pasted_key = f"_detail_last_pasted_{item_id}_{upload_nonce}"
+            if (
+                paste_data_url
+                and st.session_state.get(_last_pasted_key) != paste_data_url
+            ):
+                st.session_state[_last_pasted_key] = paste_data_url
+                try:
+                    _img, _, _ = decode_image_data_url(paste_data_url)
+                    repository.add_image_from_pil(
+                        item_id, _img, "pasted.png", user["name"]
+                    )
+                    st.toast("붙여넣기 이미지가 추가되었습니다", icon="✅")
+                    # 다음 paste 를 위해 컴포넌트 nonce 회전 → 새 widget key
+                    st.session_state[f"upload_nonce_{item_id}"] = upload_nonce + 1
+                    st.session_state.pop(_last_pasted_key, None)
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(f"붙여넣기 실패: {exc}")
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"붙여넣기 저장 실패: {exc}")
 
 
 # ---- 우측: 설명 + 타임라인 + 코멘트 작성 -----------------------------------
