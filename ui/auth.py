@@ -458,52 +458,12 @@ def render_project_selector(user_name: str | None = None) -> str | None:
                 st.markdown("**카테고리**")
                 st.caption(
                     "프로젝트별 카테고리 풀. 새 요청 등록 시 selectbox 옵션으로 노출. "
-                    "각 항목 옆 **[×]** 로 삭제, 입력칸 + **[추가]** 로 신규 등록."
+                    "각 항목 옆 **[×]** 로 삭제, 입력칸 + **[추가]** 로 신규 등록. "
+                    "기존 항목들의 카테고리는 자동으로 1회 import 됩니다."
                 )
 
-                # 기존 항목들의 카테고리를 일괄 import — 처음 이 프로젝트에 새
-                # 시스템을 적용하는 사용자가 직접 다시 입력하지 않도록.
                 try:
-                    cat_tree_existing = repository.list_categories(project=selected)
-                except Exception:
-                    cat_tree_existing = {}
-                # 인덱스에 카테고리 사용 항목이 있을 때만 [가져오기] 버튼 노출.
-                if cat_tree_existing:
-                    if st.button(
-                        "📥 기존 항목들의 카테고리 일괄 가져오기",
-                        key=f"_cat_import_btn_{selected}",
-                        help=(
-                            "이 프로젝트의 기존 요청들에 사용된 카테고리(대/중/소)를 "
-                            "현재 풀에 추가합니다. 이미 있는 건 중복 없이 무시."
-                        ),
-                    ):
-                        added = 0
-                        try:
-                            for l1_name, l2_map in cat_tree_existing.items():
-                                if l1_name:
-                                    ps_mod.add_project_category(selected, l1=l1_name)
-                                    added += 1
-                                for l2_name, l3_set in (l2_map or {}).items():
-                                    if l2_name:
-                                        ps_mod.add_project_category(
-                                            selected, l2=l2_name
-                                        )
-                                        added += 1
-                                    for l3_name in l3_set or []:
-                                        if l3_name:
-                                            ps_mod.add_project_category(
-                                                selected, l3=l3_name
-                                            )
-                                            added += 1
-                            st.toast(
-                                f"기존 카테고리 {added}건 추가됨 (중복 제외)",
-                                icon="📥",
-                            )
-                            st.rerun()
-                        except Exception as exc:  # noqa: BLE001
-                            st.error(f"가져오기 실패: {exc}")
-
-                try:
+                    # list_project_categories() 가 첫 호출 시 인덱스에서 자동 import
                     cats = ps_mod.list_project_categories(selected)
                 except Exception:
                     cats = {"l1": [], "l2": [], "l3": []}

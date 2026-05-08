@@ -57,10 +57,12 @@ _LEVELS: tuple[str, str, str] = ("l1", "l2", "l3")
 
 
 def _empty_entry() -> dict[str, Any]:
-    """초기 빈 엔트리. ``api_assignee`` 는 None, 카테고리는 빈 리스트 3 개."""
+    """초기 빈 엔트리. ``api_assignee`` None, 카테고리 빈 리스트 3 개,
+    ``imported_from_index`` False (lazy migration 플래그)."""
     return {
         "api_assignee": None,
         "categories": {lvl: [] for lvl in _LEVELS},
+        "imported_from_index": False,
     }
 
 
@@ -85,6 +87,9 @@ def _normalize_entry(raw: Any) -> dict[str, Any]:
                 entry["categories"][lvl] = [
                     str(x).strip() for x in seq if str(x).strip()
                 ]
+
+    # imported_from_index 플래그 (lazy migration)
+    entry["imported_from_index"] = bool(raw.get("imported_from_index"))
     return entry
 
 
@@ -220,11 +225,21 @@ def list_project_categories(project: str) -> dict[str, list[str]]:
 
     반환값은 항상 ``{"l1": [...], "l2": [...], "l3": [...]}`` 구조이며,
     각 리스트는 정렬된 unique 문자열. 미설정 프로젝트면 빈 리스트들.
+
+    **Lazy migration**: 이 프로젝트가 아직 ``imported_from_index`` 플래그가
+    False 면, 인덱스의 기존 항목들에서 사용된 카테고리를 1 회 자동으로
+    명시 풀에 추가하고 플래그를 True 로 설정. 사용자가 새 시스템 도입 후
+    별도 조작 없이 기존 카테고리가 옵션에 그대로 노출되도록 함. 사용자가
+    명시적으로 [×] 삭제한 카테고리는 다음 호출에서 다시 추가되지 않는다
+    (플래그가 영속).
     """
     project = (project or "").strip()
     empty = {lvl: [] for lvl in _LEVELS}
     if not project:
         return empty
+
+    _lazy_import_from_index(project)
+
     data = _load_all()
     entry = data.get(project)
     if not isinstance(entry, dict):
@@ -241,6 +256,54 @@ def list_project_categories(project: str) -> dict[str, list[str]]:
         uniq = sorted({str(x).strip() for x in seq if str(x).strip()})
         out[lvl] = uniq
     return out
+
+
+def _lazy_import_from_index(project: str) -> None:
+    """프로젝트 첫 ``list_project_categories`` 호출 시 1 회 자동 import.
+
+    인덱스 (``repository.list_categories(project=...)``) 의 트리에서
+    L1/L2/L3 unique 를 명시 풀에 합치고 ``imported_from_index = True`` 마킹.
+    이미 마킹돼 있으면 noop. 사용자가 [×] 삭제한 항목은 플래그가 영속되어
+    재추가되지 않음.
+    """
+    with file_lock(_lock_path()):
+        data = _load_all()
+        entry = data.get(project)
+        if isinstance(entry, dict) and entry.get("imported_from_index"):
+            return  # 이미 1 회 import 했음
+
+        # 지연 import — 순환 회피 (project_settings ← repository)
+        try:
+            from . import repository as repo_mod
+            cat_tree = repo_mod.list_categories(project=project)
+        except Exception:
+            cat_tree = {}
+
+        if not isinstance(entry, dict):
+            entry = _empty_entry()
+        cats = entry.setdefault("categories", {lvl: [] for lvl in _LEVELS})
+
+        def _push(level: str, name: str) -> None:
+            cleaned = (name or "").strip()
+            if not cleaned:
+                return
+            current = cats.get(level)
+            if not isinstance(current, list):
+                current = []
+            if cleaned not in current:
+                current.append(cleaned)
+            cats[level] = current
+
+        for l1_name, l2_map in (cat_tree or {}).items():
+            _push("l1", l1_name)
+            for l2_name, l3_set in (l2_map or {}).items():
+                _push("l2", l2_name)
+                for l3_name in l3_set or []:
+                    _push("l3", l3_name)
+
+        entry["imported_from_index"] = True
+        data[project] = entry
+        _write_json_unlocked(_file_path(), data)
 
 
 def add_project_category(
