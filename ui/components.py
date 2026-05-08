@@ -145,28 +145,39 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
                 unsafe_allow_html=True,
             )
 
-            # 제목 (작게)
+            # 제목 — 1 줄 line-clamp 로 고정 높이 (긴 제목도 ... 으로 잘라서
+            # 카드마다 같은 줄 수 보장).
             st.markdown(
                 f'<div style="font-weight:600;font-size:0.95em;line-height:1.3;'
-                f'margin:4px 0 2px 0;">{safe_title}</div>',
+                f"margin:4px 0 2px 0;display:-webkit-box;-webkit-line-clamp:1;"
+                f"-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;"
+                f'word-break:break-all;">{safe_title}</div>',
                 unsafe_allow_html=True,
             )
 
-            # 한 줄 메타: 등록 · 담당 · 코멘트 N · 이미지 N
+            # 한 줄 메타: 등록 · 담당 · 코멘트 N · 이미지 N — 한 줄로 강제 (nowrap).
             st.markdown(
-                f'<div style="font-size:0.75em;color:#6B7280;line-height:1.4;">'
+                f'<div style="font-size:0.75em;color:#6B7280;line-height:1.4;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
                 f"{safe_author} → {safe_assignee} · 💬 {comments_count} · 📷 {images_count}"
                 f"</div>",
                 unsafe_allow_html=True,
             )
 
-            # 설명 미리보기 (2 줄 line-clamp)
+            # 설명 미리보기 — 항상 2 줄 자리 차지 (있으면 line-clamp, 없으면 spacer).
+            # 결과: 모든 카드의 우측 정보 영역이 동일 줄 수 → 동일 높이.
             if safe_desc:
                 st.markdown(
                     f'<div style="font-size:0.8em;color:#475569;line-height:1.4;'
-                    f'margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;'
-                    f'-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;">'
-                    f"{safe_desc}</div>",
+                    f"margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;"
+                    f"-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;"
+                    f'min-height:2.8em;">{safe_desc}</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                # 빈 설명도 같은 높이 차지 (2.8em ≈ line-height 1.4 × 2 줄)
+                st.markdown(
+                    '<div style="margin-top:4px;min-height:2.8em;"></div>',
                     unsafe_allow_html=True,
                 )
 
