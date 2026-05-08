@@ -25,8 +25,6 @@ from core.workflow import (
 from ui.auth import get_or_init_user, require_user
 from ui.components import humanize_dt
 from ui.theme import (
-    is_sla_violated,
-    is_sla_warning,
     status_badge_html,
     urgency_badge_html,
 )
@@ -129,7 +127,7 @@ def _role_color(role: str | Role) -> str:
 #        - meta_c2 (2): 프로젝트 표시 + 변경 popover
 #        - meta_c3 (2): 카테고리 표시 + 수정 popover
 #        - meta_c4 (1): 우측 끝 [→ 완료] 버튼 (closed 전이 가능 시)
-#   4행: SLA 배너 (있을 때만)
+#   4행: (제거됨 — SLA 표시 없음)
 #   5행: 상태 변경 버튼 (closed 제외, 가로 한 줄)
 # ---------------------------------------------------------------------------
 
@@ -426,11 +424,7 @@ with meta_c4:
             except Exception as exc:  # pragma: no cover - 방어적
                 st.error(f"완료 처리 실패: {exc}")
 
-# --- 4행: SLA 배너 (있을 때만) ---------------------------------------------
-if is_sla_violated(issue.urgency.value, issue.created_at, issue.status.value):
-    st.error("⚠ SLA 위반: 첫 응답 시간이 초과되었습니다.")
-elif is_sla_warning(issue.urgency.value, issue.created_at, issue.status.value):
-    st.warning("⏳ SLA 임박: 첫 응답 시간 절반이 경과했습니다.")
+# --- 4행: (제거됨 — SLA 표시 없음) ----------------------------------------
 
 
 # ---------------------------------------------------------------------------

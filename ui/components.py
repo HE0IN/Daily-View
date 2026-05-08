@@ -16,8 +16,6 @@ from ui.theme import (
     STATUS_COLORS,
     STATUS_LABELS,
     URGENCY_COLORS,
-    is_sla_violated,
-    is_sla_warning,
     status_badge_html,
     urgency_badge_html,
 )
@@ -48,12 +46,11 @@ def humanize_dt(dt_str: str | datetime) -> str:
         return str(dt_str)
 
 
-def _stripe_html(color: str, *, thick: bool = False) -> str:
-    """카드 좌측 색상 띠. ``thick`` 이면 SLA 위반 강조."""
-    width = 8 if thick else 4
+def _stripe_html(color: str) -> str:
+    """카드 좌측 색상 띠 (긴급도 색)."""
     return (
         f'<div style="position:absolute;left:0;top:0;bottom:0;'
-        f'width:{width}px;background:{color};border-radius:4px 0 0 4px;"></div>'
+        f'width:4px;background:{color};border-radius:4px 0 0 4px;"></div>'
     )
 
 
@@ -106,13 +103,9 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     safe_assignee = html.escape(str(assignee))
     safe_desc = html.escape(str(item.get("description_preview") or ""))
 
-    # SLA 판정 — 카드 좌측 색상 띠
-    violated = bool(created_at) and is_sla_violated(urgency, created_at, status)
-    warning = bool(created_at) and is_sla_warning(urgency, created_at, status)
-    stripe_color = (
-        "#DC2626" if violated else URGENCY_COLORS.get(urgency, "#9CA3AF")
-    )
-    stripe_w = 6 if (violated or warning) else 3
+    # 카드 좌측 색상 띠 — 긴급도 색
+    stripe_color = URGENCY_COLORS.get(urgency, "#9CA3AF")
+    stripe_w = 3
 
     # height 인자 제거: 고정 220px 는 짧은 카드는 빈 공간, 긴 카드는 스크롤이
     # 생기는 문제 — 같은 행에서 가장 긴 카드의 자연스러운 높이로 통일하기 위해
@@ -174,24 +167,6 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
                     f'margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;'
                     f'-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;">'
                     f"{safe_desc}</div>",
-                    unsafe_allow_html=True,
-                )
-
-            # SLA 경고 라벨 (위반·임박만). 없을 때도 같은 자리 차지하도록 invisible
-            # spacer — 행 높이 변동 폭 줄이기.
-            if violated:
-                st.markdown(
-                    f'<div style="margin-top:2px;height:22px;">{render_badge("SLA 위반", "#DC2626")}</div>',
-                    unsafe_allow_html=True,
-                )
-            elif warning:
-                st.markdown(
-                    f'<div style="margin-top:2px;height:22px;">{render_badge("SLA 임박", "#F59E0B")}</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<div style="margin-top:2px;height:22px;"></div>',
                     unsafe_allow_html=True,
                 )
 
