@@ -210,39 +210,58 @@ with left:
 
     # 클립보드 붙여넣기 — 정식 declare_component (HTTP+IP 환경 단일 클릭 동작).
     # paste 이벤트 사용 → Secure Context 무관. iframe ↔ Python 양방향 통신을
-    # 통해 paste 결과 (base64 dataURL) 를 직접 받음 → 외부 textarea 복사 불필요.
-    paste_image: PILImage.Image | None = None
+    # 통해 paste 결과 (base64 dataURL) 를 직접 받음. 새 paste 가 들어올 때마다
+    # *누적 리스트* 에 추가 → 사용자가 여러 장 paste 가능.
     with img_col2:
-        st.markdown("**클립보드 (Ctrl+V)**")
+        st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
         try:
             paste_data_url = paste_clipboard(key=f"new_paste_v2_{nonce}")
         except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
             paste_data_url = None
             st.caption(f"paste 컴포넌트 오류: {exc}")
 
-    # 정식 컴포넌트 결과 처리 — 중복 처리 방지 (같은 dataURL 이 rerun 마다 반복 반환됨)
+    # 누적 리스트 키
     _last_pasted_key = f"_last_pasted_v2_{nonce}"
-    if paste_data_url:
-        if st.session_state.get(_last_pasted_key) != paste_data_url:
-            st.session_state[_last_pasted_key] = paste_data_url
-            try:
-                _img, _, _ = _decode_pasted_b64(paste_data_url)
-                st.session_state[f"_decoded_paste_image_{nonce}"] = _img
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"paste 이미지 디코드 실패: {exc}")
-        # 이전에 디코드된 이미지를 paste_image 로 합류
-        paste_image = st.session_state.get(f"_decoded_paste_image_{nonce}")
+    _pasted_list_key = f"_decoded_paste_images_{nonce}"
+
+    # 새 dataURL 이 들어오면 (이전과 다르면) 누적 리스트에 append.
+    # rerun 마다 같은 dataURL 이 반복 반환되니 중복 추가 방지를 위해 비교.
+    if paste_data_url and st.session_state.get(_last_pasted_key) != paste_data_url:
+        st.session_state[_last_pasted_key] = paste_data_url
+        try:
+            _img, _, _ = _decode_pasted_b64(paste_data_url)
+            existing_paste = list(st.session_state.get(_pasted_list_key, []))
+            existing_paste.append(_img)
+            st.session_state[_pasted_list_key] = existing_paste
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"paste 이미지 디코드 실패: {exc}")
+
+    # 누적된 paste 이미지 리스트
+    paste_images: list[PILImage.Image] = list(
+        st.session_state.get(_pasted_list_key, [])
+    )
+
+    # paste 리스트 초기화 버튼 (사용자가 잘못 paste 한 경우)
+    if paste_images:
+        if st.button(
+            f"클립보드 이미지 비우기 ({len(paste_images)}장)",
+            key=f"new_paste_clear_{nonce}",
+            use_container_width=True,
+        ):
+            st.session_state.pop(_pasted_list_key, None)
+            st.session_state.pop(_last_pasted_key, None)
+            st.rerun()
 
     # 미리보기
     preview_files: list = list(uploaded_files or [])
-    preview_total = len(preview_files) + (1 if paste_image is not None else 0)
+    preview_total = len(preview_files) + len(paste_images)
     if preview_total:
         st.caption(f"미리보기 — {preview_total}장")
         cols = st.columns(min(preview_total, 4))
         idx = 0
-        if paste_image is not None:
+        for i, p_img in enumerate(paste_images, start=1):
             with cols[idx % len(cols)]:
-                st.image(paste_image, caption="(클립보드)", use_container_width=True)
+                st.image(p_img, caption=f"(클립보드 #{i})", use_container_width=True)
             idx += 1
         for f in preview_files:
             with cols[idx % len(cols)]:
@@ -397,13 +416,14 @@ if submit:
     # 2) 이미지 첨부 — 실패해도 이슈 자체는 살린다 (개별 메시지)
     image_errors: list[str] = []
 
-    if paste_image is not None:
+    # 누적된 paste 이미지들 모두 첨부
+    for i, p_img in enumerate(paste_images, start=1):
         try:
             repository.add_image_from_pil(
-                issue.id, paste_image, "pasted.png", name
+                issue.id, p_img, f"pasted_{i}.png", name
             )
         except Exception as exc:  # noqa: BLE001
-            image_errors.append(f"클립보드 이미지 실패: {exc}")
+            image_errors.append(f"클립보드 이미지 #{i} 실패: {exc}")
 
     for f in preview_files:
         try:
@@ -418,8 +438,9 @@ if submit:
 
     # 3) 성공 토스트 + 폼 초기화 + 상세보기 이동
     st.toast("등록되었습니다", icon="✅")
-    # 디코드된 paste 이미지 캐시 제거 — 다음 폼에 재첨부되지 않도록.
-    st.session_state.pop(f"_decoded_paste_image_{nonce}", None)
+    # 누적된 paste 이미지/last 캐시 제거 — 다음 폼에 재첨부되지 않도록.
+    st.session_state.pop(f"_decoded_paste_images_{nonce}", None)
+    st.session_state.pop(f"_last_pasted_v2_{nonce}", None)
     st.session_state["new_form_nonce"] = nonce + 1
     # st.switch_page 가 query_params 를 유실하는 케이스가 있어
     # session_state 로도 함께 전달 (상세보기에서 둘 다 체크).
