@@ -6,8 +6,10 @@
 
 set -e
 
-# 1) 프로젝트 루트로 이동
-REPO_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+# 1) 프로젝트 루트로 이동 (CLAUDE_PROJECT_DIR → git toplevel → 스크립트 위치 → pwd 순)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_PROJECT_ROOT")}"
 cd "$REPO_DIR" || { echo "[auto_push] cannot cd to $REPO_DIR" >&2; exit 0; }
 
 # 2) git 레포 아니면 skip
