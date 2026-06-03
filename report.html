@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily View 프로젝트 현황 보고서</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: #eef2f7; }
+  body {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 12mm auto;
+    padding: 14mm 16mm 12mm 16mm;
+    background: #ffffff;
+    color: #1f2937;
+    font-family: "Malgun Gothic", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.45;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  @media print {
+    html { background: none; }
+    body { margin: 0; box-shadow: none; }
+  }
+
+  /* Header */
+  .report-header {
+    border-bottom: 2px solid #1e3a5f;
+    padding-bottom: 5mm;
+    margin-bottom: 6mm;
+  }
+  .report-title {
+    font-size: 17pt;
+    font-weight: 700;
+    color: #1e3a5f;
+    letter-spacing: -0.5px;
+  }
+  .report-subtitle {
+    font-size: 10pt;
+    color: #475569;
+    margin-top: 1mm;
+  }
+  .report-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 3mm;
+    font-size: 8.5pt;
+    color: #64748b;
+  }
+  .meta-status {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 1mm 3mm;
+    border-radius: 2px;
+    font-weight: 600;
+    border: 1px solid #fde68a;
+  }
+
+  /* Section */
+  .section { margin-bottom: 5mm; }
+  .section-title {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1e3a5f;
+    border-left: 3px solid #1e3a5f;
+    padding-left: 3mm;
+    margin-bottom: 2.5mm;
+  }
+  .section p { margin-bottom: 1mm; }
+
+  /* 2-col grid */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+  }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+  th, td {
+    padding: 1.4mm 2mm;
+    text-align: left;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+  th {
+    background: #f1f5f9;
+    color: #1e3a5f;
+    font-weight: 600;
+    font-size: 8.5pt;
+    border-bottom: 1px solid #cbd5e1;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* Status badges */
+  .badge {
+    display: inline-block;
+    padding: 0.4mm 2.2mm;
+    border-radius: 2px;
+    font-size: 8pt;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  .badge-done { background: #d1fae5; color: #065f46; }
+  .badge-pending { background: #fee2e2; color: #991b1b; }
+  .badge-hold { background: #e2e8f0; color: #475569; }
+
+  /* Risk box */
+  .risk {
+    border-left: 3px solid #b91c1c;
+    background: #fef2f2;
+    padding: 2.3mm 3mm;
+    margin-bottom: 2mm;
+    border-radius: 0 2px 2px 0;
+  }
+  .risk.medium { border-left-color: #d97706; background: #fffbeb; }
+  .risk.low    { border-left-color: #64748b; background: #f8fafc; }
+  .risk-title {
+    font-weight: 700;
+    color: #991b1b;
+    font-size: 9.5pt;
+  }
+  .risk.medium .risk-title { color: #92400e; }
+  .risk.low    .risk-title { color: #334155; }
+  .risk-body {
+    margin-top: 1mm;
+    color: #4b5563;
+    font-size: 9pt;
+  }
+
+  /* Tech pills */
+  .tech-pill {
+    display: inline-block;
+    background: #eef2ff;
+    color: #3730a3;
+    padding: 0.4mm 2.2mm;
+    margin: 0.6mm 1mm 0.6mm 0;
+    border-radius: 2px;
+    font-size: 8.5pt;
+    font-family: "Consolas", "D2Coding", "Cascadia Mono", monospace;
+  }
+
+  /* Bullet list */
+  ol.steps {
+    padding-left: 5mm;
+    font-size: 9pt;
+  }
+  ol.steps li {
+    margin-bottom: 0.8mm;
+  }
+
+  code {
+    font-family: "Consolas", "D2Coding", "Cascadia Mono", monospace;
+    background: #f1f5f9;
+    padding: 0.2mm 1mm;
+    border-radius: 2px;
+    font-size: 8.8pt;
+    color: #1e3a5f;
+  }
+
+  /* Footer */
+  .report-footer {
+    margin-top: 6mm;
+    padding-top: 3mm;
+    border-top: 1px solid #cbd5e1;
+    font-size: 8pt;
+    color: #94a3b8;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="report-header">
+  <div class="report-title">Daily View 프로젝트 현황 보고서</div>
+  <div class="report-subtitle">검토자-개발자 소통 도구 / Streamlit 기반 사내 웹앱</div>
+  <div class="report-meta">
+    <span>작성일: 2026-06-03</span>
+    <span class="meta-status">운영 배포 직전 · HTTPS 설정 대기</span>
+    <span>대상: 사내 검토자·개발자 소수 인원</span>
+  </div>
+</div>
+
+<!-- 1. 사업 배경 및 목적 -->
+<div class="section">
+  <div class="section-title">1. 사업 배경 및 목적</div>
+  <p>
+    현재 개발 요청은 PowerPoint에 스크린샷을 붙이고 텍스트 코멘트와 긴급도(상·중·하)를 기재하는 방식으로 운영되고 있다.
+    이 방식은 (1) 누적 항목 정리가 어렵고, (2) 누가 어떤 항목을 처리 중인지 한눈에 파악되지 않으며,
+    (3) 긴급도·상태별 필터·검색이 불가능하다.
+    본 프로젝트는 이를 <strong>로컬 호스팅 웹앱</strong>으로 전환하여, 사내 공용 PC를 통해 검토자와 개발자가
+    동일한 화면에서 요청·답변·검토를 체계적으로 주고받도록 한다.
+    DB 없이 파일 기반으로 운영하여 인프라 부담을 최소화한다.
+  </p>
+</div>
+
+<!-- 2. 핵심 기능 -->
+<div class="section">
+  <div class="section-title">2. 핵심 기능</div>
+  <table>
+    <thead>
+      <tr><th style="width:22%">영역</th><th>내용</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>요청 등록</td><td>스크린샷 다중 첨부(클립보드 붙여넣기·파일 업로드 병용), 제목/설명/긴급도(상·중·하), 담당자·태그 지정</td></tr>
+      <tr><td>워크플로우</td><td>7단계 상태(요청됨 / 확인중 / API대기 / 완료 / 검토중 / 검토완료 / 재요청). 역할별 권한 매트릭스 적용</td></tr>
+      <tr><td>코멘트 타임라인</td><td>시간순 단일 스레드. 상태 변경 등 시스템 이벤트는 점선 박스로 인라인 표시</td></tr>
+      <tr><td>역할별 대시보드</td><td>검토자: 검토 대기 + 내가 등록한 미해결. 개발자: 처리 큐 + 외부 대기. SLA 임박 항목은 강조 표시</td></tr>
+      <tr><td>검색·필터</td><td>긴급도·상태·담당자·키워드/태그. 사전 정의 뷰(내 액션 큐, 외부 대기 등) 지원</td></tr>
+      <tr><td>운영 기능</td><td>30초 자동 새로고침, 일일 백업, 인덱스 자동 점검 및 손상 시 자동 재구축</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 3. 구현 현황 -->
+<div class="section">
+  <div class="section-title">3. 구현 현황</div>
+  <div class="grid-2">
+    <div>
+      <table>
+        <thead>
+          <tr><th>마일스톤</th><th style="width:25%">상태</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>M0 환경 구축</td><td><span class="badge badge-done">완료</span></td></tr>
+          <tr><td>M1 코어 데이터 계층</td><td><span class="badge badge-done">완료</span></td></tr>
+          <tr><td>M2 UI 페이지 구현</td><td><span class="badge badge-done">완료</span></td></tr>
+          <tr><td>M3 운영 안정화</td><td><span class="badge badge-done">완료</span></td></tr>
+          <tr><td>M4 편의 기능 확장</td><td><span class="badge badge-hold">보류</span></td></tr>
+          <tr><td>M5 추후 확장(DB 등)</td><td><span class="badge badge-hold">보류</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <table>
+        <thead>
+          <tr><th>산출물</th><th style="width:35%">규모</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>코어 모듈 (<code>core/</code>)</td><td>11개</td></tr>
+          <tr><td>UI 페이지 (<code>pages/</code>)</td><td>4개 + 대시보드</td></tr>
+          <tr><td>운영 스크립트</td><td>6개 (bat·py)</td></tr>
+          <tr><td>설계 문서 (<code>docs/</code>)</td><td>7개 + RUNBOOK</td></tr>
+          <tr><td>단위 테스트</td><td>pytest 75/75 통과</td></tr>
+          <tr><td>최근 작업일</td><td>2026-05-05</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 4. 기술 구성 -->
+<div class="section">
+  <div class="section-title">4. 기술 구성</div>
+  <p>
+    <strong>플랫폼:</strong>
+    <span class="tech-pill">Python 3.12.7</span>
+    <span class="tech-pill">Streamlit ≥ 1.39</span>
+    <span class="tech-pill">Windows 공용 PC 호스팅</span>
+    <span class="tech-pill">DB 미사용(파일 기반)</span>
+  </p>
+  <p>
+    <strong>주요 라이브러리:</strong>
+    <span class="tech-pill">pydantic</span>
+    <span class="tech-pill">Pillow</span>
+    <span class="tech-pill">filelock</span>
+    <span class="tech-pill">pandas</span>
+    <span class="tech-pill">streamlit-paste-button</span>
+    <span class="tech-pill">streamlit-autorefresh</span>
+    <span class="tech-pill">tzdata</span>
+  </p>
+  <p>
+    <strong>저장 구조:</strong> 항목별 폴더(<code>data/items/{ID}/</code>)에 <code>meta.json</code>, <code>comments.jsonl</code>, 이미지를 격리 저장.
+    루트 <code>index.json</code>이 목록 캐시 역할. 모든 쓰기는 <code>filelock</code> + atomic write 패턴으로 다중 사용자 동시 접속 시 충돌을 차단한다.
+  </p>
+</div>
+
+<!-- 5. 주요 리스크 및 미해결 사항 -->
+<div class="section">
+  <div class="section-title">5. 주요 리스크 및 미해결 사항</div>
+
+  <div class="risk">
+    <div class="risk-title">[A · 치명] HTTPS 미설정 → 사내 다른 PC에서 클립보드 붙여넣기 불가</div>
+    <div class="risk-body">
+      브라우저 보안 정책상 클립보드 API는 HTTPS 또는 localhost 환경에서만 동작한다.
+      현재 RUNBOOK은 평문 HTTP 기반 NSSM 등록 절차만 포함하고 있어, 검토자가 자기 PC에서 사내 IP로 접속할 경우
+      <strong>핵심 워크플로(캡처→붙여넣기→등록)가 차단</strong>된다.
+      클립보드 붙여넣기는 사용자가 명시한 필수 기능이므로 배포 전 반드시 해소되어야 한다.
+      <br><strong>대응안:</strong> mkcert로 사내용 root CA 발급 → Streamlit <code>sslCertFile</code>/<code>sslKeyFile</code> 적용 →
+      각 클라이언트 PC에 root CA 1회 import. (절차는 본 보고서 직전 세션 정리에 존재)
+    </div>
+  </div>
+
+  <div class="risk medium">
+    <div class="risk-title">[B · 중요] 사내 공용 PC 실배포 미진행</div>
+    <div class="risk-body">
+      코드와 운영 매뉴얼(RUNBOOK.md)은 완비되었으나 실제 NSSM 서비스 등록, 방화벽 8501 인바운드 허용,
+      일일 백업 작업 스케줄러 등록이 수행되지 않았다. 위 항목 A의 HTTPS 작업과 함께 일괄 실행하는 것이 효율적이다.
+    </div>
+  </div>
+
+  <div class="risk low">
+    <div class="risk-title">[C · 일반] 실사용자 피드백 미수집</div>
+    <div class="risk-body">
+      검토자 1명 + 개발자 1명 대상 1주 파일럿 운영이 계획되어 있으나 미실시. 실사용 데이터가 없으면
+      M4 우선순위(통계 고도화·스마트 필터 칩·자동 아카이브 강화 등) 판단이 어렵다.
+    </div>
+  </div>
+</div>
+
+<!-- 6. 다음 단계 -->
+<div class="section">
+  <div class="section-title">6. 다음 단계 (우선순위 순)</div>
+  <ol class="steps">
+    <li><strong>HTTPS 셋업.</strong> mkcert 설치 → 사내 IP·호스트명 인증서 발급 → <code>.streamlit/config.toml</code>에 SSL 경로 반영 → RUNBOOK 5장에 절차 정식 추가.</li>
+    <li><strong>사내 공용 PC 배포.</strong> NSSM 서비스 등록, 방화벽 인바운드 허용, 작업 스케줄러에 일일 백업 등록.</li>
+    <li><strong>클라이언트 PC 사전 작업.</strong> 검토자·개발자 PC 각각에 root CA 1회 import(PowerShell 한 줄).</li>
+    <li><strong>1주 파일럿 운영.</strong> 검토자 1명 + 개발자 1명 실사용 진행, 사용 빈도·불편 지점·누락 기능 수집.</li>
+    <li><strong>M4 진입 여부 결정.</strong> 피드백 기반으로 통계 고도화·스마트 필터·자동 아카이브 강화 항목을 선별 적용.</li>
+  </ol>
+</div>
+
+<div class="report-footer">
+  Daily View · 한 페이지 현황 보고서 · 2026-06-03 작성 · 본 문서는 인쇄·PDF 변환 시 A4 한 장에 맞춰 출력됩니다
+</div>
+
+</body>
+</html>
