@@ -89,10 +89,6 @@ if preset_assignee and preset_assignee in assignee_options:
 elif role == "developer" and name in assignee_set:
     default_assignee = name
 
-# 필터 변경 시 페이지를 1로 리셋하기 위해 직전 값과 비교.
-prev_filter_key = st.session_state.get("list_prev_filter_key")
-
-
 # ---------------------------------------------------------------------------
 # 필터 UI
 # ---------------------------------------------------------------------------
@@ -190,23 +186,6 @@ view_mode = st.radio(
     key="list_view_mode",
 )
 
-# 페이지네이션 리셋: 필터 키가 바뀌면 page=1
-filter_key = (
-    urgency_choice,
-    tuple(status_choice),
-    assignee_choice,
-    search_query,
-    sort_choice,
-    include_closed,
-    include_archived,
-    current_project,
-    category_l1_choice,
-)
-if prev_filter_key is not None and prev_filter_key != filter_key:
-    st.session_state["list_page"] = 1
-st.session_state["list_prev_filter_key"] = filter_key
-
-
 # ---------------------------------------------------------------------------
 # 데이터 조회 (서버측 필터 가능한 항목만 repository 에 위임,
 # 나머지는 클라이언트측에서 추가 처리)
@@ -298,33 +277,18 @@ total = len(items)
 
 
 # ---------------------------------------------------------------------------
-# 페이지네이션
+# 결과 카운트 + 본문 (페이지네이션 없이 전체 표시)
 # ---------------------------------------------------------------------------
 
-PAGE_SIZE = 16  # 4 columns × 4 rows
-total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-st.session_state.setdefault("list_page", 1)
-current_page = min(max(1, int(st.session_state["list_page"])), total_pages)
-st.session_state["list_page"] = current_page
+st.caption(f"총 {total}건")
 
-start = (current_page - 1) * PAGE_SIZE
-end = start + PAGE_SIZE
-page_items = items[start:end]
-
-
-# ---------------------------------------------------------------------------
-# 결과 카운트 + 본문
-# ---------------------------------------------------------------------------
-
-st.caption(f"총 {total}건 · {current_page}/{total_pages} 페이지")
-
-def _render_card_view(page_items_local: list[dict], current_page_local: int) -> None:
-    """카드 그리드 (4열) 렌더링."""
+def _render_card_view(items_local: list[dict]) -> None:
+    """카드 그리드 (4열) — 전체 항목을 한 번에 표시."""
     # 같은 행 카드들이 가장 긴 카드 높이로 stretch — 한 번만 주입.
     components.render_card_grid_css()
     cols_per_row = 4  # 카드를 컴팩트하게 줄였으니 한 행에 더 많이.
-    for row_start in range(0, len(page_items_local), cols_per_row):
-        row = page_items_local[row_start : row_start + cols_per_row]
+    for row_start in range(0, len(items_local), cols_per_row):
+        row = items_local[row_start : row_start + cols_per_row]
         col_objs = st.columns(cols_per_row)
         for col, item in zip(col_objs, row):
             with col:
@@ -333,7 +297,7 @@ def _render_card_view(page_items_local: list[dict], current_page_local: int) -> 
                     st.caption("🗑 삭제됨")
                 clicked = components.render_card(
                     item,
-                    key_prefix=f"list_p{current_page_local}_r{row_start}",
+                    key_prefix=f"list_r{row_start}",
                 )
                 if clicked:
                     # st.switch_page 가 query_params 를 유실하는 케이스가 있어
@@ -401,31 +365,6 @@ def _render_table_view(page_items_local: list[dict]) -> None:
 if total == 0:
     st.info("조건에 맞는 항목이 없습니다.")
 elif view_mode == "테이블":
-    _render_table_view(page_items)
+    _render_table_view(items)
 else:
-    _render_card_view(page_items, current_page)
-
-# 페이지 컨트롤
-if total > 0:
-    st.divider()
-    pc1, pc2, pc3 = st.columns([1, 2, 1])
-    with pc1:
-        prev_disabled = current_page <= 1
-        if st.button(
-            "← 이전", disabled=prev_disabled, key="list_prev", width="stretch"
-        ):
-            st.session_state["list_page"] = current_page - 1
-            st.rerun()
-    with pc2:
-        st.markdown(
-            f"<div style='text-align:center;color:#6B7280;'>"
-            f"{current_page} / {total_pages}</div>",
-            unsafe_allow_html=True,
-        )
-    with pc3:
-        next_disabled = current_page >= total_pages
-        if st.button(
-            "다음 →", disabled=next_disabled, key="list_next", width="stretch"
-        ):
-            st.session_state["list_page"] = current_page + 1
-            st.rerun()
+    _render_card_view(items)
