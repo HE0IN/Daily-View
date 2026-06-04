@@ -16,26 +16,27 @@ class WorkflowError(Exception):
 
 # 권한 매트릭스 — (현재 상태, 역할) → 허용되는 다음 상태들.
 #
-# 운영 흐름 (단순화된 버전, 사용자 합의):
-#   요청중 → 작업중 → (API대기) → 검토중 → 완료
-#                                    ↘ 재요청 → 작업중
+# 운영 흐름 (검토중 1 단계, 사용자 합의):
+#   요청중 → 개발중 → (API대기) → 검토중 → 완료
+#                                    ├ 추가확인필요 → 개발중
+#                                    └ 반려          → 개발중
 #
-# - 검토자 등록 → ``requested`` (요청중)
-# - 개발자 확인 → ``in_progress`` (작업중)  ※ 라벨 의미 변경: 확인중 → 작업중
+# - 등록 → ``requested`` (요청중)               ※ 검토자/개발자 모두
+# - 개발자 착수 → ``in_progress`` (개발중)
 # - 작업 중 외부 의존 발견 → ``api_check`` (API대기)
 # - 개발자가 작업 종료 → 바로 ``reviewing`` (검토중) 으로 전환
-#   (기존엔 done 단계를 거쳤으나 중간 단계 제거)
-# - 검토자 OK → ``closed`` (완료)
-# - 검토자 NG → ``reopened`` → ``in_progress`` 로 다시
+# - 검토자 판단 (검토중에서 3 갈래):
+#     · OK            → ``closed``        (완료)
+#     · 추가확인필요  → ``needs_recheck`` → 개발자가 ``in_progress`` 로
+#     · 반려(불통)    → ``rejected``      → 개발자가 ``in_progress`` 로
 #
-# ``done`` 상태는 새 흐름에서는 사용하지 않지만 enum 은 유지 (기존 데이터 호환).
-# 기존 done 항목은 검토자가 직접 검토중/완료/재요청으로 정리할 수 있도록
-# 호환 전이만 남긴다.
+# ``done`` / ``reopened`` 은 레거시 — 새 흐름에서는 도달하지 않지만 옛 데이터
+# 호환을 위해 전이를 남겨, 검토자/개발자가 새 상태로 정리할 수 있게 한다.
 TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
     # 새 흐름
     (Status.requested, Role.developer): [Status.in_progress],
     (Status.requested, Role.reviewer): [Status.closed],  # 검토자 자체 취소
-    # 두 명만 쓰는 환경에서 검토자 단계가 형식적인 경우가 많아 개발자도 closed 가능
+    # 두 명만 쓰는 환경이라 개발자도 바로 완료(closed) 가능하게 유지.
     (Status.in_progress, Role.developer): [
         Status.api_check,
         Status.reviewing,
@@ -47,21 +48,37 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
         Status.closed,
     ],
     (Status.reviewing, Role.developer): [Status.closed],
-    (Status.reviewing, Role.reviewer): [Status.closed, Status.reopened],
+    # 검토자: 완료 / 추가확인필요 / 반려 — 3 갈래
+    (Status.reviewing, Role.reviewer): [
+        Status.closed,
+        Status.needs_recheck,
+        Status.rejected,
+    ],
+    # 추가확인필요·반려 → 개발자가 다시 개발중으로 착수
+    (Status.needs_recheck, Role.developer): [Status.in_progress],
+    (Status.rejected, Role.developer): [Status.in_progress],
+    # 레거시 호환 — 옛 데이터의 reopened / done 항목용 (새 흐름 도달 안 함)
     (Status.reopened, Role.developer): [Status.in_progress],
-    # 레거시 호환 — 옛 데이터의 done 항목용 (새 흐름에서는 도달 안 함)
-    (Status.done, Role.reviewer): [Status.reviewing, Status.closed, Status.reopened],
+    (Status.done, Role.reviewer): [
+        Status.reviewing,
+        Status.closed,
+        Status.needs_recheck,
+        Status.rejected,
+    ],
 }
 
 
 # 한국어 라벨 (UI 표시 전용)
 STATUS_LABELS_KO: dict[Status, str] = {
     Status.requested: "요청중",
-    Status.in_progress: "작업중",
+    Status.in_progress: "개발중",
     Status.api_check: "API대기",
-    Status.done: "작업완료",  # 레거시 — 새 흐름에서는 안 만들어짐
     Status.reviewing: "검토중",
+    Status.needs_recheck: "추가확인필요",
+    Status.rejected: "반려",
     Status.closed: "완료",
+    # 레거시
+    Status.done: "작업완료",
     Status.reopened: "재요청",
 }
 

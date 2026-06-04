@@ -29,23 +29,29 @@ URGENCY_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 STATUS_COLORS: dict[str, str] = {
-    "requested": "#3B82F6",
-    "in_progress": "#8B5CF6",
-    "api_check": "#06B6D4",
+    "requested": "#3B82F6",      # 파랑
+    "in_progress": "#8B5CF6",    # 보라
+    "api_check": "#06B6D4",      # 청록
+    "reviewing": "#F59E0B",      # 주황
+    "needs_recheck": "#F97316",  # 진주황 (추가확인필요)
+    "rejected": "#DC2626",       # 빨강 (반려)
+    "closed": "#6B7280",         # 회색 (완료)
+    # 레거시
     "done": "#10B981",
-    "reviewing": "#F59E0B",
     "reopened": "#EF4444",
-    "closed": "#6B7280",
 }
 
 STATUS_LABELS: dict[str, str] = {
     "requested": "요청중",
-    "in_progress": "작업중",
+    "in_progress": "개발중",
     "api_check": "API대기",
-    "done": "작업완료",  # 레거시 — 새 흐름에서는 안 만들어짐
     "reviewing": "검토중",
-    "reopened": "재요청",
+    "needs_recheck": "추가확인필요",
+    "rejected": "반려",
     "closed": "완료",
+    # 레거시 — 새 흐름에서는 안 만들어짐
+    "done": "작업완료",
+    "reopened": "재요청",
 }
 
 # ---------------------------------------------------------------------------

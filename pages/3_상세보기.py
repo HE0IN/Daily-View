@@ -31,6 +31,8 @@ from core.workflow import (
 from ui.auth import get_or_init_user, require_user
 from ui.components import humanize_dt
 from ui.theme import (
+    STATUS_COLORS,
+    STATUS_LABELS,
     status_badge_html,
     urgency_badge_html,
 )
@@ -142,23 +144,15 @@ with top_right:
         unsafe_allow_html=True,
     )
 
-# --- 2행: 제목 + 긴급도 배지 / 상태 배지 ----------------------------------
+# --- 2행: 제목 + 긴급도 배지 (상태는 아래 메타 행 맨 앞으로 이동) ----------
 # XSS 방지: 모든 사용자 입력은 escape 후 HTML 으로 렌더
-title_col, status_col = st.columns([5, 2])
-with title_col:
-    st.markdown(
-        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
-        f"{urgency_badge_html(issue.urgency.value)}"
-        f'<h2 style="margin:0;line-height:1.3;">{html.escape(issue.title)}</h2>'
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-with status_col:
-    st.markdown(
-        f'<div style="text-align:right;margin-top:6px;font-size:0.95em;">'
-        f"상태: {status_badge_html(issue.status.value)}</div>",
-        unsafe_allow_html=True,
-    )
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    f"{urgency_badge_html(issue.urgency.value)}"
+    f'<h2 style="margin:0;line-height:1.3;">{html.escape(issue.title)}</h2>'
+    f"</div>",
+    unsafe_allow_html=True,
+)
 
 # --- 3행: 메타 정보 (등록 / 담당 / 카테고리) 가로 배치 ---------------------
 created_human = humanize_dt(issue.created_at)
@@ -198,7 +192,45 @@ if _project_raw:
 #   c2 = 긴급도 + [수정]  (NEW — 프로젝트 변경은 사이드바에서만)
 #   c3 = 카테고리 + [수정]
 #   c4 = [→ 완료] 버튼 (우측 끝, 짧게)
-meta_c1, meta_c2, meta_c3, meta_c4 = st.columns([3, 2, 2, 1], gap="small")
+# 상태를 맨 앞 컬럼에 크게 — 등록자보다 먼저 눈에 들어오게 + [변경] popover.
+meta_c0, meta_c1, meta_c2, meta_c3 = st.columns([1.7, 3, 1.6, 2.2], gap="small")
+
+with meta_c0:
+    _st_color = STATUS_COLORS.get(issue.status.value, "#9CA3AF")
+    _st_label = STATUS_LABELS.get(issue.status.value, issue.status.value)
+    s_l, s_r = st.columns([2, 1])
+    with s_l:
+        st.markdown(
+            f'<div style="line-height:1.2;">'
+            f'<span style="font-size:0.72em;color:#6B7280;">상태</span><br>'
+            f'<span style="display:inline-block;margin-top:2px;padding:3px 12px;'
+            f"border-radius:6px;background:{_st_color};color:#fff;"
+            f'font-size:1.05em;font-weight:700;">{_st_label}</span>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with s_r:
+        with st.popover("변경", width="stretch"):
+            _allowed_all = allowed_transitions(issue.status, user_role)
+            if not _allowed_all:
+                st.caption("현재 상태에서 변경 가능한 항목이 없습니다.")
+            for _ns in _allowed_all:
+                _nl = STATUS_LABELS_KO.get(_ns, _ns.value)
+                if st.button(
+                    f"→ {_nl}",
+                    key=f"detail_status_change_{_ns.value}",
+                    width="stretch",
+                ):
+                    try:
+                        repository.update_status(
+                            item_id, _ns, user["name"], user_role
+                        )
+                        st.toast(f"상태가 '{_nl}'로 변경되었습니다", icon="✅")
+                        st.rerun()
+                    except WorkflowError as exc:
+                        st.error(f"상태 변경 실패: {exc}")
+                    except Exception as exc:  # pragma: no cover
+                        st.error(f"상태 변경 실패: {exc}")
 
 with meta_c1:
     sub_l, sub_r = st.columns([3, 1])
@@ -399,64 +431,7 @@ with meta_c3:
                 except Exception as exc:  # pragma: no cover
                     st.error(f"저장 실패: {exc}")
 
-with meta_c4:
-    # 우측 끝 [→ 완료] 버튼: closed 전이 가능한 사용자에게만 노출.
-    # "### 상태 변경" 섹션의 closed 버튼은 중복 노출 혼란 방지로 제거됨.
-    if Status.closed in allowed_transitions(issue.status, user_role):
-        # 라벨 위 빈 줄로 메타 텍스트 baseline 과 시각적 정렬.
-        st.markdown(
-            '<div style="height:0.25em;"></div>',
-            unsafe_allow_html=True,
-        )
-        if st.button(
-            "→ 완료",
-            key="finish_btn",
-            type="primary",
-            width="stretch",
-        ):
-            try:
-                repository.update_status(
-                    item_id, Status.closed, user["name"], user_role
-                )
-                st.toast("완료 처리되었습니다", icon="✅")
-                st.rerun()
-            except WorkflowError as exc:
-                st.error(f"완료 처리 실패: {exc}")
-            except Exception as exc:  # pragma: no cover - 방어적
-                st.error(f"완료 처리 실패: {exc}")
-
-# --- 4행: (제거됨 — SLA 표시 없음) ----------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# 상태 변경 영역 (권한 기반) — 가로 한 줄 배치
-#   주의: closed 전이는 헤더 우측 [→ 완료] 버튼으로 분리 노출되므로
-#         이 섹션에서는 closed 만 제외한다 (중복 노출 방지).
-# ---------------------------------------------------------------------------
-
-allowed = [s for s in allowed_transitions(issue.status, user_role) if s != Status.closed]
-if allowed:
-    cols = st.columns(min(len(allowed), 4))
-    for idx, next_status in enumerate(allowed):
-        next_label = STATUS_LABELS_KO.get(next_status, next_status.value)
-        btn_label = f"→ {next_label}"
-        with cols[idx % len(cols)]:
-            if st.button(
-                btn_label,
-                key=f"transition_{next_status.value}",
-                width="stretch",
-                type="secondary",
-            ):
-                try:
-                    repository.update_status(
-                        item_id, next_status, user["name"], user_role
-                    )
-                    st.toast(f"상태가 '{next_label}'로 변경되었습니다", icon="✅")
-                    st.rerun()
-                except WorkflowError as exc:
-                    st.error(f"상태 변경 실패: {exc}")
-                except Exception as exc:  # pragma: no cover - 방어적
-                    st.error(f"상태 변경 실패: {exc}")
+# --- (상태 변경은 위 '상태' 컬럼의 [변경] popover 로 일원화됨) -------------
 
 
 # 태그 기능은 제거됨 — 카테고리(3 단계) 가 그 자리를 대체.

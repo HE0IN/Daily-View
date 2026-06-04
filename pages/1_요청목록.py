@@ -93,6 +93,12 @@ elif role == "developer" and name in assignee_set:
 # 필터 UI
 # ---------------------------------------------------------------------------
 
+# 대시보드/사이드바 '상태 바로가기' 에서 넘어온 프리셋 — status multiselect
+# 기본값 주입. 위젯 인스턴스화 전에 session_state[key] 를 세팅해야 초기값 반영.
+_preset_status = st.session_state.pop("list_preset_status", None)
+if _preset_status:
+    st.session_state["list_status"] = [_preset_status]
+
 f1, f2, f3, f4, f5 = st.columns([1, 2, 1.4, 2.4, 1.2])
 
 with f1:

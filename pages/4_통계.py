@@ -160,13 +160,17 @@ ACTIVE_STATUSES = {
     Status.in_progress.value,
     Status.api_check.value,
     Status.reviewing.value,
-    Status.reopened.value,
-    Status.done.value,  # 레거시 호환
+    Status.needs_recheck.value,
+    Status.rejected.value,
+    Status.reopened.value,  # 레거시 호환
+    Status.done.value,      # 레거시 호환
 }
 IN_PROGRESS_STATUSES = {
     Status.in_progress.value,
     Status.api_check.value,
     Status.reviewing.value,
+    Status.needs_recheck.value,
+    Status.rejected.value,
 }
 
 # 활성 / closed 마스크 (IndexEntry 기반)
@@ -415,7 +419,9 @@ STATUS_ORDER_FOR_STACK: list[str] = [
     "in_progress",
     "api_check",
     "reviewing",
-    "reopened",
+    "needs_recheck",
+    "rejected",
+    "reopened",  # 레거시
     "closed",
 ]
 

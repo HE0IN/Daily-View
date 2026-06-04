@@ -206,14 +206,25 @@ def seed(count: int) -> None:
                     issue.id, Status.in_progress, dev, Role.developer
                 )
                 if random.random() < 0.5:
-                    # in_progress -> done
+                    # in_progress -> reviewing (개발자가 검토 요청)
                     repository.update_status(
-                        issue.id, Status.done, dev, Role.developer
+                        issue.id, Status.reviewing, dev, Role.developer
                     )
-                    if random.random() < 0.5:
-                        # done -> closed (검토자)
+                    _r = random.random()
+                    if _r < 0.5:
+                        # reviewing -> closed (검토자 완료)
                         repository.update_status(
                             issue.id, Status.closed, author, Role.reviewer
+                        )
+                    elif _r < 0.7:
+                        # reviewing -> needs_recheck (추가확인필요)
+                        repository.update_status(
+                            issue.id, Status.needs_recheck, author, Role.reviewer
+                        )
+                    elif _r < 0.85:
+                        # reviewing -> rejected (반려)
+                        repository.update_status(
+                            issue.id, Status.rejected, author, Role.reviewer
                         )
 
             # 20% 확률로 더미 이미지 첨부

@@ -20,12 +20,12 @@ from core.workflow import (
 
 
 # ---------------------------------------------------------------------------
-# 단순화된 운영 매트릭스 — done 단계 제거 (in_progress → reviewing 직행)
+# 운영 매트릭스 — 검토중 1 단계, 검토자가 완료/추가확인필요/반려 3 갈래.
 # ---------------------------------------------------------------------------
 # (현재 상태, 역할) → 정렬된 next status set. 표에 없으면 빈 집합.
-# done 은 새 흐름에서 사용 안 하지만 enum 은 유지 (기존 데이터 호환).
-# 검토자가 옛 done 항목을 직접 reviewing/closed/reopened 로 정리할 수 있도록
-# 호환 전이만 남긴다.
+# - 검토중 → 완료 / 추가확인필요 / 반려 (검토자)
+# - 추가확인필요·반려 → 개발중 (개발자 재착수)
+# - done / reopened 은 레거시 — 새 흐름 미사용이나 옛 데이터 호환 전이만 유지.
 EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.requested, Role.developer): {Status.in_progress},
     (Status.requested, Role.reviewer): {Status.closed},
@@ -41,14 +41,28 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
         Status.closed,
     },
     (Status.api_check, Role.reviewer): set(),
-    (Status.done, Role.developer): set(),
-    (Status.done, Role.reviewer): {Status.reviewing, Status.closed, Status.reopened},
     (Status.reviewing, Role.developer): {Status.closed},
-    (Status.reviewing, Role.reviewer): {Status.closed, Status.reopened},
-    (Status.reopened, Role.developer): {Status.in_progress},
-    (Status.reopened, Role.reviewer): set(),
+    (Status.reviewing, Role.reviewer): {
+        Status.closed,
+        Status.needs_recheck,
+        Status.rejected,
+    },
+    (Status.needs_recheck, Role.developer): {Status.in_progress},
+    (Status.needs_recheck, Role.reviewer): set(),
+    (Status.rejected, Role.developer): {Status.in_progress},
+    (Status.rejected, Role.reviewer): set(),
     (Status.closed, Role.developer): set(),
     (Status.closed, Role.reviewer): set(),
+    # --- 레거시 (옛 데이터 호환) ---
+    (Status.reopened, Role.developer): {Status.in_progress},
+    (Status.reopened, Role.reviewer): set(),
+    (Status.done, Role.developer): set(),
+    (Status.done, Role.reviewer): {
+        Status.reviewing,
+        Status.closed,
+        Status.needs_recheck,
+        Status.rejected,
+    },
 }
 
 
@@ -96,7 +110,13 @@ def test_terminal_status_has_no_transitions() -> None:
         (Status.in_progress, Role.developer, Status.api_check, True),
         (Status.api_check, Role.developer, Status.reviewing, True),
         (Status.reviewing, Role.reviewer, Status.closed, True),
-        (Status.reviewing, Role.reviewer, Status.reopened, True),
+        # 검토자: 검토중 → 추가확인필요 / 반려
+        (Status.reviewing, Role.reviewer, Status.needs_recheck, True),
+        (Status.reviewing, Role.reviewer, Status.rejected, True),
+        # 추가확인필요·반려 → 개발자가 다시 개발중으로
+        (Status.needs_recheck, Role.developer, Status.in_progress, True),
+        (Status.rejected, Role.developer, Status.in_progress, True),
+        # 레거시 재요청 호환
         (Status.reopened, Role.developer, Status.in_progress, True),
         # 레거시 done 호환 — 검토자가 정리 가능
         (Status.done, Role.reviewer, Status.closed, True),
@@ -109,6 +129,11 @@ def test_terminal_status_has_no_transitions() -> None:
         (Status.requested, Role.reviewer, Status.in_progress, False),
         (Status.in_progress, Role.reviewer, Status.reviewing, False),
         (Status.done, Role.developer, Status.closed, False),
+        # 검토중 → 재요청(reopened) 은 이제 불가 (반려는 rejected 로 처리)
+        (Status.reviewing, Role.reviewer, Status.reopened, False),
+        # 추가확인필요·반려에서 검토자는 전이 불가 (개발자만)
+        (Status.needs_recheck, Role.reviewer, Status.in_progress, False),
+        (Status.rejected, Role.reviewer, Status.in_progress, False),
         # 잘못된 점프
         (Status.requested, Role.developer, Status.reviewing, False),
         (Status.requested, Role.developer, Status.closed, False),
@@ -161,7 +186,7 @@ def test_workflow_error_for_reviewer_to_in_progress() -> None:
 
     msg = str(exc_info.value)
     assert "요청중" in msg
-    assert "작업중" in msg
+    assert "개발중" in msg
     assert "reviewer" in msg, f"메시지에 역할 'reviewer' 누락: {msg!r}"
 
 
@@ -180,11 +205,14 @@ def test_status_labels_ko_are_complete() -> None:
 def test_status_labels_ko_specific_values() -> None:
     """주요 라벨 — 단순화 후 (요청중/작업중/완료 등으로 변경)."""
     assert STATUS_LABELS_KO[Status.requested] == "요청중"
-    assert STATUS_LABELS_KO[Status.in_progress] == "작업중"
+    assert STATUS_LABELS_KO[Status.in_progress] == "개발중"
     assert STATUS_LABELS_KO[Status.api_check] == "API대기"
-    assert STATUS_LABELS_KO[Status.done] == "작업완료"  # 레거시
     assert STATUS_LABELS_KO[Status.reviewing] == "검토중"
+    assert STATUS_LABELS_KO[Status.needs_recheck] == "추가확인필요"
+    assert STATUS_LABELS_KO[Status.rejected] == "반려"
     assert STATUS_LABELS_KO[Status.closed] == "완료"
+    # 레거시
+    assert STATUS_LABELS_KO[Status.done] == "작업완료"
     assert STATUS_LABELS_KO[Status.reopened] == "재요청"
 
 

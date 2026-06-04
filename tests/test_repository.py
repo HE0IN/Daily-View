@@ -319,8 +319,8 @@ def test_system_comment_on_status_change(
 
     body = sys_comments[0].body
     assert "상태 변경" in body, f"body 에 '상태 변경' 누락: {body!r}"
-    # 단순화 후 라벨: requested → 요청중, in_progress → 작업중
-    assert "요청중" in body or "작업중" in body, f"라벨 누락: {body!r}"
+    # 라벨: requested → 요청중, in_progress → 개발중
+    assert "요청중" in body or "개발중" in body, f"라벨 누락: {body!r}"
     # role 은 'system' 문자열
     assert sys_comments[0].role == "system"
 

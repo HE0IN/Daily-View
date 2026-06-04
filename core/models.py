@@ -37,15 +37,27 @@ class Urgency(str, Enum):
 
 
 class Status(str, Enum):
-    """이슈 상태. docs/04_workflow.md 4.1 절."""
+    """이슈 상태. docs/04_workflow.md 4.1 절.
+
+    검토자가 '검토중'에서 3 갈래로 분기한다:
+      - closed         (완료)
+      - needs_recheck  (추가확인필요) → 개발자가 다시 개발중으로
+      - rejected       (반려)         → 개발자가 다시 개발중으로
+
+    ``done`` / ``reopened`` 은 레거시 — 새 흐름에서는 만들어지지 않지만
+    기존 meta.json 호환을 위해 enum 에는 남겨둔다.
+    """
 
     requested = "requested"
     in_progress = "in_progress"
     api_check = "api_check"
-    done = "done"
     reviewing = "reviewing"
-    reopened = "reopened"
+    needs_recheck = "needs_recheck"  # 신설: 추가확인필요 (검토자 → 개발자)
+    rejected = "rejected"            # 신설: 반려 (검토자 → 개발자)
     closed = "closed"
+    # --- 레거시 (옛 데이터 호환, 새 흐름에서는 미사용) ---
+    done = "done"
+    reopened = "reopened"
 
 
 class Role(str, Enum):

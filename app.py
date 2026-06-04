@@ -209,6 +209,18 @@ active_only = repository.list_issues(
     include_archived=False, include_closed=False, project=current_project
 )
 
+# 상태별 카운트 — 사이드바 '상태 바로가기' + (검토자) 전체 현황 공용.
+status_counts = _count_by(active_only, "status")
+# 사이드바/현황에 노출할 활성 상태 키 (레거시 done/reopened, 종료 closed 제외).
+STATUS_NAV_KEYS = [
+    "requested",
+    "in_progress",
+    "api_check",
+    "reviewing",
+    "needs_recheck",
+    "rejected",
+]
+
 
 # ---------------------------------------------------------------------------
 # 역할별 본문
@@ -257,7 +269,6 @@ if role == "reviewer":
     # 전체 현황 (활성 항목 기준)
     st.subheader("전체 현황 (활성)")
     urgency_counts = _count_by(active_only, "urgency")
-    status_counts = _count_by(active_only, "status")
 
     st.markdown("**긴급도별**")
     u_cols = st.columns(3)
@@ -269,16 +280,18 @@ if role == "reviewer":
                 color=URGENCY_COLORS[key],
             )
 
-    st.markdown("**상태별**")
-    s_keys = ["requested", "in_progress", "api_check", "done", "reviewing", "reopened"]
-    s_cols = st.columns(len(s_keys))
-    for col, key in zip(s_cols, s_keys):
+    st.markdown("**상태별** ([보기]를 누르면 해당 목록으로 이동)")
+    s_cols = st.columns(len(STATUS_NAV_KEYS))
+    for col, key in zip(s_cols, STATUS_NAV_KEYS):
         with col:
             components.render_count_metric(
                 STATUS_LABELS[key],
                 status_counts.get(key, 0),
                 color=STATUS_COLORS[key],
             )
+            if st.button("보기", key=f"dash_status_{key}", width="stretch"):
+                st.session_state["list_preset_status"] = key
+                st.switch_page("pages/1_요청목록.py")
 
     # 사이드바 액션 큐 카운트
     sidebar_count = len(review_queue_entries)
@@ -295,18 +308,22 @@ else:
 
     st.divider()
 
-    # 처리 큐 — requested + reopened (전체)
-    requested_entries = repository.list_issues(
-        status=Status.requested,
-        include_archived=False,
-        project=current_project,
-    )
-    reopened_entries = repository.list_issues(
-        status=Status.reopened,
-        include_archived=False,
-        project=current_project,
-    )
-    queue_entries = list(requested_entries) + list(reopened_entries)
+    # 처리 큐 — 요청됨 + 추가확인필요 + 반려 (+ 레거시 재요청)
+    _dev_queue_statuses = [
+        Status.requested,
+        Status.needs_recheck,
+        Status.rejected,
+        Status.reopened,  # 레거시 호환
+    ]
+    queue_entries: list = []
+    for _s in _dev_queue_statuses:
+        queue_entries.extend(
+            repository.list_issues(
+                status=_s,
+                include_archived=False,
+                project=current_project,
+            )
+        )
     # updated_at desc 재정렬
     queue_entries.sort(
         key=lambda e: e.model_dump(mode="json").get("updated_at") or "",
@@ -315,7 +332,7 @@ else:
     queue = _entries_to_dicts(queue_entries)
 
     st.subheader(f"처리 큐 ({len(queue)})")
-    st.caption("요청됨 또는 재요청 상태의 활성 항목")
+    st.caption("요청됨 · 추가확인필요 · 반려 상태의 활성 항목")
     _render_card_grid(queue, key_prefix="dev_queue")
 
     st.divider()
@@ -359,3 +376,15 @@ else:
 with st.sidebar:
     st.divider()
     st.markdown(f"**내 액션 큐**: {sidebar_label}")
+
+    st.divider()
+    st.markdown("**상태 바로가기**")
+    for _k in STATUS_NAV_KEYS:
+        _cnt = status_counts.get(_k, 0)
+        if st.button(
+            f"{STATUS_LABELS[_k]} ({_cnt})",
+            key=f"side_status_{_k}",
+            width="stretch",
+        ):
+            st.session_state["list_preset_status"] = _k
+            st.switch_page("pages/1_요청목록.py")
