@@ -453,142 +453,127 @@ def _show_image_dialog(rel_path: str, filename: str) -> None:
         st.error(f"파일을 찾을 수 없습니다: {rel_path}")
 
 
-gallery_col, body_col = st.columns([1, 2], gap="large")
+# ---------------------------------------------------------------------------
+# 본문: 3 분할 — [요청 AS-IS] | [설명·타임라인·코멘트] | [개발 TO-BE]
+#   각 사이드 컬럼은 자기 구분(kind)의 사진만 보여주고, 그 컬럼에서 추가하면
+#   자동으로 해당 kind 로 저장된다 (구분 선택 라디오 불필요).
+# ---------------------------------------------------------------------------
 
-# ---- 좌측: 스크린샷 + 이미지 추가 ------------------------------------------
-with gallery_col:
-    st.markdown(f"### 스크린샷 ({len(issue.images)})")
 
-    def _render_image(idx: int, img_ref) -> None:
-        """이미지 1장 렌더 (썸네일 우선, 원본 보기 버튼)."""
-        display_rel = img_ref.file
+def _render_image(idx: int, img_ref) -> None:
+    """이미지 1장 렌더 (썸네일 우선, 원본 보기 버튼)."""
+    display_rel = img_ref.file
+    display_abs = _abs_image_path(display_rel)
+    if not display_abs.exists() and img_ref.thumb:
+        display_rel = img_ref.thumb
         display_abs = _abs_image_path(display_rel)
-        if not display_abs.exists() and img_ref.thumb:
-            display_rel = img_ref.thumb
-            display_abs = _abs_image_path(display_rel)
-        if display_abs.exists():
-            st.image(str(display_abs), width="stretch")
-        else:
-            st.caption("(이미지 파일 없음)")
-        filename = Path(img_ref.file).name
-        st.caption(filename)
-        if st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
-            _show_image_dialog(img_ref.file, filename)
-        st.markdown("")  # 이미지 사이 간격
-
-    if issue.images:
-        # kind 별 그룹핑 — None(옛 데이터)은 요청(AS-IS) 그룹으로 합쳐 표시.
-        _req_imgs: list[tuple[int, object]] = []
-        _dev_imgs: list[tuple[int, object]] = []
-        for _idx, _ref in enumerate(issue.images):
-            if getattr(_ref, "kind", None) == "dev":
-                _dev_imgs.append((_idx, _ref))
-            else:
-                _req_imgs.append((_idx, _ref))
-
-        for _gk, _glabel, _gcolor, _gitems in (
-            ("request", "요청 (AS-IS)", "#3B82F6", _req_imgs),
-            ("dev", "개발 (TO-BE)", "#10B981", _dev_imgs),
-        ):
-            if not _gitems:
-                continue
-            st.markdown(
-                f'<div style="margin:6px 0 4px;padding:3px 10px;'
-                f"border-left:4px solid {_gcolor};font-weight:700;color:#374151;\">"
-                f"{_glabel} ({len(_gitems)})</div>",
-                unsafe_allow_html=True,
-            )
-            for _idx, _ref in _gitems:
-                _render_image(_idx, _ref)
+    if display_abs.exists():
+        st.image(str(display_abs), width="stretch")
     else:
-        st.caption("첨부된 이미지가 없습니다.")
+        st.caption("(이미지 파일 없음)")
+    filename = Path(img_ref.file).name
+    st.caption(filename)
+    if st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
+        _show_image_dialog(img_ref.file, filename)
+    st.markdown("")  # 이미지 사이 간격
 
-    # 이미지 추가 expander
+
+def _images_of_kind(want_dev: bool) -> list[tuple[int, object]]:
+    """want_dev=True → kind=='dev', False → 그 외(None/request, 옛 데이터 포함)."""
+    out: list[tuple[int, object]] = []
+    for _idx, _ref in enumerate(issue.images):
+        if (getattr(_ref, "kind", None) == "dev") == want_dev:
+            out.append((_idx, _ref))
+    return out
+
+
+def _render_uploader_for_kind(kind: str) -> None:
+    """특정 구분(kind)의 이미지 업로더 (파일 + 클립보드). 한도·nonce 는 kind 별 독립."""
     remaining = MAX_IMAGES_PER_ITEM - len(issue.images)
-    with st.expander(
-        f"이미지 추가 (남은 슬롯: {remaining}/{MAX_IMAGES_PER_ITEM})",
-        expanded=False,
-    ):
+    nonce_key = f"upload_nonce_{kind}_{item_id}"
+    upload_nonce = st.session_state.setdefault(nonce_key, 0)
+    label = "요청(AS-IS)" if kind == "request" else "개발(TO-BE)"
+    with st.expander(f"{label} 사진 추가 (남은 슬롯 {remaining})", expanded=False):
         if remaining <= 0:
             st.warning(f"이미지 한도({MAX_IMAGES_PER_ITEM}장)에 도달했습니다.")
-        else:
-            upload_nonce = st.session_state.setdefault(f"upload_nonce_{item_id}", 0)
-            ext_list = sorted(e.lstrip(".") for e in ALLOWED_EXT)
+            return
+        ext_list = sorted(e.lstrip(".") for e in ALLOWED_EXT)
 
-            # 이미지 구분 — 검토자 기본 '요청(AS-IS)', 개발자 기본 '개발(TO-BE)'.
-            _img_kind = st.radio(
-                "이미지 구분",
-                options=["request", "dev"],
-                format_func=lambda k: "요청 (AS-IS)" if k == "request" else "개발 (TO-BE)",
-                index=1 if user_role == Role.developer else 0,
-                horizontal=True,
-                key=f"detail_img_kind_{item_id}_{upload_nonce}",
-            )
-
-            uploaded = st.file_uploader(
-                f"파일 업로드 (최대 {MAX_FILE_MB}MB, {','.join(ext_list)})",
-                accept_multiple_files=True,
-                type=ext_list,
-                key=f"detail_upload_{item_id}_{upload_nonce}",
-            )
-            if uploaded and st.button(
-                "업로드",
-                key=f"detail_upload_btn_{item_id}_{upload_nonce}",
-                type="primary",
-                width="stretch",
-            ):
-                added = 0
-                for uf in uploaded[:remaining]:
-                    try:
-                        data = uf.getbuffer().tobytes()
-                        repository.add_image_from_bytes(
-                            item_id, data, uf.name, user["name"], kind=_img_kind
-                        )
-                        added += 1
-                    except ValueError as exc:
-                        st.error(f"{uf.name}: {exc}")
-                    except Exception as exc:  # pragma: no cover
-                        st.error(f"{uf.name}: 업로드 실패 — {exc}")
-                if added:
-                    st.toast(f"{added}장 추가되었습니다", icon="✅")
-                    st.session_state[f"upload_nonce_{item_id}"] = upload_nonce + 1
-                    st.rerun()
-
-            # 정식 declare_component (HTTP+IP 환경 단일 클릭). 새 요청 등록과
-            # 동일 패턴 — base64 dataURL → PIL 변환 → 즉시 add_image_from_pil.
-            st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
-            try:
-                paste_data_url = paste_clipboard(
-                    key=f"detail_paste_v2_{item_id}_{upload_nonce}"
-                )
-            except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
-                paste_data_url = None
-                st.caption(f"paste 컴포넌트 오류: {exc}")
-
-            # 같은 dataURL 이 rerun 마다 반복 반환 → 중복 처리 방지
-            _last_pasted_key = f"_detail_last_pasted_{item_id}_{upload_nonce}"
-            if (
-                paste_data_url
-                and st.session_state.get(_last_pasted_key) != paste_data_url
-            ):
-                st.session_state[_last_pasted_key] = paste_data_url
+        uploaded = st.file_uploader(
+            f"파일 업로드 (최대 {MAX_FILE_MB}MB, {','.join(ext_list)})",
+            accept_multiple_files=True,
+            type=ext_list,
+            key=f"detail_upload_{kind}_{item_id}_{upload_nonce}",
+        )
+        if uploaded and st.button(
+            "업로드",
+            key=f"detail_upload_btn_{kind}_{item_id}_{upload_nonce}",
+            type="primary",
+            width="stretch",
+        ):
+            added = 0
+            for uf in uploaded[:remaining]:
                 try:
-                    _img, _, _ = decode_image_data_url(paste_data_url)
-                    repository.add_image_from_pil(
-                        item_id, _img, "pasted.png", user["name"], kind=_img_kind
+                    data = uf.getbuffer().tobytes()
+                    repository.add_image_from_bytes(
+                        item_id, data, uf.name, user["name"], kind=kind
                     )
-                    st.toast("붙여넣기 이미지가 추가되었습니다", icon="✅")
-                    # 다음 paste 를 위해 컴포넌트 nonce 회전 → 새 widget key
-                    st.session_state[f"upload_nonce_{item_id}"] = upload_nonce + 1
-                    st.session_state.pop(_last_pasted_key, None)
-                    st.rerun()
+                    added += 1
                 except ValueError as exc:
-                    st.error(f"붙여넣기 실패: {exc}")
+                    st.error(f"{uf.name}: {exc}")
                 except Exception as exc:  # pragma: no cover
-                    st.error(f"붙여넣기 저장 실패: {exc}")
+                    st.error(f"{uf.name}: 업로드 실패 — {exc}")
+            if added:
+                st.toast(f"{added}장 추가되었습니다", icon="✅")
+                st.session_state[nonce_key] = upload_nonce + 1
+                st.rerun()
+
+        st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
+        try:
+            paste_data_url = paste_clipboard(
+                key=f"detail_paste_{kind}_{item_id}_{upload_nonce}"
+            )
+        except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
+            paste_data_url = None
+            st.caption(f"paste 컴포넌트 오류: {exc}")
+
+        last_key = f"_detail_last_pasted_{kind}_{item_id}_{upload_nonce}"
+        if paste_data_url and st.session_state.get(last_key) != paste_data_url:
+            st.session_state[last_key] = paste_data_url
+            try:
+                _img, _, _ = decode_image_data_url(paste_data_url)
+                repository.add_image_from_pil(
+                    item_id, _img, "pasted.png", user["name"], kind=kind
+                )
+                st.toast("붙여넣기 이미지가 추가되었습니다", icon="✅")
+                st.session_state[nonce_key] = upload_nonce + 1
+                st.session_state.pop(last_key, None)
+                st.rerun()
+            except ValueError as exc:
+                st.error(f"붙여넣기 실패: {exc}")
+            except Exception as exc:  # pragma: no cover
+                st.error(f"붙여넣기 저장 실패: {exc}")
 
 
-# ---- 우측: 설명 + 타임라인 + 코멘트 작성 -----------------------------------
+asis_col, body_col, tobe_col = st.columns([1, 1.6, 1], gap="medium")
+
+# ---- 좌측: 요청 (AS-IS) ----------------------------------------------------
+with asis_col:
+    _req_imgs = _images_of_kind(want_dev=False)
+    st.markdown(
+        f'<div style="margin-bottom:6px;padding:4px 10px;border-left:4px solid #3B82F6;'
+        f'font-weight:700;color:#1E3A8A;">요청 (AS-IS) · {len(_req_imgs)}</div>',
+        unsafe_allow_html=True,
+    )
+    if _req_imgs:
+        for _idx, _ref in _req_imgs:
+            _render_image(_idx, _ref)
+    else:
+        st.caption("요청(현황) 사진이 없습니다.")
+    _render_uploader_for_kind("request")
+
+
+# ---- 가운데: 설명 + 타임라인 + 코멘트 작성 ---------------------------------
 with body_col:
     # 설명
     st.markdown("### 설명")
@@ -662,6 +647,22 @@ with body_col:
                     st.error(str(exc))
                 except Exception as exc:  # pragma: no cover
                     st.error(f"코멘트 등록 실패: {exc}")
+
+
+# ---- 우측: 개발 (TO-BE) ----------------------------------------------------
+with tobe_col:
+    _dev_imgs = _images_of_kind(want_dev=True)
+    st.markdown(
+        f'<div style="margin-bottom:6px;padding:4px 10px;border-left:4px solid #10B981;'
+        f'font-weight:700;color:#065F46;">개발 (TO-BE) · {len(_dev_imgs)}</div>',
+        unsafe_allow_html=True,
+    )
+    if _dev_imgs:
+        for _idx, _ref in _dev_imgs:
+            _render_image(_idx, _ref)
+    else:
+        st.caption("개발(결과) 사진이 없습니다.")
+    _render_uploader_for_kind("dev")
 
 
 # ---------------------------------------------------------------------------
