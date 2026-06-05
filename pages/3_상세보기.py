@@ -458,23 +458,48 @@ gallery_col, body_col = st.columns([1, 2], gap="large")
 # ---- 좌측: 스크린샷 + 이미지 추가 ------------------------------------------
 with gallery_col:
     st.markdown(f"### 스크린샷 ({len(issue.images)})")
-    if issue.images:
-        # 좁은 컬럼이라 1열 세로 나열 — 원본을 컬럼 폭에 맞춰 자연스럽게 축소.
-        for idx, img_ref in enumerate(issue.images):
-            display_rel = img_ref.file
+
+    def _render_image(idx: int, img_ref) -> None:
+        """이미지 1장 렌더 (썸네일 우선, 원본 보기 버튼)."""
+        display_rel = img_ref.file
+        display_abs = _abs_image_path(display_rel)
+        if not display_abs.exists() and img_ref.thumb:
+            display_rel = img_ref.thumb
             display_abs = _abs_image_path(display_rel)
-            if not display_abs.exists() and img_ref.thumb:
-                display_rel = img_ref.thumb
-                display_abs = _abs_image_path(display_rel)
-            if display_abs.exists():
-                st.image(str(display_abs), width="stretch")
+        if display_abs.exists():
+            st.image(str(display_abs), width="stretch")
+        else:
+            st.caption("(이미지 파일 없음)")
+        filename = Path(img_ref.file).name
+        st.caption(filename)
+        if st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
+            _show_image_dialog(img_ref.file, filename)
+        st.markdown("")  # 이미지 사이 간격
+
+    if issue.images:
+        # kind 별 그룹핑 — None(옛 데이터)은 요청(AS-IS) 그룹으로 합쳐 표시.
+        _req_imgs: list[tuple[int, object]] = []
+        _dev_imgs: list[tuple[int, object]] = []
+        for _idx, _ref in enumerate(issue.images):
+            if getattr(_ref, "kind", None) == "dev":
+                _dev_imgs.append((_idx, _ref))
             else:
-                st.caption("(이미지 파일 없음)")
-            filename = Path(img_ref.file).name
-            st.caption(filename)
-            if st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
-                _show_image_dialog(img_ref.file, filename)
-            st.markdown("")  # 이미지 사이 간격
+                _req_imgs.append((_idx, _ref))
+
+        for _gk, _glabel, _gcolor, _gitems in (
+            ("request", "요청 (AS-IS)", "#3B82F6", _req_imgs),
+            ("dev", "개발 (TO-BE)", "#10B981", _dev_imgs),
+        ):
+            if not _gitems:
+                continue
+            st.markdown(
+                f'<div style="margin:6px 0 4px;padding:3px 10px;'
+                f"border-left:4px solid {_gcolor};font-weight:700;color:#374151;\">"
+                f"{_glabel} ({len(_gitems)})</div>",
+                unsafe_allow_html=True,
+            )
+            for _idx, _ref in _gitems:
+                _render_image(_idx, _ref)
     else:
         st.caption("첨부된 이미지가 없습니다.")
 
@@ -489,6 +514,16 @@ with gallery_col:
         else:
             upload_nonce = st.session_state.setdefault(f"upload_nonce_{item_id}", 0)
             ext_list = sorted(e.lstrip(".") for e in ALLOWED_EXT)
+
+            # 이미지 구분 — 검토자 기본 '요청(AS-IS)', 개발자 기본 '개발(TO-BE)'.
+            _img_kind = st.radio(
+                "이미지 구분",
+                options=["request", "dev"],
+                format_func=lambda k: "요청 (AS-IS)" if k == "request" else "개발 (TO-BE)",
+                index=1 if user_role == Role.developer else 0,
+                horizontal=True,
+                key=f"detail_img_kind_{item_id}_{upload_nonce}",
+            )
 
             uploaded = st.file_uploader(
                 f"파일 업로드 (최대 {MAX_FILE_MB}MB, {','.join(ext_list)})",
@@ -507,7 +542,7 @@ with gallery_col:
                     try:
                         data = uf.getbuffer().tobytes()
                         repository.add_image_from_bytes(
-                            item_id, data, uf.name, user["name"]
+                            item_id, data, uf.name, user["name"], kind=_img_kind
                         )
                         added += 1
                     except ValueError as exc:
@@ -540,7 +575,7 @@ with gallery_col:
                 try:
                     _img, _, _ = decode_image_data_url(paste_data_url)
                     repository.add_image_from_pil(
-                        item_id, _img, "pasted.png", user["name"]
+                        item_id, _img, "pasted.png", user["name"], kind=_img_kind
                     )
                     st.toast("붙여넣기 이미지가 추가되었습니다", icon="✅")
                     # 다음 paste 를 위해 컴포넌트 nonce 회전 → 새 widget key

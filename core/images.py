@@ -130,6 +130,7 @@ def save_image_bytes(
     original_filename: str,
     dest_dir: Path,
     seq: int,
+    kind: str | None = None,
 ) -> ImageRef:
     """원본 바이트를 받아 저장하고 썸네일까지 생성.
 
@@ -176,6 +177,7 @@ def save_image_bytes(
         uploaded_at=now(),
         sha256=sha256,
         size_bytes=len(data),
+        kind=kind if kind in ("request", "dev") else None,
     )
 
 
@@ -184,6 +186,7 @@ def save_pil_image(
     original_filename: str,
     dest_dir: Path,
     seq: int,
+    kind: str | None = None,
 ) -> ImageRef:
     """PIL.Image 객체를 PNG 로 직렬화 후 :func:`save_image_bytes` 로 저장.
 
@@ -196,7 +199,7 @@ def save_pil_image(
     # original_filename 의 확장자가 ALLOWED_EXT 가 아니면 .png 로 바꿔 검증 통과시킴.
     stem = Path(original_filename).stem or "pasted"
     safe_filename = f"{stem}.png"
-    return save_image_bytes(data, safe_filename, dest_dir, seq)
+    return save_image_bytes(data, safe_filename, dest_dir, seq, kind=kind)
 
 
 # ---------------------------------------------------------------------------

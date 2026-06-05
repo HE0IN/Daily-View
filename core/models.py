@@ -92,6 +92,8 @@ class ImageRef(BaseModel):
     uploaded_at: datetime
     sha256: str
     size_bytes: int
+    # 이미지 구분: 요청(AS-IS) / 개발(TO-BE). None = 구분 없음(옛 데이터 호환).
+    kind: Literal["request", "dev"] | None = None
 
 
 class Comment(BaseModel):

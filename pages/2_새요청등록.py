@@ -384,11 +384,11 @@ if submit:
     # 2) 이미지 첨부 — 실패해도 이슈 자체는 살린다 (개별 메시지)
     image_errors: list[str] = []
 
-    # 누적된 paste 이미지들 모두 첨부
+    # 누적된 paste 이미지들 모두 첨부 (새 요청 = 문제 현황 → 요청/AS-IS)
     for i, p_img in enumerate(paste_images, start=1):
         try:
             repository.add_image_from_pil(
-                issue.id, p_img, f"pasted_{i}.png", name
+                issue.id, p_img, f"pasted_{i}.png", name, kind="request"
             )
         except Exception as exc:  # noqa: BLE001
             image_errors.append(f"클립보드 이미지 #{i} 실패: {exc}")
@@ -396,7 +396,9 @@ if submit:
     for f in preview_files:
         try:
             data = bytes(f.getbuffer())
-            repository.add_image_from_bytes(issue.id, data, f.name, name)
+            repository.add_image_from_bytes(
+                issue.id, data, f.name, name, kind="request"
+            )
         except Exception as exc:  # noqa: BLE001
             image_errors.append(f"{f.name} 첨부 실패: {exc}")
 

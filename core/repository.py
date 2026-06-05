@@ -868,13 +868,17 @@ def add_image_from_bytes(
     data: bytes,
     original_filename: str,
     actor: str,
+    kind: str | None = None,
 ) -> ImageRef:
-    """원본 바이트를 받아 이미지 추가. 한도 초과 시 ValueError."""
+    """원본 바이트를 받아 이미지 추가. 한도 초과 시 ValueError.
+
+    kind: "request"(요청/AS-IS) / "dev"(개발/TO-BE) / None(구분 없음).
+    """
     _check_image_quota(item_id)
     seq = _next_image_seq(item_id)
     dest = paths.item_images_dir(item_id)
 
-    ref = save_image_bytes(data, original_filename, dest, seq)
+    ref = save_image_bytes(data, original_filename, dest, seq, kind=kind)
 
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
@@ -888,7 +892,10 @@ def add_image_from_bytes(
         item_id=item_id,
         detail={"file": ref.file, "size_bytes": ref.size_bytes, "sha256": ref.sha256},
     )
-    _add_system_comment(item_id, f"이미지 첨부: {ref.file}")
+    _kl = {"request": "요청", "dev": "개발"}.get(kind or "", "")
+    _add_system_comment(
+        item_id, f"이미지 첨부{f'({_kl})' if _kl else ''}: {ref.file}"
+    )
 
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(issue, comments_count, images_count)
@@ -900,13 +907,17 @@ def add_image_from_pil(
     img: PILImage.Image,
     original_filename: str,
     actor: str,
+    kind: str | None = None,
 ) -> ImageRef:
-    """PIL.Image 를 받아 이미지 추가 (paste-button 등에서 사용)."""
+    """PIL.Image 를 받아 이미지 추가 (paste-button 등에서 사용).
+
+    kind: "request"(요청/AS-IS) / "dev"(개발/TO-BE) / None(구분 없음).
+    """
     _check_image_quota(item_id)
     seq = _next_image_seq(item_id)
     dest = paths.item_images_dir(item_id)
 
-    ref = save_pil_image(img, original_filename, dest, seq)
+    ref = save_pil_image(img, original_filename, dest, seq, kind=kind)
 
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
@@ -920,7 +931,10 @@ def add_image_from_pil(
         item_id=item_id,
         detail={"file": ref.file, "size_bytes": ref.size_bytes, "sha256": ref.sha256},
     )
-    _add_system_comment(item_id, f"이미지 첨부: {ref.file}")
+    _kl = {"request": "요청", "dev": "개발"}.get(kind or "", "")
+    _add_system_comment(
+        item_id, f"이미지 첨부{f'({_kl})' if _kl else ''}: {ref.file}"
+    )
 
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(issue, comments_count, images_count)

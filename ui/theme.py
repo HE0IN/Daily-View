@@ -55,6 +55,20 @@ STATUS_LABELS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# 이미지 구분 (요청 AS-IS / 개발 TO-BE)
+# ---------------------------------------------------------------------------
+
+IMAGE_KIND_LABELS: dict[str, str] = {
+    "request": "요청(AS-IS)",
+    "dev": "개발(TO-BE)",
+}
+IMAGE_KIND_COLORS: dict[str, str] = {
+    "request": "#3B82F6",  # 파랑 (요청·현황)
+    "dev": "#10B981",      # 초록 (개발·결과)
+}
+
+
+# ---------------------------------------------------------------------------
 # 배지 HTML 헬퍼
 # ---------------------------------------------------------------------------
 
@@ -87,6 +101,8 @@ __all__ = [
     "URGENCY_LABELS",
     "STATUS_COLORS",
     "STATUS_LABELS",
+    "IMAGE_KIND_LABELS",
+    "IMAGE_KIND_COLORS",
     "urgency_badge_html",
     "status_badge_html",
 ]
