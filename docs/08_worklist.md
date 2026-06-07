@@ -39,11 +39,11 @@
 - 추가: 상단에 **상태별 카운트**(요청중/개발중/API대기/검토중/추가확인필요/반려/완료) 한 줄 — 전 단계가 다 잡히게
 - 영향: `pages/4_통계.py`
 
-### 4. API 담당자 자동전환 제거  〔규모 M〕
-- 현재: `api_check` 진입 시 프로젝트 `api_assignee`로 assignee 자동 변경
-- 변경: 이 로직 삭제. API 관련 전이는 개발자가 직접. 담당자는 일반 개발자 변경만 유지
-- 영향: `core/repository.py`(update_status의 api_assignee 분기), `core/project_settings.py`(API담당자 설정), `ui/auth.py`(사이드바 프로젝트 설정의 API담당자 입력), `pages/3_상세보기.py`
-- 라벨: 상세보기 "담당자 변경" 그대로 (이미 일반 담당자 변경 UI)
+### 4. 담당자 일반화 + 변경 개발자 전용  〔규모 M〕
+- "API 담당자" 한정 개념 제거 → 일반 "담당자" (이 건이 지금 누구한테 가 있나를 개발자가 관리)
+- `api_check` 진입 시 자동전환 로직 삭제, 프로젝트 설정의 "API 담당자" 입력칸 삭제
+- 담당자 **표시**(담당: 홍길동)는 모두에게 유지, **변경(popover)은 개발자 전용**
+- 영향: `core/repository.py`(update_status의 api_assignee 분기 제거), `core/project_settings.py`(API담당자 설정 제거), `ui/auth.py`(사이드바 프로젝트 설정의 API담당자 입력 제거), `pages/3_상세보기.py`(담당자 변경 popover를 개발자만)
 
 ### 5. DRM 이미지 업로드 실패 안내  〔규모 S〕
 - 현재: DRM(문서보안)으로 막힌 이미지 업로드 시 일반 에러
