@@ -176,13 +176,15 @@ with opt_col1:
         help="검토완료(closed) 처리된 항목까지 함께 표시합니다.",
     )
 with opt_col2:
-    include_archived = st.checkbox(
-        "삭제(보관)된 항목 포함",
-        value=False,
-        key="list_inc_archived",
-        help="삭제 처리한 항목입니다.",
+    archive_view = st.radio(
+        "삭제(보관) 항목",
+        options=["제외", "포함", "삭제만"],
+        horizontal=True,
+        key="list_archive_view",
+        help="'삭제만' = 삭제(보관)된 항목만 모아보기.",
     )
-    st.caption("삭제 처리한 항목입니다")
+# 라디오 → 내부 플래그 (제외=숨김 / 포함=같이 / 삭제만=아카이브만)
+include_archived = archive_view != "제외"
 
 # 보기 모드 토글 — 카드/테이블
 view_mode = st.radio(
@@ -279,6 +281,8 @@ def _fetch_entries() -> list[dict]:
 
 
 items = _fetch_entries()
+if archive_view == "삭제만":
+    items = [i for i in items if i.get("archived")]
 total = len(items)
 
 

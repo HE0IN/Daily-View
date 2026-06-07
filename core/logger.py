@@ -27,6 +27,7 @@ from .locking import atomic_append_jsonl
 # ---------------------------------------------------------------------------
 # 코드 곳곳에서 문자열로 흩어지지 않도록 상수로 노출.
 
+ACCESS = "access"
 CREATE_ISSUE = "create_issue"
 UPDATE_STATUS = "update_status"
 UPDATE_ASSIGNEE = "update_assignee"
@@ -100,6 +101,7 @@ def tail_audit(n: int = 50) -> list[dict[str, Any]]:
 
 
 __all__ = [
+    "ACCESS",
     "CREATE_ISSUE",
     "UPDATE_STATUS",
     "UPDATE_ASSIGNEE",

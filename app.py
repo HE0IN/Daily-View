@@ -337,6 +337,19 @@ else:
 
     st.divider()
 
+    # 개발중 — 내가 지금 작업 중인 항목
+    in_progress_entries = repository.list_issues(
+        status=Status.in_progress,
+        include_archived=False,
+        project=current_project,
+    )
+    in_progress_items = _entries_to_dicts(in_progress_entries)
+    st.subheader(f"개발중 ({len(in_progress_items)})")
+    st.caption("현재 작업 중인 항목")
+    _render_card_grid(in_progress_items, key_prefix="dev_inprogress")
+
+    st.divider()
+
     # 외부 대기 중
     api_entries = repository.list_issues(
         status=Status.api_check,

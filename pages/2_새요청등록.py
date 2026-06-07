@@ -132,6 +132,11 @@ def _resolve_category(level_key: str, options: list[str]) -> str | None:
         placeholder="새 카테고리",
     )
     manual_clean = (manual or "").strip()
+    if manual_clean and pick != _NONE:
+        st.warning(
+            f"{level_key}: 기존 선택과 직접 입력이 모두 채워졌습니다. "
+            f"하나만 사용하세요 (직접 입력값을 우선 적용합니다)."
+        )
     if manual_clean:
         return manual_clean
     if pick == _NONE:
@@ -197,7 +202,10 @@ with left:
             existing_paste.append(_img)
             st.session_state[_pasted_list_key] = existing_paste
         except Exception as exc:  # noqa: BLE001
-            st.error(f"paste 이미지 디코드 실패: {exc}")
+            st.error(
+                f"붙여넣기 이미지를 처리할 수 없습니다. DRM(문서보안)으로 보호된 "
+                f"화면·이미지는 붙여넣기가 차단될 수 있습니다. ({exc})"
+            )
 
     # 누적된 paste 이미지 리스트
     paste_images: list[PILImage.Image] = list(
@@ -405,6 +413,10 @@ if submit:
     if image_errors:
         for msg in image_errors:
             st.warning(msg)
+        st.info(
+            "이미지가 안 올라가나요? DRM(문서보안)으로 보호된 화면·이미지는 "
+            "캡처·붙여넣기·업로드가 차단될 수 있습니다."
+        )
 
     # 3) 성공 토스트 + 폼 초기화 + 상세보기 이동
     st.toast("등록되었습니다", icon="✅")

@@ -216,6 +216,30 @@ with k4:
 
 st.divider()
 
+# 상태별 현황 — 프로세스 전 단계가 각각 몇 건인지 (아카이브 제외, 완료 포함)
+st.subheader("상태별 현황")
+st.caption("개발중·API대기·검토중 등 진행 단계를 분리해서 표시 (삭제 제외).")
+_proc_status_keys = [
+    "requested",
+    "in_progress",
+    "api_check",
+    "reviewing",
+    "needs_recheck",
+    "rejected",
+    "closed",
+]
+_active_df_for_status = df[~df["archived"].fillna(False)]
+_proc_cols = st.columns(len(_proc_status_keys))
+for _col, _sk in zip(_proc_cols, _proc_status_keys):
+    with _col:
+        render_count_metric(
+            STATUS_LABELS.get(_sk, _sk),
+            int((_active_df_for_status["status"] == _sk).sum()),
+            color=STATUS_COLORS.get(_sk, "#9CA3AF"),
+        )
+
+st.divider()
+
 
 # ---------------------------------------------------------------------------
 # 2) 카테고리(L1)별 진행 상황 — 정체 카운트 중심

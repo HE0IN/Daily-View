@@ -134,9 +134,23 @@ def _role_color(role: str | Role) -> str:
 # ---------------------------------------------------------------------------
 
 # --- 1행: 목록으로 / ID ----------------------------------------------------
-top_left, top_right = st.columns([4, 1])
+top_left, top_del, top_right = st.columns([3, 1.2, 1])
 with top_left:
     st.page_link("pages/1_요청목록.py", label="← 목록으로")
+with top_del:
+    # 삭제(보관)을 우측 상단으로 — 등록자 또는 검토자만, popover 2단계 확인.
+    if issue.archived:
+        st.caption("🗑 삭제됨")
+    elif (issue.author == user["name"]) or (user.get("role") == "reviewer"):
+        with st.popover("🗑 삭제", width="stretch"):
+            st.warning("이 요청을 삭제(보관)하시겠습니까?")
+            if st.button("삭제 확인", type="primary", key="del_confirm_top"):
+                try:
+                    repository.archive_issue(item_id, user["name"])
+                    st.toast("삭제(보관)되었습니다", icon="🗑")
+                    st.switch_page("pages/1_요청목록.py")
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"삭제 실패: {exc}")
 with top_right:
     st.markdown(
         f'<div style="text-align:right;color:#6B7280;font-size:0.85em;">'
@@ -192,8 +206,11 @@ if _project_raw:
 #   c2 = 긴급도 + [수정]  (NEW — 프로젝트 변경은 사이드바에서만)
 #   c3 = 카테고리 + [수정]
 #   c4 = [→ 완료] 버튼 (우측 끝, 짧게)
-# 상태를 맨 앞 컬럼에 크게 — 등록자보다 먼저 눈에 들어오게 + [변경] popover.
-meta_c0, meta_c1, meta_c2, meta_c3 = st.columns([1.7, 3, 1.6, 2.2], gap="small")
+# 상단 메타를 카드(테두리)로 묶기 — '현재 상태 + 변경' 패널.
+# st.columns 를 container 안에서 생성하면 이후 with 블록도 이 카드 안에 렌더된다.
+_meta_card = st.container(border=True)
+with _meta_card:
+    meta_c0, meta_c1, meta_c2, meta_c3 = st.columns([1.7, 3, 1.6, 2.2], gap="small")
 
 with meta_c0:
     _st_color = STATUS_COLORS.get(issue.status.value, "#9CA3AF")
@@ -244,29 +261,31 @@ with meta_c1:
             unsafe_allow_html=True,
         )
     with sub_r:
-        with st.popover("변경", width="stretch"):
-            new_assignee = st.text_input(
-                "담당자 이름",
-                value=issue.assignee or "",
-                placeholder="담당자는 필수입니다",
-                key="assignee_input",
-            )
-            if st.button("저장", key="assignee_save_btn", type="primary"):
-                # 담당자 필수: 빈 입력은 거부
-                cleaned_assignee = (new_assignee or "").strip()
-                if not cleaned_assignee:
-                    st.error("담당자는 필수입니다.")
-                    st.stop()
-                try:
-                    repository.update_assignee(
-                        item_id,
-                        cleaned_assignee,
-                        user["name"],
-                    )
-                    st.toast("담당자가 변경되었습니다", icon="✅")
-                    st.rerun()
-                except Exception as exc:  # pragma: no cover - 방어적
-                    st.error(f"변경 실패: {exc}")
+        # 담당자 변경은 개발자만 (검토자에겐 표시만)
+        if user_role == Role.developer:
+            with st.popover("변경", width="stretch"):
+                new_assignee = st.text_input(
+                    "담당자 이름",
+                    value=issue.assignee or "",
+                    placeholder="담당자는 필수입니다",
+                    key="assignee_input",
+                )
+                if st.button("저장", key="assignee_save_btn", type="primary"):
+                    # 담당자 필수: 빈 입력은 거부
+                    cleaned_assignee = (new_assignee or "").strip()
+                    if not cleaned_assignee:
+                        st.error("담당자는 필수입니다.")
+                        st.stop()
+                    try:
+                        repository.update_assignee(
+                            item_id,
+                            cleaned_assignee,
+                            user["name"],
+                        )
+                        st.toast("담당자가 변경되었습니다", icon="✅")
+                        st.rerun()
+                    except Exception as exc:  # pragma: no cover - 방어적
+                        st.error(f"변경 실패: {exc}")
 
 with meta_c2:
     # 긴급도 표시 + 변경 popover (프로젝트 변경 자리를 대체)
@@ -665,55 +684,4 @@ with tobe_col:
     _render_uploader_for_kind("dev")
 
 
-# ---------------------------------------------------------------------------
-# 추가 액션 — 삭제(보관)
-#   - 권한: 등록자(author == user.name) 또는 검토자(role == reviewer)
-#   - 두 번 클릭(확인) 패턴: 첫 번째 클릭 시 confirm 플래그를 세우고
-#     [삭제 확인] / [취소] 버튼을 노출. 두 번째 클릭 시 실제 archive 호출.
-# ---------------------------------------------------------------------------
-
-_can_delete = (issue.author == user["name"]) or (user_role == Role.reviewer)
-
-if issue.archived:
-    st.markdown("---")
-    st.info("🗑 이 항목은 삭제(보관)되었습니다.")
-elif _can_delete:
-    st.markdown("---")
-    st.markdown("### 추가 액션")
-
-    _confirm_key = f"_confirm_delete_{item_id}"
-    _confirming = bool(st.session_state.get(_confirm_key))
-
-    if not _confirming:
-        if st.button(
-            "🗑 삭제(보관)",
-            key="archive_btn",
-        ):
-            st.session_state[_confirm_key] = True
-            st.rerun()
-    else:
-        st.warning("이 요청을 삭제(보관)하시겠습니까?")
-        cc1, cc2 = st.columns([1, 1])
-        with cc1:
-            if st.button(
-                "확인 (삭제)",
-                key="archive_confirm_btn",
-                type="primary",
-                width="stretch",
-            ):
-                try:
-                    repository.archive_issue(item_id, user["name"])
-                    st.session_state.pop(_confirm_key, None)
-                    st.toast("삭제(보관)되었습니다", icon="🗑")
-                    st.switch_page("pages/1_요청목록.py")
-                except Exception as exc:  # pragma: no cover
-                    st.session_state.pop(_confirm_key, None)
-                    st.error(f"삭제 실패: {exc}")
-        with cc2:
-            if st.button(
-                "취소",
-                key="archive_cancel_btn",
-                width="stretch",
-            ):
-                st.session_state.pop(_confirm_key, None)
-                st.rerun()
+# (삭제(보관)은 상단 우측 [🗑 삭제] popover 로 이동됨)

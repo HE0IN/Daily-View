@@ -110,6 +110,8 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
     author = item.get("author", "-")
     assignee = item.get("assignee") or "-"
     created_at = item.get("created_at", "")
+    # 등록 절대 날짜 (ISO 앞 10자 = YYYY-MM-DD). 카드에 상대시간과 함께 표기.
+    created_date = str(created_at)[:10] if created_at else ""
     comments_count = int(item.get("comments_count", 0) or 0)
     images_count = int(item.get("images_count", 0) or 0)
 
@@ -198,7 +200,7 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
             st.markdown(
                 f'<div style="font-size:0.75em;color:#6B7280;line-height:1.4;'
                 f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-                f"{safe_author} → {safe_assignee} · 💬 {comments_count} · 📷 {images_count}"
+                f"{safe_author} → {safe_assignee} · 📅 {created_date} · 💬 {comments_count} · 📷 {images_count}"
                 f"</div>",
                 unsafe_allow_html=True,
             )

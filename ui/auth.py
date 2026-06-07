@@ -120,6 +120,14 @@ def _render_edit_form(cookie_mgr: Any | None, current: dict | None) -> None:
         if save and name.strip():
             user = {"name": name.strip(), "role": role}
             st.session_state["user"] = user
+            # 접속 로그 (식별/로그인 시점 1회 기록) — 파일로만 적재
+            try:
+                from core import logger as _logger
+                _logger.audit_log(
+                    user["name"], _logger.ACCESS, None, {"role": user["role"]}
+                )
+            except Exception:
+                pass
             # 영속화 — 두 채널 동시 저장:
             #   1) URL query parameter (의존성 0, HTTP+IP 환경에서도 확실히 동작)
             #   2) Cookie (extra-streamlit-components, 가능하면 30일 보존)
@@ -423,37 +431,6 @@ def render_project_selector(user_name: str | None = None) -> str | None:
             from core import project_settings as ps_mod
 
             with st.expander(f"⚙ '{selected}' 설정", expanded=False):
-                # === API 담당자 ===
-                st.markdown("**API 담당자**")
-                st.caption(
-                    "api_check 상태로 전환 시 담당자가 자동으로 이 사람으로 변경됩니다."
-                )
-                try:
-                    current_api = ps_mod.get_api_assignee(selected) or ""
-                except Exception:
-                    current_api = ""
-                new_api = st.text_input(
-                    "API 담당자 이름",
-                    value=current_api,
-                    key=f"_api_assignee_input_{selected}",
-                    placeholder="예: 김외부 (비우면 자동 전환 비활성)",
-                    label_visibility="collapsed",
-                )
-                if st.button(
-                    "API 담당자 저장",
-                    key=f"_api_assignee_save_{selected}",
-                ):
-                    try:
-                        ps_mod.set_api_assignee(
-                            selected, new_api.strip() or None
-                        )
-                        st.toast("저장되었습니다", icon="✅")
-                        st.rerun()
-                    except Exception as exc:  # noqa: BLE001
-                        st.error(f"저장 실패: {exc}")
-
-                st.divider()
-
                 # === 카테고리 관리 ===
                 st.markdown("**카테고리**")
                 st.caption(

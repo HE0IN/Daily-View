@@ -776,15 +776,15 @@ def test_project_settings_isolated_per_project(temp_data_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_update_status_api_check_auto_assignee(
+def test_update_status_api_check_no_auto_assignee(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """api_check 진입 시 프로젝트의 api_assignee 로 자동 전환."""
+    """api_check 진입해도 담당자는 자동 변경되지 않는다 (개발자가 수동 관리)."""
     from core import project_settings
 
+    # api_assignee 를 설정해 두어도 자동 전환이 일어나지 않아야 한다.
     project_settings.set_api_assignee("PROJ-X", "외부김")
 
-    # 항목 생성: project=PROJ-X, assignee=내부이
     kw = dict(sample_issue_kwargs)
     kw["assignee"] = "내부이"
     issue = repository.create_issue(project="PROJ-X", **kw)
@@ -792,41 +792,19 @@ def test_update_status_api_check_auto_assignee(
     repository.update_status(
         issue.id, Status.in_progress, actor="내부이", actor_role=Role.developer
     )
-
-    # api_check 으로 변경 → assignee 자동 변경
     issue2 = repository.update_status(
         issue.id, Status.api_check, actor="내부이", actor_role=Role.developer
     )
-    assert issue2.assignee == "외부김"
 
-    # 디스크 라운드트립도 OK
+    # 담당자 유지 — 자동 변경 없음
+    assert issue2.assignee == "내부이"
     refreshed = repository.get_issue(issue.id)
-    assert refreshed.assignee == "외부김"
+    assert refreshed.assignee == "내부이"
     assert refreshed.status == Status.api_check
 
-    # 시스템 코멘트도 추가됨
+    # 자동 변경 시스템 코멘트가 없어야 함
     comments = repository.list_comments(issue.id)
-    assert any("API 담당자로 자동 변경" in c.body for c in comments), (
-        f"자동 변경 시스템 코멘트 누락: {[c.body for c in comments]}"
-    )
-    target = next(c for c in comments if "API 담당자로 자동 변경" in c.body)
-    assert "내부이" in target.body and "외부김" in target.body
-
-    # audit 로그에 UPDATE_ASSIGNEE (auto=True) 기록
-    audit_lines = [
-        json.loads(line)
-        for line in paths.audit_log_path().read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    auto_assignee_audits = [
-        a for a in audit_lines
-        if a.get("action") == "update_assignee"
-        and a.get("item_id") == issue.id
-        and (a.get("detail") or {}).get("auto") is True
-    ]
-    assert len(auto_assignee_audits) == 1
-    assert auto_assignee_audits[0]["detail"]["from"] == "내부이"
-    assert auto_assignee_audits[0]["detail"]["to"] == "외부김"
+    assert not any("자동 변경" in c.body for c in comments)
 
 
 def test_api_check_no_api_assignee(
