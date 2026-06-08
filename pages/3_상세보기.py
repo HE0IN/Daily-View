@@ -144,47 +144,58 @@ with top_right:
         unsafe_allow_html=True,
     )
 
-# --- 2행: 제목 + 긴급도 배지 / 우측 끝 삭제 버튼 ---------------------------
-# XSS 방지: 모든 사용자 입력은 escape 후 HTML 으로 렌더
+# --- 2행: 제목(또는 편집 입력) + 편집/삭제/완전삭제 버튼 ------------------
+# 편집 모드 토글 — True 면 제목/설명이 입력칸으로 바뀌고 버튼이 [완료] 가 된다.
+_edit_mode = bool(st.session_state.get(f"_edit_mode_{item_id}", False))
+
 title_col, title_edit_col, title_del_col, title_purge_col = st.columns(
-    [5.5, 1, 1, 1.3]
+    [7, 1, 0.7, 0.8]
 )
 with title_col:
-    st.markdown(
-        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
-        f"{urgency_badge_html(issue.urgency.value)}"
-        f'<h2 style="margin:0;line-height:1.3;">{html.escape(issue.title)}</h2>'
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-with title_edit_col:
-    # 제목·설명 편집 — 누구나 가능(수정 기록은 audit 로그에 남음).
-    if not issue.archived:
-        with st.popover("✏ 편집", width="stretch"):
-            _edit_title = st.text_input(
-                "제목", value=issue.title, max_chars=120, key="edit_title_input"
-            )
-            _edit_desc = st.text_area(
-                "설명 (마크다운)", value=issue.description, height=180,
-                key="edit_desc_input",
-            )
-            if st.button("저장", type="primary", key="edit_save_btn"):
-                try:
-                    repository.update_issue_content(
-                        item_id, _edit_title, _edit_desc, user["name"]
-                    )
-                    st.toast("수정되었습니다", icon="✅")
-                    st.rerun()
-                except ValueError as exc:
-                    st.error(str(exc))
-                except Exception as exc:  # pragma: no cover
-                    st.error(f"수정 실패: {exc}")
-with title_del_col:
-    # 삭제(보관) — 제목 행 우측 끝. 누구나 가능(삭제 기록은 audit 로그에 남음).
-    if issue.archived:
-        st.caption("🗑 삭제됨")
+    if _edit_mode:
+        st.text_input(
+            "제목",
+            value=issue.title,
+            max_chars=120,
+            key=f"edit_title_{item_id}",
+            label_visibility="collapsed",
+        )
     else:
-        with st.popover("🗑 삭제", width="stretch"):
+        # XSS 방지: 사용자 입력은 escape 후 HTML 으로 렌더
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+            f"{urgency_badge_html(issue.urgency.value)}"
+            f'<h2 style="margin:0;line-height:1.3;">{html.escape(issue.title)}</h2>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+with title_edit_col:
+    # 인라인 편집 토글 — 편집모드면 [완료](저장), 아니면 [편집]. 누구나 가능.
+    if _edit_mode:
+        if st.button("완료", type="primary", key="edit_done_btn", width="stretch"):
+            try:
+                repository.update_issue_content(
+                    item_id,
+                    st.session_state.get(f"edit_title_{item_id}", issue.title),
+                    st.session_state.get(f"edit_desc_{item_id}", issue.description),
+                    user["name"],
+                )
+                st.session_state[f"_edit_mode_{item_id}"] = False
+                st.toast("수정되었습니다", icon="✅")
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+            except Exception as exc:  # pragma: no cover
+                st.error(f"수정 실패: {exc}")
+    elif not issue.archived:
+        if st.button("편집", key="edit_start_btn", width="stretch"):
+            st.session_state[f"_edit_mode_{item_id}"] = True
+            st.rerun()
+with title_del_col:
+    if issue.archived:
+        st.caption("🗑")
+    else:
+        with st.popover("🗑", width="stretch", help="삭제(보관)"):
             st.warning("이 요청을 삭제(보관)하시겠습니까?")
             if st.button("삭제 확인", type="primary", key="del_confirm_title"):
                 try:
@@ -194,8 +205,7 @@ with title_del_col:
                 except Exception as exc:  # pragma: no cover
                     st.error(f"삭제 실패: {exc}")
 with title_purge_col:
-    # 완전삭제 — 폴더 자체를 디스크에서 제거(복구 불가). 누구나, 2단계 확인.
-    with st.popover("🔥 완전삭제", width="stretch"):
+    with st.popover("🔥", width="stretch", help="완전삭제 (복구 불가)"):
         st.error(
             "⚠ 이 항목의 폴더(이미지·코멘트·메타 전체)를 디스크에서 완전히 "
             "삭제합니다. 되돌릴 수 없습니다."
@@ -644,7 +654,17 @@ with asis_col:
 with body_col:
     # 설명
     st.markdown("### 설명")
-    if issue.description.strip():
+    if _edit_mode:
+        # 편집 모드 — 설명을 원래 자리에서 바로 수정 (저장은 상단 [완료]).
+        st.text_area(
+            "설명",
+            value=issue.description,
+            height=220,
+            key=f"edit_desc_{item_id}",
+            label_visibility="collapsed",
+        )
+        st.caption("제목·설명을 수정한 뒤 상단의 [완료] 버튼을 누르면 저장됩니다.")
+    elif issue.description.strip():
         with st.container(border=True):
             st.markdown(issue.description)
     else:
