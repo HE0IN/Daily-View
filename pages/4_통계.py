@@ -139,8 +139,12 @@ def _closed_at(issue: Issue) -> datetime | None:
 
 ACTIVE_STATUSES = {
     Status.requested.value,
+    Status.dev_review.value,
     Status.in_progress.value,
+    Status.modifying.value,
     Status.api_check.value,
+    Status.vendor_dev.value,
+    Status.vendor_fix.value,
     Status.reviewing.value,
     Status.needs_recheck.value,
     Status.rejected.value,
@@ -148,8 +152,12 @@ ACTIVE_STATUSES = {
     Status.done.value,      # 레거시 호환
 }
 IN_PROGRESS_STATUSES = {
+    Status.dev_review.value,
     Status.in_progress.value,
+    Status.modifying.value,
     Status.api_check.value,
+    Status.vendor_dev.value,
+    Status.vendor_fix.value,
     Status.reviewing.value,
     Status.needs_recheck.value,
     Status.rejected.value,
@@ -203,8 +211,12 @@ st.subheader("상태별 현황")
 st.caption("개발중·API대기·검토중 등 진행 단계를 분리해서 표시 (삭제 제외).")
 _proc_status_keys = [
     "requested",
+    "dev_review",
     "in_progress",
+    "modifying",
     "api_check",
+    "vendor_dev",
+    "vendor_fix",
     "reviewing",
     "needs_recheck",
     "rejected",
@@ -426,12 +438,15 @@ st.caption(
 URGENCY_ORDER: list[str] = ["critical", "high", "normal", "low"]
 STATUS_ORDER_FOR_STACK: list[str] = [
     "requested",
+    "dev_review",
     "in_progress",
+    "modifying",
     "api_check",
+    "vendor_dev",
+    "vendor_fix",
     "reviewing",
     "needs_recheck",
     "rejected",
-    "reopened",  # 레거시
     "closed",
 ]
 

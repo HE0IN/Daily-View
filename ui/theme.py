@@ -29,13 +29,17 @@ URGENCY_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 STATUS_COLORS: dict[str, str] = {
-    "requested": "#3B82F6",      # 파랑
-    "in_progress": "#8B5CF6",    # 보라
-    "api_check": "#06B6D4",      # 청록
-    "reviewing": "#F59E0B",      # 주황
-    "needs_recheck": "#F97316",  # 진주황 (추가확인필요)
-    "rejected": "#DC2626",       # 빨강 (반려)
-    "closed": "#6B7280",         # 회색 (완료)
+    "requested": "#3B82F6",       # 파랑
+    "dev_review": "#6366F1",      # 인디고 (개발 검토)
+    "in_progress": "#8B5CF6",     # 보라 (개발중)
+    "modifying": "#A855F7",       # 자주 (수정중)
+    "api_check": "#06B6D4",       # 청록 (개발사 확인중)
+    "vendor_dev": "#0891B2",      # 진청록 (개발사 개발 중)
+    "vendor_fix": "#0E7490",      # 더 진한 청록 (개발사 수정 중)
+    "reviewing": "#F59E0B",       # 주황 (검토중)
+    "needs_recheck": "#F97316",   # 진주황 (추가확인필요)
+    "rejected": "#DC2626",        # 빨강 (반려)
+    "closed": "#6B7280",          # 회색 (완료)
     # 레거시
     "done": "#10B981",
     "reopened": "#EF4444",
@@ -43,8 +47,12 @@ STATUS_COLORS: dict[str, str] = {
 
 STATUS_LABELS: dict[str, str] = {
     "requested": "요청중",
+    "dev_review": "개발 검토",
     "in_progress": "개발중",
-    "api_check": "API대기",
+    "modifying": "수정중",
+    "api_check": "개발사 확인중",
+    "vendor_dev": "개발사 개발 중",
+    "vendor_fix": "개발사 수정 중",
     "reviewing": "검토중",
     "needs_recheck": "추가확인필요",
     "rejected": "반려",

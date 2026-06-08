@@ -27,29 +27,53 @@ from core.workflow import (
 # - 추가확인필요·반려 → 개발중 (개발자 재착수)
 # - done / reopened 은 레거시 — 새 흐름 미사용이나 옛 데이터 호환 전이만 유지.
 EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
-    (Status.requested, Role.developer): {Status.in_progress},
+    (Status.requested, Role.developer): {Status.dev_review, Status.in_progress},
     (Status.requested, Role.reviewer): {Status.closed},
+    (Status.dev_review, Role.developer): {Status.in_progress, Status.modifying},
+    (Status.dev_review, Role.reviewer): set(),
     (Status.in_progress, Role.developer): {
+        Status.modifying,
         Status.api_check,
         Status.reviewing,
         Status.closed,
     },
     (Status.in_progress, Role.reviewer): set(),
-    (Status.api_check, Role.developer): {
+    (Status.modifying, Role.developer): {
         Status.in_progress,
+        Status.api_check,
         Status.reviewing,
         Status.closed,
     },
+    (Status.modifying, Role.reviewer): set(),
+    (Status.api_check, Role.developer): {
+        Status.vendor_dev,
+        Status.vendor_fix,
+        Status.in_progress,
+    },
     (Status.api_check, Role.reviewer): set(),
+    (Status.vendor_dev, Role.developer): {
+        Status.vendor_fix,
+        Status.reviewing,
+        Status.api_check,
+        Status.closed,
+    },
+    (Status.vendor_dev, Role.reviewer): set(),
+    (Status.vendor_fix, Role.developer): {
+        Status.vendor_dev,
+        Status.reviewing,
+        Status.api_check,
+        Status.closed,
+    },
+    (Status.vendor_fix, Role.reviewer): set(),
     (Status.reviewing, Role.developer): {Status.closed},
     (Status.reviewing, Role.reviewer): {
         Status.closed,
         Status.needs_recheck,
         Status.rejected,
     },
-    (Status.needs_recheck, Role.developer): {Status.in_progress},
+    (Status.needs_recheck, Role.developer): {Status.dev_review},
     (Status.needs_recheck, Role.reviewer): set(),
-    (Status.rejected, Role.developer): {Status.in_progress},
+    (Status.rejected, Role.developer): {Status.dev_review},
     (Status.rejected, Role.reviewer): set(),
     (Status.closed, Role.developer): {Status.in_progress},
     (Status.closed, Role.reviewer): {Status.requested, Status.in_progress},
@@ -107,48 +131,45 @@ def test_closed_can_reopen() -> None:
 @pytest.mark.parametrize(
     ("current", "role", "target", "should_pass"),
     [
-        # 정상 전이 (단순화된 흐름)
-        (Status.requested, Role.developer, Status.in_progress, True),
-        (Status.in_progress, Role.developer, Status.reviewing, True),
+        # --- 정상 전이 (11단계 흐름) ---
+        (Status.requested, Role.developer, Status.dev_review, True),
+        (Status.dev_review, Role.developer, Status.in_progress, True),
+        (Status.dev_review, Role.developer, Status.modifying, True),
+        (Status.in_progress, Role.developer, Status.modifying, True),
         (Status.in_progress, Role.developer, Status.api_check, True),
-        (Status.api_check, Role.developer, Status.reviewing, True),
+        (Status.in_progress, Role.developer, Status.reviewing, True),
+        (Status.modifying, Role.developer, Status.reviewing, True),
+        (Status.api_check, Role.developer, Status.vendor_dev, True),
+        (Status.api_check, Role.developer, Status.vendor_fix, True),
+        (Status.api_check, Role.developer, Status.in_progress, True),
+        (Status.vendor_dev, Role.developer, Status.reviewing, True),
+        (Status.vendor_dev, Role.developer, Status.closed, True),
+        (Status.vendor_fix, Role.developer, Status.api_check, True),
+        (Status.vendor_fix, Role.developer, Status.vendor_dev, True),
         (Status.reviewing, Role.reviewer, Status.closed, True),
-        # 검토자: 검토중 → 추가확인필요 / 반려
         (Status.reviewing, Role.reviewer, Status.needs_recheck, True),
         (Status.reviewing, Role.reviewer, Status.rejected, True),
-        # 추가확인필요·반려 → 개발자가 다시 개발중으로
-        (Status.needs_recheck, Role.developer, Status.in_progress, True),
-        (Status.rejected, Role.developer, Status.in_progress, True),
-        # 레거시 재요청 호환
-        (Status.reopened, Role.developer, Status.in_progress, True),
-        # 레거시 done 호환 — 검토자가 정리 가능
-        (Status.done, Role.reviewer, Status.closed, True),
-        (Status.done, Role.reviewer, Status.reviewing, True),
-        # 개발자도 closed 가능 (두 명 환경 단순화)
+        (Status.needs_recheck, Role.developer, Status.dev_review, True),
+        (Status.rejected, Role.developer, Status.dev_review, True),
+        # 개발자도 closed 가능 (두 명 환경)
         (Status.in_progress, Role.developer, Status.closed, True),
-        (Status.api_check, Role.developer, Status.closed, True),
         (Status.reviewing, Role.developer, Status.closed, True),
-        # 권한 위반
-        (Status.requested, Role.reviewer, Status.in_progress, False),
-        (Status.in_progress, Role.reviewer, Status.reviewing, False),
-        (Status.done, Role.developer, Status.closed, False),
-        # 검토중 → 재요청(reopened) 은 이제 불가 (반려는 rejected 로 처리)
-        (Status.reviewing, Role.reviewer, Status.reopened, False),
-        # 추가확인필요·반려에서 검토자는 전이 불가 (개발자만)
-        (Status.needs_recheck, Role.reviewer, Status.in_progress, False),
-        (Status.rejected, Role.reviewer, Status.in_progress, False),
-        # 잘못된 점프
-        (Status.requested, Role.developer, Status.reviewing, False),
-        (Status.requested, Role.developer, Status.closed, False),
-        # 새 흐름에서는 in_progress → done 불가 (done 단계 제거됨)
-        (Status.in_progress, Role.developer, Status.done, False),
-        (Status.api_check, Role.developer, Status.done, False),
-        # 완료 재오픈 — 허용되는 것만 (요청/개발), 나머지는 불가
+        # 완료 재오픈
         (Status.closed, Role.reviewer, Status.requested, True),
         (Status.closed, Role.reviewer, Status.in_progress, True),
         (Status.closed, Role.developer, Status.in_progress, True),
+        # 레거시
+        (Status.reopened, Role.developer, Status.in_progress, True),
+        (Status.done, Role.reviewer, Status.closed, True),
+        # --- 위반 / 흐름 점프 ---
+        (Status.requested, Role.reviewer, Status.dev_review, False),
+        (Status.dev_review, Role.reviewer, Status.in_progress, False),
+        (Status.api_check, Role.developer, Status.reviewing, False),  # vendor 거침
+        (Status.needs_recheck, Role.developer, Status.in_progress, False),  # dev_review 거침
+        (Status.needs_recheck, Role.reviewer, Status.dev_review, False),
+        (Status.reviewing, Role.reviewer, Status.reopened, False),
         (Status.closed, Role.developer, Status.reopened, False),
-        (Status.closed, Role.reviewer, Status.reviewing, False),
+        (Status.in_progress, Role.developer, Status.done, False),
     ],
 )
 def test_can_transition_matches_assert_transition(
@@ -211,8 +232,12 @@ def test_status_labels_ko_are_complete() -> None:
 def test_status_labels_ko_specific_values() -> None:
     """주요 라벨 — 단순화 후 (요청중/작업중/완료 등으로 변경)."""
     assert STATUS_LABELS_KO[Status.requested] == "요청중"
+    assert STATUS_LABELS_KO[Status.dev_review] == "개발 검토"
     assert STATUS_LABELS_KO[Status.in_progress] == "개발중"
-    assert STATUS_LABELS_KO[Status.api_check] == "API대기"
+    assert STATUS_LABELS_KO[Status.modifying] == "수정중"
+    assert STATUS_LABELS_KO[Status.api_check] == "개발사 확인중"
+    assert STATUS_LABELS_KO[Status.vendor_dev] == "개발사 개발 중"
+    assert STATUS_LABELS_KO[Status.vendor_fix] == "개발사 수정 중"
     assert STATUS_LABELS_KO[Status.reviewing] == "검토중"
     assert STATUS_LABELS_KO[Status.needs_recheck] == "추가확인필요"
     assert STATUS_LABELS_KO[Status.rejected] == "반려"
@@ -242,6 +267,9 @@ def test_allowed_transitions_returns_independent_list() -> None:
     first = allowed_transitions(Status.in_progress, Role.developer)
     first.clear()  # 호출자가 변형
     second = allowed_transitions(Status.in_progress, Role.developer)
-    assert second == [Status.api_check, Status.reviewing, Status.closed], (
-        "내부 TRANSITIONS 가 외부 변형에 노출됨"
-    )
+    assert second == [
+        Status.modifying,
+        Status.api_check,
+        Status.reviewing,
+        Status.closed,
+    ], "내부 TRANSITIONS 가 외부 변형에 노출됨"

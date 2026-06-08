@@ -49,11 +49,15 @@ class Status(str, Enum):
     """
 
     requested = "requested"
+    dev_review = "dev_review"        # 신설: 개발 검토 (개발자가 요청 분석)
     in_progress = "in_progress"
-    api_check = "api_check"
+    modifying = "modifying"          # 신설: 수정중
+    api_check = "api_check"          # 라벨: 개발사 확인중
+    vendor_dev = "vendor_dev"        # 신설: 개발사 개발 중
+    vendor_fix = "vendor_fix"        # 신설: 개발사 수정 중
     reviewing = "reviewing"
-    needs_recheck = "needs_recheck"  # 신설: 추가확인필요 (검토자 → 개발자)
-    rejected = "rejected"            # 신설: 반려 (검토자 → 개발자)
+    needs_recheck = "needs_recheck"  # 추가확인필요 (검토자 → 개발자)
+    rejected = "rejected"            # 반려 (검토자 → 개발자)
     closed = "closed"
     # --- 레거시 (옛 데이터 호환, 새 흐름에서는 미사용) ---
     done = "done"

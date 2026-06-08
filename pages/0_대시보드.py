@@ -1,7 +1,7 @@
 """대시보드 — 전체 현황 (역할 무관 공통 화면).
 
-검토자/개발자 구분 없이 동일한 화면을 보여준다. 상태별 섹션을 순서대로 나열:
-    전체 개발 목록 / 개발 / 검토 / 외부대기 / 완료 / 삭제
+검토자/개발자 구분 없이 동일한 화면. 상태별 섹션을 순서대로 나열:
+    전체 개발 목록 / 개발중 / 검토중 / 외부대기 / 완료 / 삭제
 
 공통 처리(부트스트랩·사용자식별·프로젝트선택)는 진입점 app.py(라우터)가 수행하고,
 이 페이지는 session_state 의 user / _current_project 를 읽어 사용한다.
@@ -14,7 +14,7 @@ import streamlit as st
 from core import repository
 from core.models import Status
 from ui import components
-from ui.theme import STATUS_COLORS, STATUS_LABELS
+from ui.theme import STATUS_LABELS
 
 # 라우터가 보장하지만 방어적으로 — user 없으면 정지.
 user = st.session_state.get("user")
@@ -95,37 +95,37 @@ st.divider()
 # 상태별 섹션 (순서대로)
 # ---------------------------------------------------------------------------
 
-# 1) 전체 개발 목록 — 개발자가 처리해야 할 큐
-dev_wait = _by_status(
-    [Status.requested, Status.needs_recheck, Status.rejected, Status.reopened]
+# 1) 전체 개발 목록 — 완료·삭제를 제외한 모든 진행 항목 전체
+all_active_entries = repository.list_issues(
+    include_archived=False, include_closed=False, project=current_project
 )
-st.subheader(f"전체 개발 목록 ({len(dev_wait)})")
-st.caption("요청됨 · 추가확인필요 · 반려 — 개발자가 처리할 항목")
-_grid(dev_wait, key_prefix="dash_wait")
+all_active = _to_dicts(all_active_entries)
+st.subheader(f"전체 개발 목록 ({len(all_active)})")
+st.caption("완료·삭제를 제외한 모든 진행 항목")
+_grid(all_active, key_prefix="dash_all")
 
 st.divider()
 
-# 2) 개발
-dev = _by_status([Status.in_progress])
-st.subheader(f"개발 ({len(dev)})")
-st.caption("개발중인 항목")
+# 2) 개발중 — 개발중 + 수정중
+dev = _by_status([Status.in_progress, Status.modifying])
+st.subheader(f"개발중 ({len(dev)})")
+st.caption("개발중 · 수정중")
 _grid(dev, key_prefix="dash_dev")
 
 st.divider()
 
-# 3) 검토
+# 3) 검토중
 review = _by_status([Status.reviewing])
-st.subheader(f"검토 ({len(review)})")
-st.caption("검토중인 항목")
+st.subheader(f"검토중 ({len(review)})")
 _grid(review, key_prefix="dash_review")
 
 st.divider()
 
-# 4) 외부대기
-api = _by_status([Status.api_check])
-st.subheader(f"외부대기 ({len(api)})")
-st.caption("외부 API 답변 대기 중")
-_grid(api, key_prefix="dash_api")
+# 4) 외부대기 — 개발사 확인중 / 개발사 개발 중 / 개발사 수정 중
+vendor = _by_status([Status.api_check, Status.vendor_dev, Status.vendor_fix])
+st.subheader(f"외부대기 ({len(vendor)})")
+st.caption("개발사 확인중 · 개발사 개발 중 · 개발사 수정 중")
+_grid(vendor, key_prefix="dash_vendor")
 
 st.divider()
 
@@ -153,8 +153,12 @@ _grid(archived, key_prefix="dash_arch")
 
 STATUS_NAV_KEYS = [
     "requested",
+    "dev_review",
     "in_progress",
+    "modifying",
     "api_check",
+    "vendor_dev",
+    "vendor_fix",
     "reviewing",
     "needs_recheck",
     "rejected",
