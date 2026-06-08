@@ -51,7 +51,7 @@ role_str: str = user.get("role", "reviewer")
 # 사이드바에서만 변경되며, 새 등록 시 자동으로 그 프로젝트가 적용된다.
 current_project: str | None = st.session_state.get("_current_project")
 
-st.title("새 요청 등록")
+st.title("새 개발 등록")
 
 if role_str != "reviewer":
     st.warning("주로 검토자가 등록하지만 개발자도 가능합니다.")

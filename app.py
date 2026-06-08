@@ -120,9 +120,9 @@ _dashboard = st.Page(
     "pages/0_대시보드.py", title="대시보드", icon=":material/dashboard:", default=True
 )
 _new = st.Page(
-    "pages/2_새요청등록.py", title="새 요청 등록", icon=":material/add_circle:"
+    "pages/2_새요청등록.py", title="새 개발 등록", icon=":material/add_circle:"
 )
-_list = st.Page("pages/1_요청목록.py", title="요청목록", icon=":material/list_alt:")
+_list = st.Page("pages/1_요청목록.py", title="개발목록", icon=":material/list_alt:")
 _stats = st.Page("pages/4_통계.py", title="통계", icon=":material/bar_chart:")
 _detail = st.Page(
     "pages/3_상세보기.py", title="상세보기", icon=":material/description:"
@@ -139,11 +139,11 @@ st.markdown(
         display: none !important;
     }
     /* 새 요청 등록 강조 (빨강 배경 + 흰 글씨) */
-    section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%88_%EC%9A%94%EC%B2%AD"]) a {
+    section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%88_%EA%B0%9C%EB%B0%9C"]) a {
         background: #DC2626 !important;
         border-radius: 6px;
     }
-    section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%88_%EC%9A%94%EC%B2%AD"]) a span {
+    section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%88_%EA%B0%9C%EB%B0%9C"]) a span {
         color: #ffffff !important;
         font-weight: 700;
     }

@@ -118,7 +118,7 @@ if role == "reviewer":
     # ── 검토자 화면 ───────────────────────────────────────────────────────
     cta_col, _ = st.columns([1, 4])
     with cta_col:
-        if st.button("+ 새 요청 등록", type="primary", width="stretch"):
+        if st.button("+ 새 개발 등록", type="primary", width="stretch"):
             st.switch_page("pages/2_새요청등록.py")
 
     st.divider()
@@ -143,10 +143,10 @@ if role == "reviewer":
         project=current_project,
     )
     my_open = _entries_to_dicts(my_open_entries)
-    st.subheader(f"내가 등록한 미해결 ({len(my_open)})")
+    st.subheader(f"개발대기목록 ({len(my_open)})")
     _render_card_grid(my_open[:9], key_prefix="reviewer_open")
     if len(my_open) > 9:
-        st.caption(f"… 외 {len(my_open) - 9}건은 [요청목록]에서 확인")
+        st.caption(f"… 외 {len(my_open) - 9}건은 [개발목록]에서 확인")
 
     st.divider()
 

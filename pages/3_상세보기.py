@@ -65,7 +65,7 @@ st.session_state.pop("_detail_item_id", None)
 
 if not item_id:
     st.warning("항목 ID가 지정되지 않았습니다. 요청 목록에서 항목을 선택해주세요.")
-    st.page_link("pages/1_요청목록.py", label="요청목록으로 →")
+    st.page_link("pages/1_요청목록.py", label="개발목록으로 →")
     st.stop()
 
 try:
@@ -73,11 +73,11 @@ try:
 except paths.InvalidItemIdError:
     # path traversal 페이로드 등 형식이 어긋난 ID — 디스크 접근 자체가 차단됨
     st.error("잘못된 항목 ID 형식입니다.")
-    st.page_link("pages/1_요청목록.py", label="요청목록으로 →")
+    st.page_link("pages/1_요청목록.py", label="개발목록으로 →")
     st.stop()
 except FileNotFoundError:
     st.error(f"항목을 찾을 수 없습니다: #{html.escape(item_id)}")
-    st.page_link("pages/1_요청목록.py", label="요청목록으로 →")
+    st.page_link("pages/1_요청목록.py", label="개발목록으로 →")
     st.stop()
 
 

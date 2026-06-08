@@ -44,9 +44,9 @@ current_project: str | None = st.session_state.get("_current_project")
 # ---------------------------------------------------------------------------
 
 if current_project:
-    st.title(f"요청목록 — {current_project}")
+    st.title(f"개발목록 — {current_project}")
 else:
-    st.title("요청목록")
+    st.title("개발목록")
 
 
 # ---------------------------------------------------------------------------
