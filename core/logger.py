@@ -41,6 +41,7 @@ UPLOAD_IMAGE = "upload_image"
 CONFIRM_REVIEW = "confirm_review"
 ARCHIVE = "archive"
 AUTO_ARCHIVE = "auto_archive"
+DELETE = "delete"
 
 
 def audit_log(
@@ -116,6 +117,7 @@ __all__ = [
     "CONFIRM_REVIEW",
     "ARCHIVE",
     "AUTO_ARCHIVE",
+    "DELETE",
     "audit_log",
     "tail_audit",
 ]

@@ -950,6 +950,28 @@ def archive_issue(item_id: str, actor: str) -> Issue:
     return issue
 
 
+def delete_issue_permanently(item_id: str, actor: str) -> None:
+    """항목 폴더(메타·이미지·코멘트 전체)를 디스크에서 완전 삭제. 복구 불가.
+
+    인덱스 엔트리도 제거한다. ``paths.item_dir`` 의 형식 검증으로 path
+    traversal 을 차단한다 (잘못된 id 면 InvalidItemIdError).
+    """
+    import shutil
+
+    # 형식 검증 (path traversal 차단) — item_dir 가 검증을 수행.
+    target = paths.item_dir(item_id)
+
+    # audit 먼저 — 폴더 삭제로 item.log 는 사라지지만 통합 audit.log 에는 남는다.
+    audit.audit_log(actor=actor, action=audit.DELETE, item_id=item_id, detail=None)
+
+    # 인덱스에서 제거
+    index_mod.remove_index_entry(item_id)
+
+    # 폴더 자체 삭제
+    if target.exists():
+        shutil.rmtree(target)
+
+
 def auto_archive_closed(days: int = 14) -> int:
     """``closed`` 상태이면서 reviewer_confirmed_at + days < now 인 항목들을
     archived=True 로 변경.

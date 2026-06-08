@@ -146,7 +146,9 @@ with top_right:
 
 # --- 2행: 제목 + 긴급도 배지 / 우측 끝 삭제 버튼 ---------------------------
 # XSS 방지: 모든 사용자 입력은 escape 후 HTML 으로 렌더
-title_col, title_edit_col, title_del_col = st.columns([6, 1, 1])
+title_col, title_edit_col, title_del_col, title_purge_col = st.columns(
+    [5.5, 1, 1, 1.3]
+)
 with title_col:
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
@@ -191,6 +193,22 @@ with title_del_col:
                     st.switch_page("pages/1_요청목록.py")
                 except Exception as exc:  # pragma: no cover
                     st.error(f"삭제 실패: {exc}")
+with title_purge_col:
+    # 완전삭제 — 폴더 자체를 디스크에서 제거(복구 불가). 누구나, 2단계 확인.
+    with st.popover("🔥 완전삭제", width="stretch"):
+        st.error(
+            "⚠ 이 항목의 폴더(이미지·코멘트·메타 전체)를 디스크에서 완전히 "
+            "삭제합니다. 되돌릴 수 없습니다."
+        )
+        if st.button(
+            "완전삭제 확인", type="primary", key="purge_confirm_title"
+        ):
+            try:
+                repository.delete_issue_permanently(item_id, user["name"])
+                st.toast("완전히 삭제되었습니다", icon="🔥")
+                st.switch_page("pages/1_요청목록.py")
+            except Exception as exc:  # pragma: no cover
+                st.error(f"완전삭제 실패: {exc}")
 
 # --- 3행: 메타 정보 (등록 / 담당 / 카테고리) 가로 배치 ---------------------
 created_human = humanize_dt(issue.created_at)
