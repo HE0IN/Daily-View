@@ -93,64 +93,84 @@ def _role_label(role: str) -> str:
     return "검토자" if role == "reviewer" else "개발자"
 
 
+def _commit_user(user: dict, cookie_mgr: Any | None) -> None:
+    """선택/등록한 user 를 확정 — session_state + 접속로그 + 영속화 후 rerun."""
+    st.session_state["user"] = user
+    # 접속 로그 (식별/로그인 시점 1회 기록) — 파일로만 적재
+    try:
+        from core import logger as _logger
+        _logger.audit_log(
+            user["name"], _logger.ACCESS, None, {"role": user["role"]}
+        )
+    except Exception:
+        pass
+    # 영속화 — query parameter(의존성 0) + Cookie(가능 시 30일)
+    _persist_user_to_query_params(user)
+    if cookie_mgr is not None:
+        try:
+            expires = datetime.now(timezone.utc) + _COOKIE_TTL
+            cookie_mgr.set(
+                _COOKIE_VALUE_KEY, user, expires_at=expires, key="_user_cookie_set"
+            )
+        except Exception:
+            pass  # 쿠키 실패는 무시 — query param 으로 새로고침 보존
+    st.session_state.pop(_EDIT_FLAG, None)
+    st.rerun()
+
+
 def _render_edit_form(cookie_mgr: Any | None, current: dict | None) -> None:
-    """사이드바에 이름/역할 입력 폼을 그린다."""
+    """사이드바에 사용자 선택(radio) + 새 사용자 등록 UI 를 그린다.
+
+    한 번 등록(이름+역할)된 사용자는 radio 로 골라 바로 로그인한다.
+    """
+    from core import user_registry
+
     with st.sidebar:
         st.subheader("사용자")
-        default_name = (current or {}).get("name", "")
-        default_role = (current or {}).get("role", "reviewer")
-        name = st.text_input("이름", value=default_name, key="_user_name_input")
-        role = st.radio(
-            "역할",
-            options=["reviewer", "developer"],
-            format_func=_role_label,
-            index=0 if default_role != "developer" else 1,
-            key="_user_role_input",
-        )
-        col_save, col_cancel = st.columns(2)
-        with col_save:
-            save = st.button("저장", key="_user_save", type="primary")
-        with col_cancel:
-            cancel = st.button(
-                "취소",
-                key="_user_cancel",
-                disabled=current is None,
+        users = user_registry.list_users()
+
+        # 1) 등록된 사용자 — radio 로 선택
+        if users:
+            names = [u["name"] for u in users]
+            role_map = {u["name"]: u["role"] for u in users}
+            cur_name = (current or {}).get("name")
+            default_idx = names.index(cur_name) if cur_name in names else 0
+            picked = st.radio(
+                "사용자 선택",
+                options=names,
+                index=default_idx,
+                format_func=lambda n: f"{n} ({_role_label(role_map.get(n, 'reviewer'))})",
+                key="_user_pick",
             )
-
-        if save and name.strip():
-            user = {"name": name.strip(), "role": role}
-            st.session_state["user"] = user
-            # 접속 로그 (식별/로그인 시점 1회 기록) — 파일로만 적재
-            try:
-                from core import logger as _logger
-                _logger.audit_log(
-                    user["name"], _logger.ACCESS, None, {"role": user["role"]}
+            if st.button("선택", key="_user_pick_btn", type="primary"):
+                _commit_user(
+                    {"name": picked, "role": role_map.get(picked, "reviewer")},
+                    cookie_mgr,
                 )
-            except Exception:
-                pass
-            # 영속화 — 두 채널 동시 저장:
-            #   1) URL query parameter (의존성 0, HTTP+IP 환경에서도 확실히 동작)
-            #   2) Cookie (extra-streamlit-components, 가능하면 30일 보존)
-            _persist_user_to_query_params(user)
-            if cookie_mgr is not None:
-                try:
-                    expires = datetime.now(timezone.utc) + _COOKIE_TTL
-                    cookie_mgr.set(
-                        _COOKIE_VALUE_KEY,
-                        user,
-                        expires_at=expires,
-                        key="_user_cookie_set",
-                    )
-                except Exception:
-                    pass  # 쿠키 실패는 무시 — query param 으로 새로고침 보존
-            st.session_state.pop(_EDIT_FLAG, None)
-            st.rerun()
-        elif save and not name.strip():
-            st.warning("이름을 입력해주세요.")
 
-        if cancel and current is not None:
-            st.session_state.pop(_EDIT_FLAG, None)
-            st.rerun()
+        # 2) 새 사용자 등록 (처음이면 펼친 상태)
+        with st.expander("+ 새 사용자 등록", expanded=not users):
+            new_name = st.text_input("이름", key="_user_new_name")
+            new_role = st.radio(
+                "역할",
+                options=["reviewer", "developer"],
+                format_func=_role_label,
+                key="_user_new_role",
+            )
+            if st.button("등록", key="_user_new_btn"):
+                if new_name.strip():
+                    user_registry.add_user(new_name.strip(), new_role)
+                    _commit_user(
+                        {"name": new_name.strip(), "role": new_role}, cookie_mgr
+                    )
+                else:
+                    st.warning("이름을 입력해주세요.")
+
+        # 3) 취소 (이미 로그인된 상태에서 '변경' 으로 들어온 경우만)
+        if current is not None:
+            if st.button("취소", key="_user_cancel"):
+                st.session_state.pop(_EDIT_FLAG, None)
+                st.rerun()
 
 
 def get_or_init_user() -> dict | None:
