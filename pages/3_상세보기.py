@@ -134,23 +134,9 @@ def _role_color(role: str | Role) -> str:
 # ---------------------------------------------------------------------------
 
 # --- 1행: 목록으로 / ID ----------------------------------------------------
-top_left, top_del, top_right = st.columns([3, 1.2, 1])
+top_left, top_right = st.columns([4, 1])
 with top_left:
     st.page_link("pages/1_요청목록.py", label="← 목록으로")
-with top_del:
-    # 삭제(보관)을 우측 상단으로 — 등록자 또는 검토자만, popover 2단계 확인.
-    if issue.archived:
-        st.caption("🗑 삭제됨")
-    elif (issue.author == user["name"]) or (user.get("role") == "reviewer"):
-        with st.popover("🗑 삭제", width="stretch"):
-            st.warning("이 요청을 삭제(보관)하시겠습니까?")
-            if st.button("삭제 확인", type="primary", key="del_confirm_top"):
-                try:
-                    repository.archive_issue(item_id, user["name"])
-                    st.toast("삭제(보관)되었습니다", icon="🗑")
-                    st.switch_page("pages/1_요청목록.py")
-                except Exception as exc:  # pragma: no cover
-                    st.error(f"삭제 실패: {exc}")
 with top_right:
     st.markdown(
         f'<div style="text-align:right;color:#6B7280;font-size:0.85em;">'
@@ -158,15 +144,31 @@ with top_right:
         unsafe_allow_html=True,
     )
 
-# --- 2행: 제목 + 긴급도 배지 (상태는 아래 메타 행 맨 앞으로 이동) ----------
+# --- 2행: 제목 + 긴급도 배지 / 우측 끝 삭제 버튼 ---------------------------
 # XSS 방지: 모든 사용자 입력은 escape 후 HTML 으로 렌더
-st.markdown(
-    f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
-    f"{urgency_badge_html(issue.urgency.value)}"
-    f'<h2 style="margin:0;line-height:1.3;">{html.escape(issue.title)}</h2>'
-    f"</div>",
-    unsafe_allow_html=True,
-)
+title_col, title_del_col = st.columns([6, 1])
+with title_col:
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        f"{urgency_badge_html(issue.urgency.value)}"
+        f'<h2 style="margin:0;line-height:1.3;">{html.escape(issue.title)}</h2>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+with title_del_col:
+    # 삭제(보관) — 제목 행 우측 끝. 등록자 또는 검토자만, popover 2단계 확인.
+    if issue.archived:
+        st.caption("🗑 삭제됨")
+    elif (issue.author == user["name"]) or (user.get("role") == "reviewer"):
+        with st.popover("🗑 삭제", width="stretch"):
+            st.warning("이 요청을 삭제(보관)하시겠습니까?")
+            if st.button("삭제 확인", type="primary", key="del_confirm_title"):
+                try:
+                    repository.archive_issue(item_id, user["name"])
+                    st.toast("삭제(보관)되었습니다", icon="🗑")
+                    st.switch_page("pages/1_요청목록.py")
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"삭제 실패: {exc}")
 
 # --- 3행: 메타 정보 (등록 / 담당 / 카테고리) 가로 배치 ---------------------
 created_human = humanize_dt(issue.created_at)
@@ -206,16 +208,16 @@ if _project_raw:
 #   c2 = 긴급도 + [수정]  (NEW — 프로젝트 변경은 사이드바에서만)
 #   c3 = 카테고리 + [수정]
 #   c4 = [→ 완료] 버튼 (우측 끝, 짧게)
-# 상단 메타를 카드(테두리)로 묶기 — '현재 상태 + 변경' 패널.
-# st.columns 를 container 안에서 생성하면 이후 with 블록도 이 카드 안에 렌더된다.
-_meta_card = st.container(border=True)
-with _meta_card:
-    meta_c0, meta_c1, meta_c2, meta_c3 = st.columns([1.7, 3, 1.6, 2.2], gap="small")
+# 상단 메타 — 각 항목(상태 / 등록·담당 / 긴급도 / 카테고리)을 개별 카드로 묶음.
+# 각 컬럼 안에서 st.container(border=True) 로 감싸 4 개의 독립 카드처럼 보이게 한다.
+meta_c0, meta_c1, meta_c2, meta_c3 = st.columns([1.7, 3, 1.6, 2.2], gap="small")
 
 with meta_c0:
     _st_color = STATUS_COLORS.get(issue.status.value, "#9CA3AF")
     _st_label = STATUS_LABELS.get(issue.status.value, issue.status.value)
-    s_l, s_r = st.columns([2, 1])
+    _card0 = st.container(border=True)
+    with _card0:
+        s_l, s_r = st.columns([2, 1])
     with s_l:
         st.markdown(
             f'<div style="line-height:1.2;">'
@@ -250,7 +252,9 @@ with meta_c0:
                         st.error(f"상태 변경 실패: {exc}")
 
 with meta_c1:
-    sub_l, sub_r = st.columns([3, 1])
+    _card1 = st.container(border=True)
+    with _card1:
+        sub_l, sub_r = st.columns([3, 1])
     with sub_l:
         st.markdown(
             f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
@@ -290,7 +294,9 @@ with meta_c1:
 with meta_c2:
     # 긴급도 표시 + 변경 popover (프로젝트 변경 자리를 대체)
     from ui.theme import URGENCY_LABELS as _URG_LABELS
-    sub_l, sub_r = st.columns([2, 1])
+    _card2 = st.container(border=True)
+    with _card2:
+        sub_l, sub_r = st.columns([2, 1])
     with sub_l:
         _urg_label = _URG_LABELS.get(issue.urgency.value, issue.urgency.value)
         st.markdown(
@@ -328,7 +334,9 @@ with meta_c2:
                     st.error(f"변경 실패: {exc}")
 
 with meta_c3:
-    sub_l, sub_r = st.columns([3, 2])
+    _card3 = st.container(border=True)
+    with _card3:
+        sub_l, sub_r = st.columns([3, 2])
     with sub_l:
         st.markdown(
             f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'

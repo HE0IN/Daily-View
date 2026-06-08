@@ -237,6 +237,9 @@ for _col, _sk in zip(_proc_cols, _proc_status_keys):
             int((_active_df_for_status["status"] == _sk).sum()),
             color=STATUS_COLORS.get(_sk, "#9CA3AF"),
         )
+        if st.button("보기", key=f"stat_status_{_sk}", width="stretch"):
+            st.session_state["list_preset_status"] = _sk
+            st.switch_page("pages/1_요청목록.py")
 
 st.divider()
 
