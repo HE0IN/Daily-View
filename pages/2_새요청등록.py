@@ -86,10 +86,10 @@ known_names: set[str] = set()
 for e in existing_entries:
     if e.assignee:
         known_names.add(e.assignee)
-    # 등록자도 다음 후보로 등장 가능 (개발자가 직접 등록한 경우 등).
-    if e.author:
-        known_names.add(e.author)
-known_names.discard(name)  # 자기 자신은 후보에서 제외 (등록자=담당자 케이스 방지)
+    # 등록자(author)는 담당 개발자 후보에서 제외한다 — 요청 등록은 주로
+    # 검토자가 하므로, author 를 후보에 넣으면 검토자가 기본 담당자로 잡힌다.
+    # 담당자 후보는 '실제로 담당했던 사람(assignee)' 만으로 한정.
+known_names.discard(name)  # 자기 자신도 제외
 # 담당자 필수화: "(미지정)" 옵션을 제거하여 None 저장이 불가능하도록 함.
 # known_names 가 비어있으면 ["(직접 입력)"] 만 남아 사용자가 직접 입력을 강제받는다.
 assignee_options = sorted(known_names) + ["(직접 입력)"]
