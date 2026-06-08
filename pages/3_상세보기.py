@@ -136,7 +136,13 @@ def _role_color(role: str | Role) -> str:
 # --- 1행: 목록으로 / ID ----------------------------------------------------
 top_left, top_right = st.columns([4, 1])
 with top_left:
-    st.page_link("pages/1_요청목록.py", label="← 목록으로")
+    # 뒤로 — 들어온 화면(대시보드/목록)으로 복귀. 출처가 없으면 목록으로.
+    _back_target = st.session_state.get("_detail_origin", "pages/1_요청목록.py")
+    _back_label = (
+        "← 뒤로 (대시보드)" if "대시보드" in _back_target else "← 뒤로 (목록)"
+    )
+    if st.button(_back_label, key="detail_back_btn"):
+        st.switch_page(_back_target)
 with top_right:
     st.markdown(
         f'<div style="text-align:right;color:#6B7280;font-size:0.85em;">'

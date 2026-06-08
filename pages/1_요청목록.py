@@ -302,6 +302,7 @@ def _render_card_view(items_local: list[dict]) -> None:
                     # session_state 로도 함께 전달 (상세보기에서 둘 다 체크).
                     _iid = item.get("id", "")
                     st.session_state["_detail_item_id"] = _iid
+                    st.session_state["_detail_origin"] = "pages/1_요청목록.py"
                     st.query_params["id"] = _iid
                     st.switch_page("pages/3_상세보기.py")
 
@@ -356,6 +357,7 @@ def _render_table_view(page_items_local: list[dict]) -> None:
         st.markdown("&nbsp;", unsafe_allow_html=True)  # 라벨 높이 맞추기
         if st.button("상세보기", key="list_table_open_btn", width="stretch"):
             st.session_state["_detail_item_id"] = target_id
+            st.session_state["_detail_origin"] = "pages/1_요청목록.py"
             st.query_params["id"] = target_id
             st.switch_page("pages/3_상세보기.py")
 
