@@ -86,7 +86,7 @@ st.write(f"안녕하세요, **{name}**님")
 
 cta_col, _ = st.columns([1, 4])
 with cta_col:
-    if st.button("+ 새 개발 등록", type="primary", width="stretch"):
+    if st.button("+ 새 요청 등록", type="primary", width="stretch"):
         st.switch_page("pages/2_새요청등록.py")
 
 st.divider()

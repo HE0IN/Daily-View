@@ -67,7 +67,7 @@ all_entries: list[IndexEntry] = repository.list_issues(
 )
 
 if not all_entries:
-    st.info("아직 데이터가 없습니다. [새 개발 등록] 페이지에서 첫 항목을 만들어보세요.")
+    st.info("아직 데이터가 없습니다. [새 요청 등록] 페이지에서 첫 항목을 만들어보세요.")
     st.stop()
 
 NOW: datetime = now()
