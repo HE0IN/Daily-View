@@ -703,14 +703,33 @@ with body_col:
                 role_label = _role_label(comment.role)
                 safe_comment_author = html.escape(str(comment.author))
                 with st.container(border=True):
-                    st.markdown(
-                        f'<div style="font-size:0.9em;">'
-                        f'<b style="color:{role_color};">{safe_comment_author}</b> '
-                        f'<span style="color:#6B7280;">({role_label})</span> · '
-                        f'<span style="color:#6B7280;" title="{html.escape(abs_when)}">{html.escape(when)}</span>'
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
+                    _ch, _cd = st.columns([7, 1])
+                    with _ch:
+                        st.markdown(
+                            f'<div style="font-size:0.9em;">'
+                            f'<b style="color:{role_color};">{safe_comment_author}</b> '
+                            f'<span style="color:#6B7280;">({role_label})</span> · '
+                            f'<span style="color:#6B7280;" title="{html.escape(abs_when)}">{html.escape(when)}</span>'
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with _cd:
+                        # 코멘트 삭제 — 누구나, 2단계 확인 (audit 로그 기록).
+                        with st.popover("🗑", help="코멘트 삭제"):
+                            st.warning("이 코멘트를 삭제할까요?")
+                            if st.button(
+                                "삭제 확인",
+                                key=f"del_cmt_{comment.id}",
+                                type="primary",
+                            ):
+                                try:
+                                    repository.delete_comment(
+                                        item_id, comment.id, user["name"]
+                                    )
+                                    st.toast("코멘트가 삭제되었습니다", icon="🗑")
+                                    st.rerun()
+                                except Exception as exc:  # pragma: no cover
+                                    st.error(f"삭제 실패: {exc}")
                     st.markdown(comment.body)
 
     # 코멘트 입력

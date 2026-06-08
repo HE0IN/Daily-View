@@ -37,6 +37,7 @@ UPDATE_CATEGORIES = "update_categories"
 UPDATE_CONTENT = "update_content"
 UPDATE_PROJECT = "update_project"
 ADD_COMMENT = "add_comment"
+DELETE_COMMENT = "delete_comment"
 UPLOAD_IMAGE = "upload_image"
 CONFIRM_REVIEW = "confirm_review"
 ARCHIVE = "archive"
@@ -113,6 +114,7 @@ __all__ = [
     "UPDATE_CONTENT",
     "UPDATE_PROJECT",
     "ADD_COMMENT",
+    "DELETE_COMMENT",
     "UPLOAD_IMAGE",
     "CONFIRM_REVIEW",
     "ARCHIVE",

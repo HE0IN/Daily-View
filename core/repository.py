@@ -384,6 +384,65 @@ def _add_system_comment(item_id: str, body: str) -> Comment:
     return comment
 
 
+def _rewrite_comments_unlocked(item_id: str, comments: list[Comment]) -> None:
+    """comments.jsonl 전체를 재작성 (atomic). 락은 호출자가 보유해야 한다."""
+    import json
+    import os
+    import tempfile
+
+    path = paths.item_comments_path(item_id)
+    lines = [
+        json.dumps(c.model_dump(mode="json"), ensure_ascii=False)
+        for c in comments
+    ]
+    content = ("\n".join(lines) + "\n") if lines else ""
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=str(path.parent),
+        delete=False,
+        suffix=".tmp",
+    )
+    try:
+        tmp.write(content)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        os.replace(tmp.name, path)
+    except Exception:
+        tmp.close()
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
+
+
+def delete_comment(item_id: str, comment_id: str, actor: str) -> None:
+    """일반 코멘트 한 건 삭제 — comments.jsonl 을 해당 라인 제외하고 재작성.
+
+    시스템 코멘트(상태 변경 등 이력)는 삭제 대상에서 제외한다(ValueError).
+    """
+    with file_lock(_meta_lock_path(item_id)):
+        comments = list_comments(item_id)
+        target = next((c for c in comments if c.id == comment_id), None)
+        if target is None:
+            return  # 이미 없음 — noop
+        if target.kind == "system":
+            raise ValueError("시스템 코멘트(이력)는 삭제할 수 없습니다.")
+        kept = [c for c in comments if c.id != comment_id]
+        _rewrite_comments_unlocked(item_id, kept)
+
+    audit.audit_log(
+        actor=actor,
+        action=audit.DELETE_COMMENT,
+        item_id=item_id,
+        detail={"comment_id": comment_id},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+
+
 # ---------------------------------------------------------------------------
 # 상태 / 메타 갱신
 # ---------------------------------------------------------------------------
