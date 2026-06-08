@@ -146,7 +146,7 @@ with top_right:
 
 # --- 2행: 제목 + 긴급도 배지 / 우측 끝 삭제 버튼 ---------------------------
 # XSS 방지: 모든 사용자 입력은 escape 후 HTML 으로 렌더
-title_col, title_del_col = st.columns([6, 1])
+title_col, title_edit_col, title_del_col = st.columns([6, 1, 1])
 with title_col:
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
@@ -155,6 +155,28 @@ with title_col:
         f"</div>",
         unsafe_allow_html=True,
     )
+with title_edit_col:
+    # 제목·설명 편집 — 누구나 가능(수정 기록은 audit 로그에 남음).
+    if not issue.archived:
+        with st.popover("✏ 편집", width="stretch"):
+            _edit_title = st.text_input(
+                "제목", value=issue.title, max_chars=120, key="edit_title_input"
+            )
+            _edit_desc = st.text_area(
+                "설명 (마크다운)", value=issue.description, height=180,
+                key="edit_desc_input",
+            )
+            if st.button("저장", type="primary", key="edit_save_btn"):
+                try:
+                    repository.update_issue_content(
+                        item_id, _edit_title, _edit_desc, user["name"]
+                    )
+                    st.toast("수정되었습니다", icon="✅")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"수정 실패: {exc}")
 with title_del_col:
     # 삭제(보관) — 제목 행 우측 끝. 누구나 가능(삭제 기록은 audit 로그에 남음).
     if issue.archived:

@@ -483,6 +483,36 @@ def update_assignee(
     return issue
 
 
+def update_issue_content(
+    item_id: str,
+    title: str,
+    description: str,
+    actor: str,
+) -> Issue:
+    """제목/설명 수정. 제목은 필수(1~120자)."""
+    cleaned_title = (title or "").strip()
+    if not cleaned_title:
+        raise ValueError("제목은 비울 수 없습니다.")
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        issue.title = cleaned_title[:120]
+        issue.description = description or ""
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    _add_system_comment(item_id, "제목/설명이 수정되었습니다.")
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CONTENT,
+        item_id=item_id,
+        detail={"title": cleaned_title},
+    )
+
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(issue, comments_count, images_count)
+    return issue
+
+
 def update_urgency(
     item_id: str,
     new_urgency: Urgency | str,
