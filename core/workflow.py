@@ -57,6 +57,10 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
     # 추가확인필요·반려 → 개발자가 다시 개발중으로 착수
     (Status.needs_recheck, Role.developer): [Status.in_progress],
     (Status.rejected, Role.developer): [Status.in_progress],
+    # 완료(closed) 재오픈 — 잘못 닫았거나 재작업 필요 시.
+    #   검토자: 요청중 / 개발중 으로, 개발자: 개발중 으로 되돌릴 수 있다.
+    (Status.closed, Role.reviewer): [Status.requested, Status.in_progress],
+    (Status.closed, Role.developer): [Status.in_progress],
     # 레거시 호환 — 옛 데이터의 reopened / done 항목용 (새 흐름 도달 안 함)
     (Status.reopened, Role.developer): [Status.in_progress],
     (Status.done, Role.reviewer): [

@@ -122,7 +122,7 @@ with f4:
 with f5:
     sort_choice = st.selectbox(
         "정렬",
-        options=["최신순", "긴급도순", "상태순"],
+        options=["최신순", "오래된순", "긴급도순", "상태순"],
         key="list_sort",
     )
 
@@ -237,7 +237,9 @@ def _fetch_entries() -> list[dict]:
     items = [e.model_dump(mode="json") for e in entries]
 
     # 정렬
-    if sort_choice == "긴급도순":
+    if sort_choice == "오래된순":
+        items.sort(key=lambda d: d.get("updated_at") or "")
+    elif sort_choice == "긴급도순":
         # 4 단계: critical(긴급) > high(상) > normal(중) > low(하).
         urgency_order = {"critical": 0, "high": 1, "normal": 2, "low": 3}
         items.sort(

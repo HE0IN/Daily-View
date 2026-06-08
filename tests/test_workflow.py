@@ -51,8 +51,8 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.needs_recheck, Role.reviewer): set(),
     (Status.rejected, Role.developer): {Status.in_progress},
     (Status.rejected, Role.reviewer): set(),
-    (Status.closed, Role.developer): set(),
-    (Status.closed, Role.reviewer): set(),
+    (Status.closed, Role.developer): {Status.in_progress},
+    (Status.closed, Role.reviewer): {Status.requested, Status.in_progress},
     # --- 레거시 (옛 데이터 호환) ---
     (Status.reopened, Role.developer): {Status.in_progress},
     (Status.reopened, Role.reviewer): set(),
@@ -88,12 +88,15 @@ def test_allowed_transitions_matches_spec(
     )
 
 
-def test_terminal_status_has_no_transitions() -> None:
-    """``closed`` 는 어떤 역할도 다음 상태로 갈 수 없다 (terminal)."""
-    for role in Role:
-        assert allowed_transitions(Status.closed, role) == [], (
-            f"closed 상태에서 {role.value} 가 전이 가능해서는 안 됨"
-        )
+def test_closed_can_reopen() -> None:
+    """완료(closed)는 재오픈 가능 — 검토자는 요청/개발, 개발자는 개발로."""
+    assert set(allowed_transitions(Status.closed, Role.reviewer)) == {
+        Status.requested,
+        Status.in_progress,
+    }
+    assert set(allowed_transitions(Status.closed, Role.developer)) == {
+        Status.in_progress,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +143,10 @@ def test_terminal_status_has_no_transitions() -> None:
         # 새 흐름에서는 in_progress → done 불가 (done 단계 제거됨)
         (Status.in_progress, Role.developer, Status.done, False),
         (Status.api_check, Role.developer, Status.done, False),
-        # terminal 에서 시도
+        # 완료 재오픈 — 허용되는 것만 (요청/개발), 나머지는 불가
+        (Status.closed, Role.reviewer, Status.requested, True),
+        (Status.closed, Role.reviewer, Status.in_progress, True),
+        (Status.closed, Role.developer, Status.in_progress, True),
         (Status.closed, Role.developer, Status.reopened, False),
         (Status.closed, Role.reviewer, Status.reviewing, False),
     ],
