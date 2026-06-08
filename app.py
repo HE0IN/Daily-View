@@ -1,12 +1,12 @@
-"""Daily View 진입점 — 대시보드.
+"""Daily View 진입점 — st.navigation 라우터.
 
-docs/03_ui_design.md 3.3 + docs/07_scenarios.md 7.3, 7.4 절을 따른다.
-역할(검토자/개발자)에 따라 카드 섹션 구성과 메인 CTA가 달라진다.
+공통 처리(부트스트랩·자동새로고침·사용자식별·프로젝트선택)를 여기서 수행하고,
+선택된 페이지를 ``pg.run()`` 으로 실행한다. 대시보드 본문은 ``pages/0_대시보드.py``.
 
-- 환경 부트스트랩(``ensure_data_dirs`` / ``verify_index`` / ``auto_archive_closed``)은
-  세션당 1회만 실행 (``st.session_state`` 플래그로 가드).
-- 카드 클릭 시 ``?id=`` query param 을 세팅하고 상세보기 페이지로 이동.
-- 사이드바 액션 큐 카운트는 역할별 라벨로 표시.
+메뉴 구성:
+    대시보드  ─선─  새 요청 등록(강조)  ─선─  요청목록 · 통계
+상세보기는 메뉴에서 숨김(카드 클릭으로만 진입). 숨김/강조는 CSS 로 처리하며,
+Streamlit 버전에 따라 selector 가 달라질 수 있어 한 곳에 모아둔다.
 """
 
 from __future__ import annotations
@@ -17,27 +17,14 @@ import streamlit as st
 
 from core import paths, repository
 from core.index import rebuild_index, verify_index
-from core.logger import tail_audit
-from core.models import Status
-from ui import components
 from ui.auth import get_or_init_user, render_project_selector
-from ui.theme import (
-    STATUS_COLORS,
-    STATUS_LABELS,
-    URGENCY_COLORS,
-    URGENCY_LABELS,
-)
 
-# 자동 새로고침 (M3, docs/04_workflow.md 4.5). 미설치 시 graceful degradation.
+# 자동 새로고침 (미설치 시 graceful degradation).
 try:  # pragma: no cover - 환경 의존
     from streamlit_autorefresh import st_autorefresh as _st_autorefresh
 except Exception:  # noqa: BLE001
     _st_autorefresh = None  # type: ignore[assignment]
 
-
-# ---------------------------------------------------------------------------
-# 페이지 메타
-# ---------------------------------------------------------------------------
 
 st.set_page_config(
     page_title="Daily View",
@@ -53,11 +40,7 @@ st.set_page_config(
 
 
 def _bootstrap_once() -> None:
-    """세션당 1회만 실행: 디렉토리 보장 + 인덱스 점검 + 자동 아카이브.
-
-    데이터 디렉토리 생성 실패는 치명적이므로 ``st.error`` + ``st.stop`` 으로
-    중단한다. 인덱스 손상은 자동 재구축으로 복구를 시도한다.
-    """
+    """세션당 1회만 실행: 디렉토리 보장 + 인덱스 점검 + 자동 아카이브."""
     if st.session_state.get("_bootstrap_done"):
         return
 
@@ -81,7 +64,6 @@ def _bootstrap_once() -> None:
                 icon="🔄",
             )
     except Exception as exc:  # pragma: no cover - 부팅 단계 안전망
-        # 점검 자체가 실패하면 한 번 더 강제 재구축 시도
         try:
             count = rebuild_index()
             st.toast(f"인덱스 재구축 완료 ({count}건)", icon="🔄")
@@ -114,11 +96,11 @@ if _st_autorefresh is not None:
     except ValueError:
         _refresh_sec = 30
     if _refresh_sec > 0:
-        _st_autorefresh(interval=_refresh_sec * 1000, key="dashboard_auto_refresh")
+        _st_autorefresh(interval=_refresh_sec * 1000, key="global_auto_refresh")
 
 
 # ---------------------------------------------------------------------------
-# 사용자 식별
+# 사용자 식별 + 프로젝트 선택 (사이드바, 모든 페이지 공통)
 # ---------------------------------------------------------------------------
 
 user = get_or_init_user()
@@ -127,277 +109,56 @@ if not user:
     st.info("좌측 사이드바에서 이름과 역할을 입력하면 시작합니다.")
     st.stop()
 
-name: str = user["name"]
-role: str = user.get("role", "reviewer")
-role_label = "검토자" if role == "reviewer" else "개발자"
-
-# 프로젝트 사이드바 선택기 — 모든 list_issues 호출에 필터로 전달.
-current_project: str | None = render_project_selector(user_name=name)
+render_project_selector(user_name=user["name"])
 
 
 # ---------------------------------------------------------------------------
-# 카드 그리드 CSS — 같은 행 카드들이 가장 긴 카드 높이로 stretch
+# 페이지 정의 + 네비게이션
 # ---------------------------------------------------------------------------
 
-components.render_card_grid_css()
-
-
-# ---------------------------------------------------------------------------
-# 헬퍼
-# ---------------------------------------------------------------------------
-
-
-def _entries_to_dicts(entries) -> list[dict]:
-    """IndexEntry 리스트를 dict 리스트로 직렬화."""
-    return [e.model_dump(mode="json") for e in entries]
-
-
-def _render_card_grid(items: list[dict], *, key_prefix: str, cols: int = 4) -> None:
-    """카드 그리드 렌더. 클릭 시 상세보기로 이동."""
-    if not items:
-        st.info("해당 항목이 없습니다.")
-        return
-
-    for row_start in range(0, len(items), cols):
-        row = items[row_start : row_start + cols]
-        col_objs = st.columns(cols)
-        for col, item in zip(col_objs, row):
-            with col:
-                clicked = components.render_card(
-                    item, key_prefix=f"{key_prefix}_{row_start}"
-                )
-                if clicked:
-                    # st.switch_page 가 query_params 를 유실하는 케이스가 있어
-                    # session_state 로 ID 를 함께 전달한다 (상세보기에서 둘 다 체크).
-                    _iid = item.get("id", "")
-                    st.session_state["_detail_item_id"] = _iid
-                    st.query_params["id"] = _iid
-                    st.switch_page("pages/3_상세보기.py")
-        # 빈 칼럼은 그대로 둔다 (Streamlit 자동 처리).
-
-
-def _count_by(entries, attr: str) -> dict[str, int]:
-    """긴급도/상태별 카운트."""
-    counts: dict[str, int] = {}
-    for e in entries:
-        value = getattr(e, attr, None)
-        key = value.value if hasattr(value, "value") else (value or "")
-        if not key:
-            continue
-        counts[key] = counts.get(key, 0) + 1
-    return counts
-
-
-# ---------------------------------------------------------------------------
-# 헤더
-# ---------------------------------------------------------------------------
-
-if current_project:
-    st.caption(f"{current_project} / 대시보드")
-st.title("대시보드")
-st.write(f"안녕하세요, **{name}**님 ({role_label})")
-
-
-# ---------------------------------------------------------------------------
-# 데이터 로드 (전체 활성 + 보관함 제외)
-# ---------------------------------------------------------------------------
-
-all_active = repository.list_issues(
-    include_archived=False, include_closed=True, project=current_project
+_dashboard = st.Page(
+    "pages/0_대시보드.py", title="대시보드", icon=":material/dashboard:", default=True
 )
-active_only = repository.list_issues(
-    include_archived=False, include_closed=False, project=current_project
+_new = st.Page(
+    "pages/2_새요청등록.py", title="새 요청 등록", icon=":material/add_circle:"
+)
+_list = st.Page("pages/1_요청목록.py", title="요청목록", icon=":material/list_alt:")
+_stats = st.Page("pages/4_통계.py", title="통계", icon=":material/bar_chart:")
+_detail = st.Page(
+    "pages/3_상세보기.py", title="상세보기", icon=":material/description:"
 )
 
-# 상태별 카운트 — 사이드바 '상태 바로가기' + (검토자) 전체 현황 공용.
-status_counts = _count_by(active_only, "status")
-# 사이드바/현황에 노출할 활성 상태 키 (레거시 done/reopened, 종료 closed 제외).
-STATUS_NAV_KEYS = [
-    "requested",
-    "in_progress",
-    "api_check",
-    "reviewing",
-    "needs_recheck",
-    "rejected",
-]
+# 메뉴 스타일: 상세보기 항목 숨김 + 새 요청 등록 강조(빨강).
+# Streamlit 의 사이드바 네비 링크는 a[href] 에 페이지 슬러그가 들어간다.
+# 한글 슬러그는 percent-encoding 되므로 부분 매칭으로 시도한다.
+st.markdown(
+    """
+    <style>
+    /* 상세보기 메뉴 항목 숨김 — 카드 클릭으로만 진입 */
+    section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%81%EC%84%B8"]) {
+        display: none !important;
+    }
+    /* 새 요청 등록 강조 (빨강 배경 + 흰 글씨) */
+    section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%88_%EC%9A%94%EC%B2%AD"]) a {
+        background: #DC2626 !important;
+        border-radius: 6px;
+    }
+    section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%88_%EC%9A%94%EC%B2%AD"]) a span {
+        color: #ffffff !important;
+        font-weight: 700;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-
-# ---------------------------------------------------------------------------
-# 역할별 본문
-# ---------------------------------------------------------------------------
-
-if role == "reviewer":
-    # ── 검토자 화면 (07_scenarios.md 7.3) ─────────────────────────────────
-    cta_col, _ = st.columns([1, 4])
-    with cta_col:
-        if st.button("+ 새 요청 등록", type="primary", width="stretch"):
-            st.switch_page("pages/2_새요청등록.py")
-
-    st.divider()
-
-    # 검토 대기 — 검토중 상태이면서 내가 등록자.
-    # 단순화된 흐름에서는 개발자가 작업 완료 시 바로 reviewing 으로 전환됨.
-    # 레거시 done 항목도 포함해서 검토자가 정리할 수 있게.
-    review_queue_entries = [
-        e
-        for e in all_active
-        if e.author == name and e.status in (Status.reviewing, Status.done)
-    ]
-    review_queue = _entries_to_dicts(review_queue_entries)
-
-    st.subheader(f"검토 대기 ({len(review_queue)})")
-    st.caption("개발자가 작업을 끝내 검토를 기다리는 항목")
-    _render_card_grid(review_queue, key_prefix="reviewer_queue")
-
-    st.divider()
-
-    # 내가 등록한 미해결
-    my_open_entries = repository.list_issues(
-        author=name,
-        include_closed=False,
-        include_archived=False,
-        project=current_project,
-    )
-    my_open = _entries_to_dicts(my_open_entries)
-    st.subheader(f"내가 등록한 미해결 ({len(my_open)})")
-    _render_card_grid(my_open[:9], key_prefix="reviewer_open")
-    if len(my_open) > 9:
-        st.caption(f"… 외 {len(my_open) - 9}건은 [요청목록]에서 확인")
-
-    st.divider()
-
-    # 전체 현황 (활성 항목 기준)
-    st.subheader("전체 현황 (활성)")
-    urgency_counts = _count_by(active_only, "urgency")
-
-    st.markdown("**긴급도별**")
-    u_cols = st.columns(3)
-    for col, key in zip(u_cols, ["high", "normal", "low"]):
-        with col:
-            components.render_count_metric(
-                URGENCY_LABELS[key],
-                urgency_counts.get(key, 0),
-                color=URGENCY_COLORS[key],
-            )
-
-    st.markdown("**상태별** ([보기]를 누르면 해당 목록으로 이동)")
-    s_cols = st.columns(len(STATUS_NAV_KEYS))
-    for col, key in zip(s_cols, STATUS_NAV_KEYS):
-        with col:
-            components.render_count_metric(
-                STATUS_LABELS[key],
-                status_counts.get(key, 0),
-                color=STATUS_COLORS[key],
-            )
-            if st.button("보기", key=f"dash_status_{key}", width="stretch"):
-                st.session_state["list_preset_status"] = key
-                st.switch_page("pages/1_요청목록.py")
-
-    # 사이드바 액션 큐 카운트
-    sidebar_count = len(review_queue_entries)
-    sidebar_label = f"검토 대기 {sidebar_count}건"
-
-else:
-    # ── 개발자 화면 (07_scenarios.md 7.4) ────────────────────────────────
-    cta_col, _ = st.columns([1, 4])
-    with cta_col:
-        if st.button("내 큐 전체 보기", type="primary", width="stretch"):
-            # 요청목록의 담당자 필터를 자기 자신으로 미리 세팅
-            st.session_state["list_default_assignee"] = name
-            st.switch_page("pages/1_요청목록.py")
-
-    st.divider()
-
-    # 개발중 — 내가 지금 작업 중인 항목 (가장 위에 우선 표시)
-    in_progress_entries = repository.list_issues(
-        status=Status.in_progress,
-        include_archived=False,
-        project=current_project,
-    )
-    in_progress_items = _entries_to_dicts(in_progress_entries)
-    st.subheader(f"개발중 ({len(in_progress_items)})")
-    st.caption("현재 작업 중인 항목")
-    _render_card_grid(in_progress_items, key_prefix="dev_inprogress")
-
-    st.divider()
-
-    # 처리 큐 — 요청됨 + 추가확인필요 + 반려 (+ 레거시 재요청)
-    _dev_queue_statuses = [
-        Status.requested,
-        Status.needs_recheck,
-        Status.rejected,
-        Status.reopened,  # 레거시 호환
-    ]
-    queue_entries: list = []
-    for _s in _dev_queue_statuses:
-        queue_entries.extend(
-            repository.list_issues(
-                status=_s,
-                include_archived=False,
-                project=current_project,
-            )
-        )
-    # updated_at desc 재정렬
-    queue_entries.sort(
-        key=lambda e: e.model_dump(mode="json").get("updated_at") or "",
-        reverse=True,
-    )
-    queue = _entries_to_dicts(queue_entries)
-
-    st.subheader(f"처리 큐 ({len(queue)})")
-    st.caption("요청됨 · 추가확인필요 · 반려 상태의 활성 항목")
-    _render_card_grid(queue, key_prefix="dev_queue")
-
-    st.divider()
-
-    # 외부 대기 중
-    api_entries = repository.list_issues(
-        status=Status.api_check,
-        include_archived=False,
-        project=current_project,
-    )
-    api_check = _entries_to_dicts(api_entries)
-    st.subheader(f"외부 대기 중 ({len(api_check)})")
-    st.caption("외부 API 답변 대기 중인 항목")
-    _render_card_grid(api_check, key_prefix="dev_api")
-
-    st.divider()
-
-    # 최근 내 활동 (audit.log)
-    st.subheader("최근 내 활동")
-    log_lines = tail_audit(50)
-    my_lines = [line for line in log_lines if line.get("actor") == name][-5:]
-    if not my_lines:
-        st.info("아직 활동 기록이 없습니다.")
-    else:
-        for line in reversed(my_lines):  # 최신부터
-            ts = line.get("ts", "")
-            action = line.get("action", "")
-            item_id = line.get("item_id") or ""
-            st.markdown(
-                f"- **{components.humanize_dt(ts)}** · `{action}` · `#{item_id}`"
-            )
-
-    sidebar_count = len(queue_entries)
-    sidebar_label = f"처리 대기 {sidebar_count}건"
-
-
-# ---------------------------------------------------------------------------
-# 사이드바 액션 큐 카운트
-# ---------------------------------------------------------------------------
-
-with st.sidebar:
-    st.divider()
-    st.markdown(f"**내 액션 큐**: {sidebar_label}")
-
-    st.divider()
-    st.markdown("**상태 바로가기**")
-    for _k in STATUS_NAV_KEYS:
-        _cnt = status_counts.get(_k, 0)
-        if st.button(
-            f"{STATUS_LABELS[_k]} ({_cnt})",
-            key=f"side_status_{_k}",
-            width="stretch",
-        ):
-            st.session_state["list_preset_status"] = _k
-            st.switch_page("pages/1_요청목록.py")
+# dict 형태 → 섹션 사이에 구분 영역이 생겨 '선 긋기' 효과.
+# 상세보기는 '조회' 섹션에 포함하되 위 CSS 로 사이드바에서 숨긴다.
+pg = st.navigation(
+    {
+        " ": [_dashboard],
+        "  ": [_new],
+        "   ": [_list, _stats, _detail],
+    }
+)
+pg.run()

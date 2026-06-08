@@ -33,16 +33,11 @@ _decode_pasted_b64 = decode_image_data_url
 # 페이지 설정 + 부트스트랩
 # ---------------------------------------------------------------------------
 
-st.set_page_config(
-    page_title="새 요청 등록 — Daily View",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-paths.ensure_data_dirs()
-
-get_or_init_user()
-user = require_user()
+# 공통 처리(set_page_config·부트스트랩·사용자식별·프로젝트선택)는
+# 진입점 app.py(라우터)가 수행한다. 이 페이지는 session_state 만 읽는다.
+user = st.session_state.get("user")
+if not user:
+    st.stop()
 
 name: str = user["name"]
 role_str: str = user.get("role", "reviewer")
@@ -54,7 +49,7 @@ role_str: str = user.get("role", "reviewer")
 
 # 사이드바 프로젝트 선택기 (사용자별). 사용자 ↔ 프로젝트 컨텍스트는
 # 사이드바에서만 변경되며, 새 등록 시 자동으로 그 프로젝트가 적용된다.
-current_project: str | None = render_project_selector(user_name=name)
+current_project: str | None = st.session_state.get("_current_project")
 
 st.title("새 요청 등록")
 

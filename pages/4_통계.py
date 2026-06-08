@@ -40,30 +40,12 @@ from ui.theme import (
 # 페이지 셋업
 # ---------------------------------------------------------------------------
 
-st.set_page_config(
-    page_title="진척도 — Daily View",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-paths.ensure_data_dirs()
-
-# 자동 새로고침 — 미설치/오류 시 조용히 패스
-try:  # pragma: no cover - 환경 의존
-    from streamlit_autorefresh import st_autorefresh as _st_autorefresh
-except Exception:  # noqa: BLE001
-    _st_autorefresh = None  # type: ignore[assignment]
-
-if _st_autorefresh is not None:
-    try:
-        _refresh_sec = int(os.environ.get("AUTO_REFRESH_SEC", "60"))
-    except ValueError:
-        _refresh_sec = 60
-    if _refresh_sec > 0:
-        _st_autorefresh(interval=_refresh_sec * 1000, key="dashboard_autorefresh")
-
-get_or_init_user()
-_user = require_user()
-current_project: str | None = render_project_selector(user_name=_user["name"])
+# 공통 처리(set_page_config·부트스트랩·자동새로고침·사용자식별·프로젝트선택)는
+# 진입점 app.py(라우터)가 수행한다. 이 페이지는 session_state 만 읽는다.
+_user = st.session_state.get("user")
+if not _user:
+    st.stop()
+current_project: str | None = st.session_state.get("_current_project")
 
 if current_project:
     st.title(f"진척도 대시보드 — {current_project}")
@@ -339,8 +321,9 @@ else:
     st.dataframe(styled, width="stretch", hide_index=True)
 
     # 누적 막대 차트 — 진행 중 / 정체 / 완료
+    # 색상 통일: 진행 중=파랑, 정체=빨강(테이블 강조와 동일), 완료=초록.
     chart_df = cat_table.set_index("카테고리")[["진행 중", "정체", "완료"]]
-    st.bar_chart(chart_df)
+    st.bar_chart(chart_df, color=["#3B82F6", "#DC2626", "#10B981"])
 
 st.divider()
 

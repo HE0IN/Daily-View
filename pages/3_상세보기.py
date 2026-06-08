@@ -42,10 +42,10 @@ from ui.theme import (
 # 페이지 셋업
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="상세 — Daily View", layout="wide")
-paths.ensure_data_dirs()
-get_or_init_user()
-user = require_user()
+# 공통 처리(set_page_config·부트스트랩·사용자식별)는 진입점 app.py(라우터)가 수행.
+user = st.session_state.get("user")
+if not user:
+    st.stop()
 
 # 항목 ID 추출 — 두 경로 모두 지원:
 #  1) query_params["id"]  (직접 URL 입력 / 북마크 / 새로고침 후)
@@ -156,10 +156,10 @@ with title_col:
         unsafe_allow_html=True,
     )
 with title_del_col:
-    # 삭제(보관) — 제목 행 우측 끝. 등록자 또는 검토자만, popover 2단계 확인.
+    # 삭제(보관) — 제목 행 우측 끝. 누구나 가능(삭제 기록은 audit 로그에 남음).
     if issue.archived:
         st.caption("🗑 삭제됨")
-    elif (issue.author == user["name"]) or (user.get("role") == "reviewer"):
+    else:
         with st.popover("🗑 삭제", width="stretch"):
             st.warning("이 요청을 삭제(보관)하시겠습니까?")
             if st.button("삭제 확인", type="primary", key="del_confirm_title"):
@@ -220,11 +220,11 @@ with meta_c0:
         s_l, s_r = st.columns([2, 1])
     with s_l:
         st.markdown(
-            f'<div style="line-height:1.2;">'
-            f'<span style="font-size:0.72em;color:#6B7280;">상태</span><br>'
-            f'<span style="display:inline-block;margin-top:2px;padding:3px 12px;'
+            f'<div style="line-height:1.9;">'
+            f'<span style="font-size:0.85em;color:#6B7280;">상태 : </span>'
+            f'<span style="display:inline-block;padding:3px 12px;'
             f"border-radius:6px;background:{_st_color};color:#fff;"
-            f'font-size:1.05em;font-weight:700;">{_st_label}</span>'
+            f'font-size:1.0em;font-weight:700;">{_st_label}</span>'
             f"</div>",
             unsafe_allow_html=True,
         )

@@ -28,32 +28,15 @@ except Exception:  # noqa: BLE001
 # 페이지 설정 + 부트스트랩
 # ---------------------------------------------------------------------------
 
-st.set_page_config(
-    page_title="요청목록 — Daily View",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-paths.ensure_data_dirs()
-
-# 자동 새로고침 (다른 사용자 변경 반영용; 환경변수 0 이면 비활성)
-if _st_autorefresh is not None:
-    try:
-        _refresh_sec = int(os.environ.get("AUTO_REFRESH_SEC", "30"))
-    except ValueError:
-        _refresh_sec = 30
-    if _refresh_sec > 0:
-        _st_autorefresh(interval=_refresh_sec * 1000, key="list_auto_refresh")
-
-# 사이드바 사용자 위젯 + 가드
-get_or_init_user()
-user = require_user()
+# 공통 처리(set_page_config·부트스트랩·자동새로고침·사용자식별·프로젝트선택)는
+# 진입점 app.py(라우터)가 수행한다. 이 페이지는 session_state 만 읽는다.
+user = st.session_state.get("user")
+if not user:
+    st.stop()
 
 name: str = user["name"]
 role: str = user.get("role", "reviewer")
-
-# 프로젝트 선택기는 사용자 이름을 받아서 그 사람이 참여한 프로젝트만 노출
-current_project: str | None = render_project_selector(user_name=name)
+current_project: str | None = st.session_state.get("_current_project")
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +81,9 @@ elif role == "developer" and name in assignee_set:
 _preset_status = st.session_state.pop("list_preset_status", None)
 if _preset_status:
     st.session_state["list_status"] = [_preset_status]
+    # 완료(closed)는 기본 숨김이므로, 완료로 필터 진입 시 '완료 포함'도 자동 ON.
+    if _preset_status == "closed":
+        st.session_state["list_inc_closed"] = True
 
 f1, f2, f3, f4, f5 = st.columns([1, 2, 1.4, 2.4, 1.2])
 
