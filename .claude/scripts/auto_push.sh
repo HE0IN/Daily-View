@@ -41,9 +41,14 @@ if [ -f .git/MERGE_HEAD ] || [ -f .git/REBASE_HEAD ] || [ -d .git/rebase-merge ]
 fi
 
 # 5) 자동 commit (현재 모든 변경)
+#    자동 스크립트는 '왜' 바꿨는지는 모르므로, '무엇이' 바뀌었는지를 채운다:
+#      제목 = 파일 수 + 타임스탬프
+#      본문 = 파일별 변경 통계(diff --stat). core.quotepath=false 로 한글 파일명 보존.
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 git add -A
-git commit -m "[auto] session sync ${TS}" --no-verify 2>&1 | tail -3 || exit 0
+CHANGED_STAT=$(git -c core.quotepath=false diff --cached --stat 2>/dev/null | tail -40)
+NFILES=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+git commit -m "[auto] sync ${NFILES} file(s) @ ${TS}" -m "${CHANGED_STAT}" --no-verify 2>&1 | tail -3 || exit 0
 
 # 6) push (실패해도 다음 push로 복구되도록 exit 0 유지)
 git push origin "${BRANCH}" 2>&1 | tail -3 || {
