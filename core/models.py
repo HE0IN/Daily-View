@@ -37,31 +37,29 @@ class Urgency(str, Enum):
 
 
 class Status(str, Enum):
-    """이슈 상태. docs/04_workflow.md 4.1 절.
+    """이슈 상태 — 등록자/담당자 워크플로 (10 단계).
 
-    검토자가 '검토중'에서 3 갈래로 분기한다:
-      - closed         (완료)
-      - needs_recheck  (추가확인필요) → 개발자가 다시 개발중으로
-      - rejected       (반려)         → 개발자가 다시 개발중으로
+    권한은 역할 고정이 아니라 '항목별 위치' 로 결정된다:
+      - Role.developer = '담당자' 권한 (issue.assignee == 현재 사용자)
+      - Role.reviewer  = '등록자' 권한 (issue.author == 현재 사용자)
 
-    ``done`` / ``reopened`` 은 레거시 — 새 흐름에서는 만들어지지 않지만
-    기존 meta.json 호환을 위해 enum 에는 남겨둔다.
+    흐름:
+      담당자확인요청 → 담당자검토중 → 담당자검토완료
+        → (담당자신규개발중 / 담당자코드수정중 / 개발사확인중→개발사회신확인중)
+        → 등록자확인요청 → 등록자검토중 → 완료
+      (등록자검토중 → 담당자확인요청 으로 반려 가능)
     """
 
-    requested = "requested"
-    dev_review = "dev_review"        # 신설: 개발 검토 (개발자가 요청 분석)
-    in_progress = "in_progress"
-    modifying = "modifying"          # 신설: 수정중
-    api_check = "api_check"          # 라벨: 개발사 확인중
-    vendor_dev = "vendor_dev"        # 신설: 개발사 개발 중
-    vendor_fix = "vendor_fix"        # 신설: 개발사 수정 중
-    reviewing = "reviewing"
-    needs_recheck = "needs_recheck"  # 추가확인필요 (검토자 → 개발자)
-    rejected = "rejected"            # 반려 (검토자 → 개발자)
-    closed = "closed"
-    # --- 레거시 (옛 데이터 호환, 새 흐름에서는 미사용) ---
-    done = "done"
-    reopened = "reopened"
+    assignee_request = "assignee_request"        # 담당자확인요청 (새 요청 등록 직후)
+    assignee_reviewing = "assignee_reviewing"    # 담당자검토중
+    assignee_reviewed = "assignee_reviewed"      # 담당자검토완료
+    assignee_developing = "assignee_developing"  # 담당자신규개발중
+    assignee_fixing = "assignee_fixing"          # 담당자코드수정중
+    vendor_request = "vendor_request"            # 개발사확인중
+    vendor_reply = "vendor_reply"                # 개발사회신확인중
+    author_request = "author_request"            # 등록자확인요청
+    author_reviewing = "author_reviewing"        # 등록자검토중
+    closed = "closed"                            # 완료
 
 
 class Role(str, Enum):
@@ -128,7 +126,7 @@ class Issue(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     description: str
     urgency: Urgency
-    status: Status = Status.requested
+    status: Status = Status.assignee_request
     author: str
     author_role: Role
     assignee: str | None = None

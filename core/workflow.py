@@ -32,84 +32,51 @@ class WorkflowError(Exception):
 #
 # ``done`` / ``reopened`` 은 레거시 — 새 흐름에서는 도달하지 않지만 옛 데이터
 # 호환을 위해 전이를 남겨, 검토자/개발자가 새 상태로 정리할 수 있게 한다.
+#   Role.developer = '담당자'(assignee) 권한, Role.reviewer = '등록자'(author) 권한.
 TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
-    # 요청 → 개발 검토(분석) 또는 바로 개발중 (검토 단계는 선택적으로 거침)
-    (Status.requested, Role.developer): [Status.dev_review, Status.in_progress],
-    (Status.requested, Role.reviewer): [Status.closed],  # 검토자 자체 취소
-    # 개발 검토 → 신규개발(개발중) / 기존수정(수정중)
-    (Status.dev_review, Role.developer): [Status.in_progress, Status.modifying],
-    # 개발중·수정중 — 서로 전환 / 개발사 확인 / 검토 요청 / (두 명 환경) 바로 완료
-    (Status.in_progress, Role.developer): [
-        Status.modifying,
-        Status.api_check,
-        Status.reviewing,
-        Status.closed,
+    # 담당자확인요청 → 담당자검토중 (담당자)
+    (Status.assignee_request, Role.developer): [Status.assignee_reviewing],
+    # 담당자검토중 → 담당자검토완료 (담당자)
+    (Status.assignee_reviewing, Role.developer): [Status.assignee_reviewed],
+    # 담당자검토완료 → 신규개발 / 코드수정 / 개발사확인 (담당자)
+    (Status.assignee_reviewed, Role.developer): [
+        Status.assignee_developing,
+        Status.assignee_fixing,
+        Status.vendor_request,
     ],
-    (Status.modifying, Role.developer): [
-        Status.in_progress,
-        Status.api_check,
-        Status.reviewing,
-        Status.closed,
+    # 개발사확인중 → 개발사회신확인중 (담당자)
+    (Status.vendor_request, Role.developer): [Status.vendor_reply],
+    # 개발사회신확인중 → 등록자확인요청 / 신규개발 / 코드수정 (담당자)
+    (Status.vendor_reply, Role.developer): [
+        Status.author_request,
+        Status.assignee_developing,
+        Status.assignee_fixing,
     ],
-    # 개발사 확인중 → 개발사 개발/수정 의뢰 / 자체 해결 복귀
-    (Status.api_check, Role.developer): [
-        Status.vendor_dev,
-        Status.vendor_fix,
-        Status.in_progress,
-    ],
-    # 개발사 개발/수정 중 → 서로 전환 / 검토중 / 개발사 확인중 / 완료
-    (Status.vendor_dev, Role.developer): [
-        Status.vendor_fix,
-        Status.reviewing,
-        Status.api_check,
+    # 담당자 신규개발/코드수정 → 등록자확인요청 (담당자)
+    (Status.assignee_developing, Role.developer): [Status.author_request],
+    (Status.assignee_fixing, Role.developer): [Status.author_request],
+    # 등록자확인요청 → 등록자검토중 (등록자)
+    (Status.author_request, Role.reviewer): [Status.author_reviewing],
+    # 등록자검토중 → 완료 / 담당자확인요청(반려) (등록자)
+    (Status.author_reviewing, Role.reviewer): [
         Status.closed,
-    ],
-    (Status.vendor_fix, Role.developer): [
-        Status.vendor_dev,
-        Status.reviewing,
-        Status.api_check,
-        Status.closed,
-    ],
-    (Status.reviewing, Role.developer): [Status.closed],
-    # 검토자: 완료 / 추가확인필요 / 반려 — 3 갈래
-    (Status.reviewing, Role.reviewer): [
-        Status.closed,
-        Status.needs_recheck,
-        Status.rejected,
-    ],
-    # 추가확인필요·반려 → 개발 검토부터 다시
-    (Status.needs_recheck, Role.developer): [Status.dev_review],
-    (Status.rejected, Role.developer): [Status.dev_review],
-    # 완료(closed) 재오픈 — 검토자: 요청중/개발중, 개발자: 개발중
-    (Status.closed, Role.reviewer): [Status.requested, Status.in_progress],
-    (Status.closed, Role.developer): [Status.in_progress],
-    # 레거시 호환 — 옛 데이터의 reopened / done 항목용 (새 흐름 도달 안 함)
-    (Status.reopened, Role.developer): [Status.in_progress],
-    (Status.done, Role.reviewer): [
-        Status.reviewing,
-        Status.closed,
-        Status.needs_recheck,
-        Status.rejected,
+        Status.assignee_request,
     ],
 }
 
 
 # 한국어 라벨 (UI 표시 전용)
 STATUS_LABELS_KO: dict[Status, str] = {
-    Status.requested: "요청중",
-    Status.dev_review: "개발 검토",
-    Status.in_progress: "개발중",
-    Status.modifying: "수정중",
-    Status.api_check: "개발사 확인중",
-    Status.vendor_dev: "개발사 개발 중",
-    Status.vendor_fix: "개발사 수정 중",
-    Status.reviewing: "검토중",
-    Status.needs_recheck: "추가확인필요",
-    Status.rejected: "반려",
+    Status.assignee_request: "담당자확인요청",
+    Status.assignee_reviewing: "담당자검토중",
+    Status.assignee_reviewed: "담당자검토완료",
+    Status.assignee_developing: "담당자신규개발중",
+    Status.assignee_fixing: "담당자코드수정중",
+    Status.vendor_request: "개발사확인중",
+    Status.vendor_reply: "개발사회신확인중",
+    Status.author_request: "등록자확인요청",
+    Status.author_reviewing: "등록자검토중",
     Status.closed: "완료",
-    # 레거시
-    Status.done: "작업완료",
-    Status.reopened: "재요청",
 }
 
 URGENCY_LABELS_KO: dict[str, str] = {

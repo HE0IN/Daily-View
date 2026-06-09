@@ -29,37 +29,29 @@ URGENCY_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 STATUS_COLORS: dict[str, str] = {
-    "requested": "#3B82F6",       # 파랑
-    "dev_review": "#6366F1",      # 인디고 (개발 검토)
-    "in_progress": "#8B5CF6",     # 보라 (개발중)
-    "modifying": "#A855F7",       # 자주 (수정중)
-    "api_check": "#06B6D4",       # 청록 (개발사 확인중)
-    "vendor_dev": "#0891B2",      # 진청록 (개발사 개발 중)
-    "vendor_fix": "#0E7490",      # 더 진한 청록 (개발사 수정 중)
-    "reviewing": "#F59E0B",       # 주황 (검토중)
-    "needs_recheck": "#F97316",   # 진주황 (추가확인필요)
-    "rejected": "#DC2626",        # 빨강 (반려)
-    "closed": "#6B7280",          # 회색 (완료)
-    # 레거시
-    "done": "#10B981",
-    "reopened": "#EF4444",
+    "assignee_request": "#3B82F6",      # 파랑 (담당자확인요청)
+    "assignee_reviewing": "#6366F1",    # 인디고 (담당자검토중)
+    "assignee_reviewed": "#8B5CF6",     # 보라 (담당자검토완료)
+    "assignee_developing": "#A855F7",   # 자주 (담당자신규개발중)
+    "assignee_fixing": "#C026D3",       # 자홍 (담당자코드수정중)
+    "vendor_request": "#06B6D4",        # 청록 (개발사확인중)
+    "vendor_reply": "#0891B2",          # 진청록 (개발사회신확인중)
+    "author_request": "#F59E0B",        # 주황 (등록자확인요청)
+    "author_reviewing": "#F97316",      # 진주황 (등록자검토중)
+    "closed": "#6B7280",                # 회색 (완료)
 }
 
 STATUS_LABELS: dict[str, str] = {
-    "requested": "요청중",
-    "dev_review": "개발 검토",
-    "in_progress": "개발중",
-    "modifying": "수정중",
-    "api_check": "개발사 확인중",
-    "vendor_dev": "개발사 개발 중",
-    "vendor_fix": "개발사 수정 중",
-    "reviewing": "검토중",
-    "needs_recheck": "추가확인필요",
-    "rejected": "반려",
+    "assignee_request": "담당자확인요청",
+    "assignee_reviewing": "담당자검토중",
+    "assignee_reviewed": "담당자검토완료",
+    "assignee_developing": "담당자신규개발중",
+    "assignee_fixing": "담당자코드수정중",
+    "vendor_request": "개발사확인중",
+    "vendor_reply": "개발사회신확인중",
+    "author_request": "등록자확인요청",
+    "author_reviewing": "등록자검토중",
     "closed": "완료",
-    # 레거시 — 새 흐름에서는 안 만들어짐
-    "done": "작업완료",
-    "reopened": "재요청",
 }
 
 # ---------------------------------------------------------------------------
