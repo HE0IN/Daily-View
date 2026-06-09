@@ -45,6 +45,12 @@ from ui.theme import (
 _user = st.session_state.get("user")
 if not _user:
     st.stop()
+
+# 상세보기 인라인 편집모드 stale 정리 (비상세 페이지 진입 = 편집 종료).
+for _ek in list(st.session_state.keys()):
+    if str(_ek).startswith("_edit_mode_"):
+        st.session_state[_ek] = False
+
 current_project: str | None = st.session_state.get("_current_project")
 
 if current_project:
@@ -187,18 +193,32 @@ st.subheader("핵심 지표")
 k1, k2, k3, k4 = st.columns(4)
 with k1:
     render_count_metric("이번 주 완료", weekly_closed_count, color="#10B981")
+    if st.button("보기", key="kpi_view_closed", width="stretch"):
+        st.session_state["list_preset_status"] = "closed"
+        st.switch_page("pages/1_요청목록.py")
 with k2:
     render_count_metric(
         "진행 중", in_progress_count, color=STATUS_COLORS["assignee_developing"]
     )
+    if st.button("보기", key="kpi_view_inprog", width="stretch"):
+        st.session_state["list_preset_statuses"] = list(IN_PROGRESS_STATUSES)
+        st.switch_page("pages/1_요청목록.py")
 with k3:
     render_count_metric(
         "대기 중", requested_count, color=STATUS_COLORS["assignee_request"]
     )
+    if st.button("보기", key="kpi_view_waiting", width="stretch"):
+        st.session_state["list_preset_status"] = "assignee_request"
+        st.switch_page("pages/1_요청목록.py")
 with k4:
     render_count_metric(
         f"정체 ({STALE_DAYS}일 이상)", stale_count, color="#DC2626"
     )
+    # 정체는 상태가 아니라 '오래 안 갱신된 진행 항목' → 진행 상태 + 오래된순으로 근사.
+    if st.button("보기", key="kpi_view_stale", width="stretch"):
+        st.session_state["list_preset_statuses"] = list(IN_PROGRESS_STATUSES)
+        st.session_state["list_preset_sort"] = "오래된순"
+        st.switch_page("pages/1_요청목록.py")
 
 st.divider()
 
@@ -329,8 +349,35 @@ else:
 
     # 누적 막대 차트 — 진행 중 / 정체 / 완료
     # 색상 통일: 진행 중=파랑, 정체=빨강(테이블 강조와 동일), 완료=초록.
+    # st.bar_chart 는 휠 줌/팬이 기본 활성 → Altair 로 그려 인터랙션(확대축소)을 끈다.
+    import altair as alt
+
     chart_df = cat_table.set_index("카테고리")[["진행 중", "정체", "완료"]]
-    st.bar_chart(chart_df, color=["#3B82F6", "#DC2626", "#10B981"])
+    _long = chart_df.reset_index().melt(
+        id_vars="카테고리", var_name="구분", value_name="건수"
+    )
+    _chart = (
+        alt.Chart(_long)
+        .mark_bar()
+        .encode(
+            x=alt.X("카테고리:N", title=None, sort=None),
+            y=alt.Y("건수:Q", title="건수"),
+            color=alt.Color(
+                "구분:N",
+                scale=alt.Scale(
+                    domain=["진행 중", "정체", "완료"],
+                    range=["#3B82F6", "#DC2626", "#10B981"],
+                ),
+                sort=["진행 중", "정체", "완료"],
+                title="구분",
+            ),
+            order=alt.Order("구분:N"),
+            tooltip=["카테고리", "구분", "건수"],
+        )
+        .properties(height=320)
+    )
+    # 가로만 채우고(width=stretch), 줌/팬은 비활성(인터랙션 미설정).
+    st.altair_chart(_chart, width="stretch")
 
 st.divider()
 

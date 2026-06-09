@@ -39,6 +39,11 @@ user = st.session_state.get("user")
 if not user:
     st.stop()
 
+# 상세보기 인라인 편집모드 stale 정리 (비상세 페이지 진입 = 편집 종료).
+for _ek in list(st.session_state.keys()):
+    if str(_ek).startswith("_edit_mode_"):
+        st.session_state[_ek] = False
+
 name: str = user["name"]
 
 

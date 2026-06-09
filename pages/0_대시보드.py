@@ -20,6 +20,13 @@ user = st.session_state.get("user")
 if not user:
     st.stop()
 
+# 상세보기 인라인 편집모드 stale 정리 — 비(非)상세 페이지에 들어온 것은
+# '편집을 끝냈거나 포기한 것'으로 간주해 모든 _edit_mode_* 를 끈다.
+# (완료를 안 누르고 이동했다가 재진입 시 계속 편집중이던 문제 해결)
+for _ek in list(st.session_state.keys()):
+    if str(_ek).startswith("_edit_mode_"):
+        st.session_state[_ek] = False
+
 name: str = user["name"]
 current_project: str | None = st.session_state.get("_current_project")
 

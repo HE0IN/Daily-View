@@ -153,6 +153,11 @@ with top_right:
 # --- 2행: 제목(또는 편집 입력) + 편집/삭제/완전삭제 버튼 ------------------
 # 편집 모드 토글 — True 면 제목/설명이 입력칸으로 바뀌고 버튼이 [완료] 가 된다.
 _edit_mode = bool(st.session_state.get(f"_edit_mode_{item_id}", False))
+if _edit_mode:
+    st.warning(
+        "✏️ 편집 중입니다 — 상단 **[완료]** 를 누르지 않고 다른 페이지로 이동하면 "
+        "변경 내용이 저장되지 않고 취소됩니다."
+    )
 
 title_col, title_edit_col, title_del_col, title_purge_col = st.columns(
     [7, 1, 0.7, 0.8]

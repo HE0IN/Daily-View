@@ -34,6 +34,11 @@ user = st.session_state.get("user")
 if not user:
     st.stop()
 
+# 상세보기 인라인 편집모드 stale 정리 (비상세 페이지 진입 = 편집 종료).
+for _ek in list(st.session_state.keys()):
+    if str(_ek).startswith("_edit_mode_"):
+        st.session_state[_ek] = False
+
 name: str = user["name"]
 current_project: str | None = st.session_state.get("_current_project")
 
@@ -83,6 +88,18 @@ if _preset_status:
     # 완료(closed)는 기본 숨김이므로, 완료로 필터 진입 시 '완료 포함'도 자동 ON.
     if _preset_status == "closed":
         st.session_state["list_inc_closed"] = True
+
+# 복수 상태 preset (통계 핵심지표 '진행 중'/'정체' 등에서 여러 상태로 진입).
+_preset_statuses = st.session_state.pop("list_preset_statuses", None)
+if _preset_statuses:
+    st.session_state["list_status"] = list(_preset_statuses)
+    if "closed" in _preset_statuses:
+        st.session_state["list_inc_closed"] = True
+
+# 정렬 preset (예: 정체 → 오래된순).
+_preset_sort = st.session_state.pop("list_preset_sort", None)
+if _preset_sort:
+    st.session_state["list_sort"] = _preset_sort
 
 f1, f2, f3, f4, f5 = st.columns([1, 2, 1.4, 2.4, 1.2])
 
