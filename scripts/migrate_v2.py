@@ -8,24 +8,24 @@ raw JSON 으로 처리 — 옛 enum 값은 새 pydantic 모델에 없으므로 m
 쓰지 않는다.
 
 사용법 (반드시 백업 후):
-    1) data 폴더 백업:  copy  data  data_backup_YYYYMMDD   (또는 scripts/backup.bat)
-    2) python scripts/migrate_v2.py
+    1) data 폴더 백업:  scripts\\backup.bat
+    2) .venv\\Scripts\\python.exe scripts\\migrate_v2.py
     3) (자동) 인덱스 재구축
 
 매핑:
-    requested      → assignee_request      (담당자확인요청)
-    dev_review     → assignee_reviewing    (담당자검토중)
-    in_progress    → assignee_developing   (담당자신규개발중)
-    modifying      → assignee_fixing       (담당자코드수정중)
-    api_check      → vendor_request        (개발사확인중)
-    vendor_dev     → vendor_reply          (개발사회신확인중)
-    vendor_fix     → vendor_reply          (개발사회신확인중)
-    reviewing      → author_reviewing      (등록자검토중)
-    needs_recheck  → assignee_request      (담당자확인요청; 반려 재시작)
-    rejected       → assignee_request      (담당자확인요청; 반려 재시작)
-    closed         → closed                (완료)
-    done(레거시)   → closed                (완료)
-    reopened(레거시)→ assignee_request     (담당자확인요청)
+    requested      -> assignee_request      (담당자확인요청)
+    dev_review     -> assignee_reviewing    (담당자검토중)
+    in_progress    -> assignee_developing   (담당자신규개발중)
+    modifying      -> assignee_fixing       (담당자코드수정중)
+    api_check      -> vendor_request        (개발사확인중)
+    vendor_dev     -> vendor_reply          (개발사회신확인중)
+    vendor_fix     -> vendor_reply          (개발사회신확인중)
+    reviewing      -> author_reviewing      (등록자검토중)
+    needs_recheck  -> assignee_request      (담당자확인요청; 반려 재시작)
+    rejected       -> assignee_request      (담당자확인요청; 반려 재시작)
+    closed         -> closed                (완료)
+    done(레거시)   -> closed                (완료)
+    reopened(레거시)-> assignee_request     (담당자확인요청)
 """
 
 from __future__ import annotations
@@ -36,6 +36,14 @@ from pathlib import Path
 
 # 프로젝트 루트를 import 경로에 추가 (scripts/ 하위에서 실행될 때)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Windows 콘솔(CP949)에서도 print 가 인코딩 에러로 막히지 않도록 UTF-8 강제.
+# (이게 없으면 한글/기호 출력 시 UnicodeEncodeError 로 멈추거나 아무것도 안 보임)
+try:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+except Exception:
+    pass
 
 from core import paths  # noqa: E402
 
@@ -70,6 +78,11 @@ NEW_STATUSES = {
 }
 
 
+def _log(msg: str) -> None:
+    """줄 단위 즉시 출력 (버퍼링으로 '멈춘 것처럼' 보이는 것 방지)."""
+    print(msg, flush=True)
+
+
 def _map_status(value: object) -> tuple[str | None, bool]:
     """(새 값, 변경여부) 반환. 이미 새 값이거나 알 수 없으면 (원본, False)."""
     if not isinstance(value, str):
@@ -86,7 +99,7 @@ def migrate_meta(meta_path: Path) -> bool:
     try:
         raw = json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"  ! 읽기 실패 {meta_path}: {exc}")
+        _log(f"  [WARN] read failed {meta_path}: {exc}")
         return False
 
     changed = False
@@ -114,28 +127,30 @@ def migrate_meta(meta_path: Path) -> bool:
 
 
 def main() -> None:
+    _log("[migrate_v2] start")
     items_dir = paths.items_dir()
+    _log(f"[migrate_v2] items dir = {items_dir}")
     if not items_dir.exists():
-        print(f"items 디렉토리가 없습니다: {items_dir}")
+        _log("[migrate_v2] items dir not found - nothing to migrate")
         return
 
     metas = sorted(items_dir.glob("*/meta.json"))
-    print(f"대상 항목: {len(metas)}건")
+    _log(f"[migrate_v2] target items = {len(metas)}")
 
     migrated = 0
     for mp in metas:
         if migrate_meta(mp):
             migrated += 1
-            print(f"  ✓ {mp.parent.name}")
+            _log(f"  [OK] {mp.parent.name}")
 
-    print(f"\n상태 마이그레이션: {migrated}/{len(metas)}건 변경됨")
+    _log(f"[migrate_v2] status migrated = {migrated}/{len(metas)}")
 
-    # 인덱스 재구축 — 새 상태 기준으로 index.json 다시 생성
+    _log("[migrate_v2] rebuilding index ...")
     from core.index import rebuild_index
 
     n = rebuild_index()
-    print(f"인덱스 재구축: {n}건")
-    print("완료. 앱을 다시 시작하세요.")
+    _log(f"[migrate_v2] index rebuilt = {n}")
+    _log("[migrate_v2] DONE. Restart the app.")
 
 
 if __name__ == "__main__":
