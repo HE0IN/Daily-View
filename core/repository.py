@@ -108,6 +108,7 @@ def create_issue(
     category_l2: str | None = None,
     category_l3: str | None = None,
     project: str | None = None,
+    kind: str = "dev",
 ) -> Issue:
     """새 항목 생성.
 
@@ -128,6 +129,7 @@ def create_issue(
         description=description,
         urgency=Urgency(urgency) if not isinstance(urgency, Urgency) else urgency,
         status=Status.assignee_request,
+        kind=kind if kind in ("dev", "unimplemented") else "dev",
         author=author,
         author_role=Role(author_role) if not isinstance(author_role, Role) else author_role,
         assignee=assignee,
@@ -257,8 +259,12 @@ def list_issues(
     include_archived: bool = False,
     include_closed: bool = True,
     project: str | None = None,
+    kind: str | None = "dev",
 ) -> list[IndexEntry]:
     """인덱스 기반 필터링된 목록을 ``updated_at desc`` 로 정렬해 반환.
+
+    kind: "dev"(기본, 개발목록) / "unimplemented"(미구현목록) / None(전체).
+    기본이 "dev" 라 기존 호출은 미구현 항목을 자동으로 제외한다.
 
     검색은 title/tags 부분 매칭(case-insensitive). 인덱스가 비어 있으면 빈 리스트.
     project 가 주어지면 해당 프로젝트로 필터 — 빈 문자열은 None 과 동일(필터 미적용).
@@ -282,6 +288,9 @@ def list_issues(
             project=project,
         )
     ]
+    # kind 필터 — None 이면 전체, 아니면 해당 종류만 (옛 데이터는 dev 로 간주).
+    if kind is not None:
+        filtered = [e for e in filtered if (e.get("kind") or "dev") == kind]
 
     # updated_at desc — ISO 문자열은 사전순 = 시간순.
     filtered.sort(key=lambda e: e.get("updated_at") or "", reverse=True)
@@ -567,6 +576,67 @@ def update_issue_content(
         detail={"title": cleaned_title},
     )
 
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(issue, comments_count, images_count)
+    return issue
+
+
+def promote_unimplemented(
+    item_id: str,
+    *,
+    title: str,
+    description: str,
+    urgency: Urgency | str,
+    assignee: str,
+    actor: str,
+    category_l1: str | None = None,
+    category_l2: str | None = None,
+    category_l3: str | None = None,
+) -> Issue:
+    """미구현 항목(kind=unimplemented)을 개발 요청(dev)으로 승격.
+
+    kind 를 dev 로 바꾸고 담당자/긴급도/카테고리를 설정, 상태를 담당자확인요청으로
+    초기화한다. 이미지(캡쳐)는 같은 항목이라 그대로 따라간다.
+    """
+    cleaned_title = (title or "").strip()
+    if not cleaned_title:
+        raise ValueError("제목은 비울 수 없습니다.")
+    assignee = (assignee or "").strip()
+    if not assignee:
+        raise ValueError("담당자는 필수입니다.")
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        if issue.kind != "unimplemented":
+            raise ValueError("미구현 항목만 개발 요청으로 승격할 수 있습니다.")
+        timestamp = now()
+        issue.kind = "dev"
+        issue.title = cleaned_title[:120]
+        issue.description = description or ""
+        issue.urgency = (
+            Urgency(urgency) if not isinstance(urgency, Urgency) else urgency
+        )
+        issue.assignee = assignee
+        issue.status = Status.assignee_request
+        issue.category_l1 = (category_l1.strip() or None) if category_l1 else None
+        issue.category_l2 = (category_l2.strip() or None) if category_l2 else None
+        issue.category_l3 = (category_l3.strip() or None) if category_l3 else None
+        issue.updated_at = timestamp
+        # 상태 이력 초기화 — 담당자확인요청부터 새로 시작.
+        issue.status_history = [
+            StatusEvent(status=Status.assignee_request, at=timestamp, by=actor)
+        ]
+        _write_meta_unlocked(issue)
+
+    _add_system_comment(
+        item_id,
+        f"미구현목록에서 개발 요청으로 승격되었습니다 (담당자: {assignee}).",
+    )
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CONTENT,
+        item_id=item_id,
+        detail={"promote": "unimplemented->dev", "assignee": assignee},
+    )
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(issue, comments_count, images_count)
     return issue

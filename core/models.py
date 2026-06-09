@@ -127,6 +127,10 @@ class Issue(BaseModel):
     description: str
     urgency: Urgency
     status: Status = Status.assignee_request
+    # 항목 종류: dev=개발목록(정식 요청) / unimplemented=미구현목록(가벼운 수집함).
+    # unimplemented 는 담당자·상태 워크플로우 없이 제목/설명/캡쳐만 쌓아두는 용도이며,
+    # '개발 요청' 으로 승격하면 kind 가 dev 로 바뀌며 담당자확인요청으로 전환된다.
+    kind: Literal["dev", "unimplemented"] = "dev"
     author: str
     author_role: Role
     assignee: str | None = None
@@ -156,6 +160,7 @@ class IndexEntry(BaseModel):
     title: str
     urgency: Urgency
     status: Status
+    kind: Literal["dev", "unimplemented"] = "dev"
     author: str
     assignee: str | None = None
     created_at: datetime
@@ -196,6 +201,7 @@ class IndexEntry(BaseModel):
             title=issue.title,
             urgency=issue.urgency,
             status=issue.status,
+            kind=issue.kind,
             author=issue.author,
             assignee=issue.assignee,
             created_at=issue.created_at,

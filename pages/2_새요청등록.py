@@ -76,6 +76,26 @@ st.caption(f"프로젝트 **{current_project}** 에 등록됩니다.")
 st.session_state.setdefault("new_form_nonce", 0)
 nonce: int = int(st.session_state["new_form_nonce"])
 
+# 미구현목록 [개발 요청] 으로 진입한 경우 — 제목/설명을 그 항목 값으로 prefill (1회).
+# 등록 시 create_issue 대신 promote_unimplemented 로 kind 를 dev 로 전환한다.
+promote_id = st.session_state.get("promote_id")
+if promote_id:
+    _filled_key = f"_promote_filled_{promote_id}"
+    if not st.session_state.get(_filled_key):
+        try:
+            _pf = repository.get_issue(promote_id)
+            st.session_state[f"new_title_{nonce}"] = _pf.title
+            st.session_state[f"new_desc_{nonce}"] = _pf.description or ""
+            st.session_state[_filled_key] = True
+        except Exception:  # noqa: BLE001
+            st.session_state.pop("promote_id", None)
+            promote_id = None
+    if promote_id:
+        st.info(
+            "📋 **미구현목록 항목을 개발 요청으로 승격**합니다 — "
+            "담당자·긴급도를 지정해 등록하면 담당자확인요청으로 전환됩니다."
+        )
+
 
 # ---------------------------------------------------------------------------
 # 담당 개발자 후보 (인덱스 전체에서 unique 추출)
@@ -356,20 +376,33 @@ if submit:
     # 등록자는 항상 '등록자' 권한 (역할 폐기) → author_role 은 reviewer 고정.
     author_role = Role.reviewer
 
-    # 1) 이슈 생성
+    # 1) 이슈 생성 — 미구현 승격이면 promote(기존 항목 변환), 아니면 신규 생성.
     try:
-        issue = repository.create_issue(
-            title=title,
-            description=description,
-            urgency=Urgency(urgency_value),
-            author=name,
-            author_role=author_role,
-            assignee=final_assignee,
-            category_l1=cat_l1,
-            category_l2=cat_l2,
-            category_l3=cat_l3,
-            project=proj_value,
-        )
+        if promote_id:
+            issue = repository.promote_unimplemented(
+                promote_id,
+                title=title,
+                description=description,
+                urgency=Urgency(urgency_value),
+                assignee=final_assignee,
+                actor=name,
+                category_l1=cat_l1,
+                category_l2=cat_l2,
+                category_l3=cat_l3,
+            )
+        else:
+            issue = repository.create_issue(
+                title=title,
+                description=description,
+                urgency=Urgency(urgency_value),
+                author=name,
+                author_role=author_role,
+                assignee=final_assignee,
+                category_l1=cat_l1,
+                category_l2=cat_l2,
+                category_l3=cat_l3,
+                project=proj_value,
+            )
     except Exception as exc:  # noqa: BLE001
         st.error(f"등록 실패: {exc}")
         st.stop()
@@ -415,6 +448,10 @@ if submit:
     # 누적된 paste 이미지/last 캐시 제거 — 다음 폼에 재첨부되지 않도록.
     st.session_state.pop(f"_decoded_paste_images_{nonce}", None)
     st.session_state.pop(f"_last_pasted_v2_{nonce}", None)
+    # 미구현 승격이었으면 promote 상태 정리.
+    if promote_id:
+        st.session_state.pop("promote_id", None)
+        st.session_state.pop(f"_promote_filled_{promote_id}", None)
     st.session_state["new_form_nonce"] = nonce + 1
     # st.switch_page 가 query_params 를 유실하는 케이스가 있어
     # session_state 로도 함께 전달 (상세보기에서 둘 다 체크).

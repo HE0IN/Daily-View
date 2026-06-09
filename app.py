@@ -127,6 +127,11 @@ _stats = st.Page("pages/4_통계.py", title="통계", icon=":material/bar_chart:
 _detail = st.Page(
     "pages/3_상세보기.py", title="상세보기", icon=":material/description:"
 )
+_unimpl = st.Page(
+    "pages/5_미구현목록.py",
+    title="미구현목록",
+    icon=":material/playlist_add_check:",
+)
 
 # 메뉴 스타일: 상세보기 항목 숨김 + 새 요청 등록 강조(빨강).
 # Streamlit 의 사이드바 네비 링크는 a[href] 에 페이지 슬러그가 들어간다.
@@ -158,7 +163,7 @@ pg = st.navigation(
     {
         " ": [_dashboard],
         "  ": [_new],
-        "   ": [_list, _stats, _detail],
+        "   ": [_list, _unimpl, _stats, _detail],
     }
 )
 pg.run()
