@@ -40,7 +40,6 @@ if not user:
     st.stop()
 
 name: str = user["name"]
-role_str: str = user.get("role", "reviewer")
 
 
 # ---------------------------------------------------------------------------
@@ -52,9 +51,6 @@ role_str: str = user.get("role", "reviewer")
 current_project: str | None = st.session_state.get("_current_project")
 
 st.title("새 요청 등록")
-
-if role_str != "reviewer":
-    st.warning("주로 검토자가 등록하지만 개발자도 가능합니다.")
 
 # 프로젝트 미선택 시 새 등록 차단. 사용자가 사이드바에서 프로젝트를 먼저
 # 선택/추가해야 한다 — "이미 프로젝트가 정해져 있다" 는 전제 강제.
@@ -353,11 +349,8 @@ if submit:
         st.error("담당 개발자를 지정해주세요.")
         st.stop()
 
-    # 역할 정규화 (저장된 user["role"] 은 문자열 "reviewer"/"developer")
-    try:
-        author_role = Role(role_str)
-    except ValueError:
-        author_role = Role.reviewer
+    # 등록자는 항상 '등록자' 권한 (역할 폐기) → author_role 은 reviewer 고정.
+    author_role = Role.reviewer
 
     # 1) 이슈 생성
     try:

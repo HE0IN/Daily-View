@@ -31,27 +31,22 @@ _QP_ROLE = "r"
 
 
 def _restore_user_from_query_params() -> dict | None:
-    """URL query parameter (?u=...&r=...) 에서 user 복원. 없거나 잘못되면 None."""
+    """URL query parameter (?u=...) 에서 user 복원. 없으면 None. (역할 폐기)"""
     try:
         qp_name = st.query_params.get(_QP_NAME)
-        qp_role = st.query_params.get(_QP_ROLE)
     except Exception:
         return None
     if isinstance(qp_name, list):
         qp_name = qp_name[0] if qp_name else None
-    if isinstance(qp_role, list):
-        qp_role = qp_role[0] if qp_role else None
     if not qp_name:
         return None
-    role = qp_role if qp_role in ("reviewer", "developer") else "reviewer"
-    return {"name": str(qp_name).strip(), "role": role}
+    return {"name": str(qp_name).strip()}
 
 
 def _persist_user_to_query_params(user: dict) -> None:
     """user 정보를 URL query parameter 에 set — 새로고침 후에도 보존."""
     try:
         st.query_params[_QP_NAME] = user.get("name", "")
-        st.query_params[_QP_ROLE] = user.get("role", "reviewer")
     except Exception:
         pass  # query_params 미지원 streamlit 버전 graceful
 
@@ -99,9 +94,7 @@ def _commit_user(user: dict, cookie_mgr: Any | None) -> None:
     # 접속 로그 (식별/로그인 시점 1회 기록) — 파일로만 적재
     try:
         from core import logger as _logger
-        _logger.audit_log(
-            user["name"], _logger.ACCESS, None, {"role": user["role"]}
-        )
+        _logger.audit_log(user["name"], _logger.ACCESS, None, None)
     except Exception:
         pass
     # 영속화 — query parameter(의존성 0) + Cookie(가능 시 30일)
@@ -119,50 +112,36 @@ def _commit_user(user: dict, cookie_mgr: Any | None) -> None:
 
 
 def _render_edit_form(cookie_mgr: Any | None, current: dict | None) -> None:
-    """사이드바에 사용자 선택(radio) + 새 사용자 등록 UI 를 그린다.
+    """사이드바에 사용자 선택(radio) + 새 사용자 등록 UI (이름만).
 
-    한 번 등록(이름+역할)된 사용자는 radio 로 골라 바로 로그인한다.
+    역할 고정은 폐기 — 권한은 항목별 등록자(author)/담당자(assignee)로 결정된다.
     """
     from core import user_registry
 
     with st.sidebar:
         st.subheader("사용자")
-        users = user_registry.list_users()
+        users = user_registry.list_users()  # [이름]
 
         # 1) 등록된 사용자 — radio 로 선택
         if users:
-            names = [u["name"] for u in users]
-            role_map = {u["name"]: u["role"] for u in users}
             cur_name = (current or {}).get("name")
-            default_idx = names.index(cur_name) if cur_name in names else 0
+            default_idx = users.index(cur_name) if cur_name in users else 0
             picked = st.radio(
                 "사용자 선택",
-                options=names,
+                options=users,
                 index=default_idx,
-                format_func=lambda n: f"{n} ({_role_label(role_map.get(n, 'reviewer'))})",
                 key="_user_pick",
             )
             if st.button("선택", key="_user_pick_btn", type="primary"):
-                _commit_user(
-                    {"name": picked, "role": role_map.get(picked, "reviewer")},
-                    cookie_mgr,
-                )
+                _commit_user({"name": picked}, cookie_mgr)
 
         # 2) 새 사용자 등록 (처음이면 펼친 상태)
         with st.expander("+ 새 사용자 등록", expanded=not users):
             new_name = st.text_input("이름", key="_user_new_name")
-            new_role = st.radio(
-                "역할",
-                options=["reviewer", "developer"],
-                format_func=_role_label,
-                key="_user_new_role",
-            )
             if st.button("등록", key="_user_new_btn"):
                 if new_name.strip():
-                    user_registry.add_user(new_name.strip(), new_role)
-                    _commit_user(
-                        {"name": new_name.strip(), "role": new_role}, cookie_mgr
-                    )
+                    user_registry.add_user(new_name.strip())
+                    _commit_user({"name": new_name.strip()}, cookie_mgr)
                 else:
                     st.warning("이름을 입력해주세요.")
 
@@ -217,10 +196,7 @@ def get_or_init_user() -> dict | None:
                 saved = None
 
         if isinstance(saved, dict) and saved.get("name"):
-            st.session_state["user"] = {
-                "name": saved.get("name"),
-                "role": saved.get("role", "reviewer"),
-            }
+            st.session_state["user"] = {"name": saved.get("name")}
             st.session_state.pop(_COOKIE_INIT_TICK, None)
             # 쿠키에서 복원했으면 query param 도 동기화 — 이후 새로고침에서
             # 비동기 이슈 없이 즉시 복원되도록.
@@ -244,9 +220,7 @@ def get_or_init_user() -> dict | None:
     # 2) 사용자 있고 편집 모드 아니면 — 현재 표시 + 변경 버튼
     if user and not edit_mode:
         with st.sidebar:
-            st.markdown(
-                f"**현재**: {user.get('name', '')} ({_role_label(user.get('role', 'reviewer'))})"
-            )
+            st.markdown(f"**현재**: {user.get('name', '')}")
             if st.button("변경", key="_user_change_btn"):
                 st.session_state[_EDIT_FLAG] = True
                 st.rerun()
@@ -261,7 +235,7 @@ def require_user() -> dict:
     """페이지 상단에서 호출. user 없으면 안내 후 페이지 정지."""
     user = st.session_state.get("user")
     if not user or not user.get("name"):
-        st.warning("좌측 사이드바에서 이름과 역할을 먼저 입력해주세요.")
+        st.warning("좌측 사이드바에서 이름을 먼저 선택/입력해주세요.")
         st.stop()
     return user  # type: ignore[return-value]
 

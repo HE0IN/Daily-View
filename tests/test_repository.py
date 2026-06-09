@@ -37,10 +37,10 @@ def test_create_issue_basic(temp_data_dir: Path, sample_issue_kwargs: dict) -> N
     )
 
     # 상태/타임스탬프
-    assert issue.status == Status.requested
+    assert issue.status == Status.assignee_request
     assert issue.created_at == issue.updated_at, "생성 직후엔 동일해야 함"
     assert len(issue.status_history) == 1
-    assert issue.status_history[0].status == Status.requested
+    assert issue.status_history[0].status == Status.assignee_request
     assert issue.status_history[0].by == sample_issue_kwargs["author"]
 
     # 라운드트립
@@ -48,7 +48,7 @@ def test_create_issue_basic(temp_data_dir: Path, sample_issue_kwargs: dict) -> N
     assert fetched.id == issue.id
     assert fetched.title == sample_issue_kwargs["title"]
     assert fetched.urgency == Urgency.normal
-    assert fetched.status == Status.requested
+    assert fetched.status == Status.assignee_request
 
     # meta.json 디스크에 존재
     meta_path = paths.item_meta_path(issue.id)
@@ -101,6 +101,19 @@ def _make_issue(
     kw = dict(sample_issue_kwargs)
     kw.update(overrides)
     return repository.create_issue(**kw)
+
+
+def _drive_to_closed(item_id: str) -> None:
+    """담당자확인요청 → ... → 완료 까지 전체 전이 (closed 항목 생성 헬퍼)."""
+    for _st, _actor, _role in [
+        (Status.assignee_reviewing, "dev", Role.developer),
+        (Status.assignee_reviewed, "dev", Role.developer),
+        (Status.assignee_developing, "dev", Role.developer),
+        (Status.author_request, "dev", Role.developer),
+        (Status.author_reviewing, "rev", Role.reviewer),
+        (Status.closed, "rev", Role.reviewer),
+    ]:
+        repository.update_status(item_id, _st, actor=_actor, actor_role=_role)
 
 
 def test_list_issues_filters(
@@ -188,7 +201,7 @@ def test_list_issues_include_closed_default_true(
     b = _make_issue(sample_issue_kwargs, title="B")
 
     # a 를 closed 까지 진행
-    repository.update_status(a.id, Status.closed, actor="rev", actor_role=Role.reviewer)
+    _drive_to_closed(a.id)
 
     default = repository.list_issues()
     assert {e.id for e in default} == {a.id, b.id}, "closed 가 기본 목록에서 빠짐"
@@ -216,7 +229,7 @@ def test_list_issues_sort_by_updated_at_desc(
     # a 를 다시 갱신 → 맨 위로 와야 한다
     time.sleep(1.1)
     repository.update_status(
-        a.id, Status.in_progress, actor="dev", actor_role=Role.developer
+        a.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
     )
     listed2 = repository.list_issues()
     assert listed2[0].id == a.id, "갱신된 항목이 맨 위로 오지 않음"
@@ -230,18 +243,22 @@ def test_list_issues_sort_by_updated_at_desc(
 def test_update_status_full_workflow(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """단순화된 흐름: requested → in_progress → reviewing → closed."""
+    """전체 흐름: 담당자확인요청 → 검토중 → 검토완료 → 신규개발중
+    → 등록자확인요청 → 등록자검토중 → 완료."""
     issue = _make_issue(sample_issue_kwargs)
 
-    repository.update_status(
-        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
-    )
-    repository.update_status(
-        issue.id, Status.reviewing, actor="dev", actor_role=Role.developer
-    )
-    final = repository.update_status(
-        issue.id, Status.closed, actor="rev", actor_role=Role.reviewer
-    )
+    final = issue
+    for _st, _actor, _role in [
+        (Status.assignee_reviewing, "dev", Role.developer),
+        (Status.assignee_reviewed, "dev", Role.developer),
+        (Status.assignee_developing, "dev", Role.developer),
+        (Status.author_request, "dev", Role.developer),
+        (Status.author_reviewing, "rev", Role.reviewer),
+        (Status.closed, "rev", Role.reviewer),
+    ]:
+        final = repository.update_status(
+            issue.id, _st, actor=_actor, actor_role=_role
+        )
 
     assert final.status == Status.closed
     assert final.reviewer_confirmed is True, "closed 진입 시 reviewer_confirmed True"
@@ -251,28 +268,28 @@ def test_update_status_full_workflow(
 def test_update_status_unauthorized_role(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """검토자가 in_progress 로 변경 시도 → WorkflowError."""
+    """등록자(reviewer)가 담당자 전이(검토중) 시도 → WorkflowError."""
     issue = _make_issue(sample_issue_kwargs)
 
     with pytest.raises(WorkflowError):
         repository.update_status(
-            issue.id, Status.in_progress, actor="bad", actor_role=Role.reviewer
+            issue.id, Status.assignee_reviewing, actor="bad", actor_role=Role.reviewer
         )
 
     # 상태 변경 시도가 실패했으니 디스크 상태도 그대로
     after = repository.get_issue(issue.id)
-    assert after.status == Status.requested
+    assert after.status == Status.assignee_request
 
 
 def test_update_status_invalid_transition(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """requested → reviewing 직접 점프 시도 (in_progress 거치지 않음) → WorkflowError."""
+    """담당자확인요청 → 등록자확인요청 직접 점프 (검토 단계 생략) → WorkflowError."""
     issue = _make_issue(sample_issue_kwargs)
 
     with pytest.raises(WorkflowError):
         repository.update_status(
-            issue.id, Status.reviewing, actor="dev", actor_role=Role.developer
+            issue.id, Status.author_request, actor="dev", actor_role=Role.developer
         )
 
 
@@ -284,17 +301,21 @@ def test_status_history_appended_on_each_change(
     assert len(issue.status_history) == 1
 
     repository.update_status(
-        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
     )
     repository.update_status(
-        issue.id, Status.reviewing, actor="dev", actor_role=Role.developer
+        issue.id, Status.assignee_reviewed, actor="dev", actor_role=Role.developer
     )
 
     final = repository.get_issue(issue.id)
     statuses = [ev.status for ev in final.status_history]
     bys = [ev.by for ev in final.status_history]
 
-    assert statuses == [Status.requested, Status.in_progress, Status.reviewing]
+    assert statuses == [
+        Status.assignee_request,
+        Status.assignee_reviewing,
+        Status.assignee_reviewed,
+    ]
     assert bys == [sample_issue_kwargs["author"], "dev", "dev"]
     # 모든 at 이 timezone-aware 한 datetime
     for ev in final.status_history:
@@ -308,7 +329,7 @@ def test_system_comment_on_status_change(
     issue = _make_issue(sample_issue_kwargs)
 
     repository.update_status(
-        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
     )
 
     comments = repository.list_comments(issue.id)
@@ -320,7 +341,7 @@ def test_system_comment_on_status_change(
     body = sys_comments[0].body
     assert "상태 변경" in body, f"body 에 '상태 변경' 누락: {body!r}"
     # 라벨: requested → 요청중, in_progress → 개발중
-    assert "요청중" in body or "개발중" in body, f"라벨 누락: {body!r}"
+    assert "담당자확인요청" in body or "담당자검토중" in body, f"라벨 누락: {body!r}"
     # role 은 'system' 문자열
     assert sys_comments[0].role == "system"
 
@@ -382,7 +403,7 @@ def test_index_updated_on_create(
     assert len(found) == 1, "인덱스에 엔트리 없음"
     entry = found[0]
     assert entry["title"] == "인덱스 검증"
-    assert entry["status"] == Status.requested.value
+    assert entry["status"] == Status.assignee_request.value
     assert entry["comments_count"] == 0
     assert entry["images_count"] == 0
 
@@ -393,12 +414,12 @@ def test_index_updated_on_status_change(
     """update_status 후 인덱스의 status 가 새 값."""
     issue = _make_issue(sample_issue_kwargs)
     repository.update_status(
-        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
     )
 
     raw = index_mod.read_index()
     entry = next(e for e in raw if e["id"] == issue.id)
-    assert entry["status"] == Status.in_progress.value
+    assert entry["status"] == Status.assignee_reviewing.value
 
 
 def test_index_comments_count_includes_system(
@@ -417,7 +438,7 @@ def test_index_comments_count_includes_system(
 
     # 상태 변경 → 시스템 코멘트 1개 추가
     repository.update_status(
-        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
     )
 
     raw = index_mod.read_index()
@@ -606,7 +627,7 @@ def test_auto_archive_closed(
     b = _make_issue(sample_issue_kwargs, title="B")
 
     # a 만 closed 까지 진행
-    repository.update_status(a.id, Status.closed, actor="rev", actor_role=Role.reviewer)
+    _drive_to_closed(a.id)
 
     # a 의 meta.json 을 읽어 reviewer_confirmed_at 을 30일 전으로 수정
     meta_path = paths.item_meta_path(a.id)
@@ -631,9 +652,7 @@ def test_auto_archive_skips_recent_closed(
 ) -> None:
     """closed 직후라면 auto_archive 가 건드리지 않음."""
     issue = _make_issue(sample_issue_kwargs)
-    repository.update_status(
-        issue.id, Status.closed, actor="rev", actor_role=Role.reviewer
-    )
+    _drive_to_closed(issue.id)
 
     n = repository.auto_archive_closed(days=14)
     assert n == 0
@@ -790,17 +809,20 @@ def test_update_status_api_check_no_auto_assignee(
     issue = repository.create_issue(project="PROJ-X", **kw)
 
     repository.update_status(
-        issue.id, Status.in_progress, actor="내부이", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="내부이", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.assignee_reviewed, actor="내부이", actor_role=Role.developer
     )
     issue2 = repository.update_status(
-        issue.id, Status.api_check, actor="내부이", actor_role=Role.developer
+        issue.id, Status.vendor_request, actor="내부이", actor_role=Role.developer
     )
 
     # 담당자 유지 — 자동 변경 없음
     assert issue2.assignee == "내부이"
     refreshed = repository.get_issue(issue.id)
     assert refreshed.assignee == "내부이"
-    assert refreshed.status == Status.api_check
+    assert refreshed.status == Status.vendor_request
 
     # 자동 변경 시스템 코멘트가 없어야 함
     comments = repository.list_comments(issue.id)
@@ -817,10 +839,13 @@ def test_api_check_no_api_assignee(
 
     issue = repository.create_issue(project="PROJ-Y", **kw)
     repository.update_status(
-        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.assignee_reviewed, actor="dev", actor_role=Role.developer
     )
     issue2 = repository.update_status(
-        issue.id, Status.api_check, actor="dev", actor_role=Role.developer
+        issue.id, Status.vendor_request, actor="dev", actor_role=Role.developer
     )
     assert issue2.assignee == "이OO"  # 변경 없음
 
@@ -843,10 +868,13 @@ def test_api_check_assignee_already_matches(
 
     issue = repository.create_issue(project="PROJ-Z", **kw)
     repository.update_status(
-        issue.id, Status.in_progress, actor="외부김", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="외부김", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.assignee_reviewed, actor="외부김", actor_role=Role.developer
     )
     issue2 = repository.update_status(
-        issue.id, Status.api_check, actor="외부김", actor_role=Role.developer
+        issue.id, Status.vendor_request, actor="외부김", actor_role=Role.developer
     )
     assert issue2.assignee == "외부김"
 
@@ -878,10 +906,13 @@ def test_api_check_no_project_set(
 
     issue = repository.create_issue(**kw)  # project 미지정
     repository.update_status(
-        issue.id, Status.in_progress, actor="dev", actor_role=Role.developer
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.assignee_reviewed, actor="dev", actor_role=Role.developer
     )
     issue2 = repository.update_status(
-        issue.id, Status.api_check, actor="dev", actor_role=Role.developer
+        issue.id, Status.vendor_request, actor="dev", actor_role=Role.developer
     )
     assert issue2.assignee == "내부이"
 

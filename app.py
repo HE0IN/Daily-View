@@ -106,7 +106,7 @@ if _st_autorefresh is not None:
 user = get_or_init_user()
 if not user:
     st.title("Daily View")
-    st.info("좌측 사이드바에서 이름과 역할을 입력하면 시작합니다.")
+    st.info("좌측 사이드바에서 이름을 선택하거나 새로 등록하면 시작합니다.")
     st.stop()
 
 render_project_selector(user_name=user["name"])

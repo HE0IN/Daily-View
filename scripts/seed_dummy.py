@@ -198,33 +198,38 @@ def seed(count: int) -> None:
                         f"확인 중입니다 — {random.choice(['추가 정보 부탁', '재현 됨', '수정 진행', '완료 처리'])}.",
                     )
 
-            # 30% 확률로 상태 1~2회 진행
+            # 30% 확률로 상태를 여러 단계 진행 (담당자/등록자 흐름)
             if random.random() < 0.3:
-                # requested -> in_progress
                 dev = assignee or random.choice(_AUTHORS_DEVELOPER)
+                # 담당자확인요청 → 검토중 → 검토완료
                 repository.update_status(
-                    issue.id, Status.in_progress, dev, Role.developer
+                    issue.id, Status.assignee_reviewing, dev, Role.developer
                 )
-                if random.random() < 0.5:
-                    # in_progress -> reviewing (개발자가 검토 요청)
+                repository.update_status(
+                    issue.id, Status.assignee_reviewed, dev, Role.developer
+                )
+                if random.random() < 0.6:
+                    # 검토완료 → 신규개발/코드수정 → 등록자확인요청 → 등록자검토중
+                    _nxt = random.choice(
+                        [Status.assignee_developing, Status.assignee_fixing]
+                    )
+                    repository.update_status(issue.id, _nxt, dev, Role.developer)
                     repository.update_status(
-                        issue.id, Status.reviewing, dev, Role.developer
+                        issue.id, Status.author_request, dev, Role.developer
+                    )
+                    repository.update_status(
+                        issue.id, Status.author_reviewing, author, Role.reviewer
                     )
                     _r = random.random()
-                    if _r < 0.5:
-                        # reviewing -> closed (검토자 완료)
+                    if _r < 0.6:
+                        # 등록자검토중 → 완료
                         repository.update_status(
                             issue.id, Status.closed, author, Role.reviewer
                         )
-                    elif _r < 0.7:
-                        # reviewing -> needs_recheck (추가확인필요)
+                    elif _r < 0.8:
+                        # 등록자검토중 → 담당자확인요청 (반려)
                         repository.update_status(
-                            issue.id, Status.needs_recheck, author, Role.reviewer
-                        )
-                    elif _r < 0.85:
-                        # reviewing -> rejected (반려)
-                        repository.update_status(
-                            issue.id, Status.rejected, author, Role.reviewer
+                            issue.id, Status.assignee_request, author, Role.reviewer
                         )
 
             # 20% 확률로 더미 이미지 첨부

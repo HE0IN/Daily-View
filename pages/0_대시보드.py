@@ -1,7 +1,7 @@
 """대시보드 — 전체 현황 (역할 무관 공통 화면).
 
-검토자/개발자 구분 없이 동일한 화면. 상태별 섹션을 순서대로 나열:
-    전체 개발 목록 / 개발중 / 검토중 / 외부대기 / 완료 / 삭제
+상태별 섹션:
+    전체 개발 목록 / 담당자 처리 / 개발사 / 등록자 확인 / 완료 / 삭제
 
 공통 처리(부트스트랩·사용자식별·프로젝트선택)는 진입점 app.py(라우터)가 수행하고,
 이 페이지는 session_state 의 user / _current_project 를 읽어 사용한다.
@@ -16,7 +16,6 @@ from core.models import Status
 from ui import components
 from ui.theme import STATUS_LABELS
 
-# 라우터가 보장하지만 방어적으로 — user 없으면 정지.
 user = st.session_state.get("user")
 if not user:
     st.stop()
@@ -27,17 +26,11 @@ current_project: str | None = st.session_state.get("_current_project")
 components.render_card_grid_css()
 
 
-# ---------------------------------------------------------------------------
-# 헬퍼
-# ---------------------------------------------------------------------------
-
-
 def _to_dicts(entries) -> list[dict]:
     return [e.model_dump(mode="json") for e in entries]
 
 
 def _grid(items: list[dict], *, key_prefix: str, cols: int = 4) -> None:
-    """카드 그리드. 클릭 시 상세보기로 이동."""
     if not items:
         st.caption("해당 항목이 없습니다.")
         return
@@ -57,7 +50,6 @@ def _grid(items: list[dict], *, key_prefix: str, cols: int = 4) -> None:
 
 
 def _by_status(statuses: list, *, include_closed: bool = False) -> list[dict]:
-    """여러 상태의 활성 항목을 모아 updated_at desc 정렬."""
     out: list = []
     for s in statuses:
         out.extend(
@@ -93,10 +85,10 @@ st.divider()
 
 
 # ---------------------------------------------------------------------------
-# 상태별 섹션 (순서대로)
+# 상태별 섹션
 # ---------------------------------------------------------------------------
 
-# 1) 전체 개발 목록 — 완료·삭제를 제외한 모든 진행 항목 전체
+# 1) 전체 개발 목록 — 완료·삭제 제외 모든 진행 항목
 all_active_entries = repository.list_issues(
     include_archived=False, include_closed=False, project=current_project
 )
@@ -107,33 +99,42 @@ _grid(all_active, key_prefix="dash_all")
 
 st.divider()
 
-# 2) 개발중 — 개발중 + 수정중
-dev = _by_status([Status.in_progress, Status.modifying])
-st.subheader(f"개발중 ({len(dev)})")
-st.caption("개발중 · 수정중")
-_grid(dev, key_prefix="dash_dev")
+# 2) 담당자 처리
+assignee_items = _by_status(
+    [
+        Status.assignee_request,
+        Status.assignee_reviewing,
+        Status.assignee_reviewed,
+        Status.assignee_developing,
+        Status.assignee_fixing,
+    ]
+)
+st.subheader(f"담당자 처리 ({len(assignee_items)})")
+st.caption("담당자확인요청 · 검토중 · 검토완료 · 신규개발중 · 코드수정중")
+_grid(assignee_items, key_prefix="dash_assignee")
 
 st.divider()
 
-# 3) 검토중
-review = _by_status([Status.reviewing])
-st.subheader(f"검토중 ({len(review)})")
-_grid(review, key_prefix="dash_review")
+# 3) 개발사
+vendor_items = _by_status([Status.vendor_request, Status.vendor_reply])
+st.subheader(f"개발사 ({len(vendor_items)})")
+st.caption("개발사확인중 · 개발사회신확인중")
+_grid(vendor_items, key_prefix="dash_vendor")
 
 st.divider()
 
-# 4) 외부대기 — 개발사 확인중 / 개발사 개발 중 / 개발사 수정 중
-vendor = _by_status([Status.api_check, Status.vendor_dev, Status.vendor_fix])
-st.subheader(f"외부대기 ({len(vendor)})")
-st.caption("개발사 확인중 · 개발사 개발 중 · 개발사 수정 중")
-_grid(vendor, key_prefix="dash_vendor")
+# 4) 등록자 확인
+author_items = _by_status([Status.author_request, Status.author_reviewing])
+st.subheader(f"등록자 확인 ({len(author_items)})")
+st.caption("등록자확인요청 · 등록자검토중")
+_grid(author_items, key_prefix="dash_author")
 
 st.divider()
 
 # 5) 완료
 done = _by_status([Status.closed], include_closed=True)
 st.subheader(f"완료 ({len(done)})")
-st.caption("검토완료된 항목")
+st.caption("등록자가 최종 완료한 항목")
 _grid(done, key_prefix="dash_done")
 
 st.divider()
@@ -153,16 +154,15 @@ _grid(archived, key_prefix="dash_arch")
 # ---------------------------------------------------------------------------
 
 STATUS_NAV_KEYS = [
-    "requested",
-    "dev_review",
-    "in_progress",
-    "modifying",
-    "api_check",
-    "vendor_dev",
-    "vendor_fix",
-    "reviewing",
-    "needs_recheck",
-    "rejected",
+    "assignee_request",
+    "assignee_reviewing",
+    "assignee_reviewed",
+    "assignee_developing",
+    "assignee_fixing",
+    "vendor_request",
+    "vendor_reply",
+    "author_request",
+    "author_reviewing",
 ]
 
 with st.sidebar:

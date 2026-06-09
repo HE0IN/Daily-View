@@ -103,9 +103,9 @@ def _abs_tooltip_dt(dt: datetime | str) -> str:
 def _role_label(role: str | Role) -> str:
     value = role.value if isinstance(role, Role) else str(role)
     if value == "reviewer":
-        return "검토자"
+        return "등록자"
     if value == "developer":
-        return "개발자"
+        return "담당자"
     if value == "system":
         return "시스템"
     return value
@@ -248,11 +248,12 @@ if _project_raw:
 else:
     _proj_display_html = '<span style="color:#9CA3AF;">(미지정)</span>'
 
-# 사용자 role 미리 계산 — meta_c4 의 [→ 완료] 버튼 노출 판정에 필요
-try:
-    user_role = Role(user["role"])
-except Exception:
-    user_role = Role.reviewer
+# 권한 — 항목별 위치로 결정.
+#   등록자(issue.author == 나) → Role.reviewer 권한
+#   담당자(issue.assignee == 나) → Role.developer 권한
+_user_name = user["name"]
+is_author = issue.author == _user_name
+is_assignee = issue.assignee == _user_name
 
 # 페이지 상단에 프로젝트 정보 (변경은 사이드바에서만 — 메타 영역에서 제거)
 if _project_raw:
@@ -286,26 +287,51 @@ with meta_c0:
         )
     with s_r:
         with st.popover("변경", width="stretch"):
-            _allowed_all = allowed_transitions(issue.status, user_role)
-            if not _allowed_all:
-                st.caption("현재 상태에서 변경 가능한 항목이 없습니다.")
-            for _ns in _allowed_all:
-                _nl = STATUS_LABELS_KO.get(_ns, _ns.value)
-                if st.button(
-                    f"→ {_nl}",
-                    key=f"detail_status_change_{_ns.value}",
-                    width="stretch",
-                ):
-                    try:
-                        repository.update_status(
-                            item_id, _ns, user["name"], user_role
-                        )
-                        st.toast(f"상태가 '{_nl}'로 변경되었습니다", icon="✅")
-                        st.rerun()
-                    except WorkflowError as exc:
-                        st.error(f"상태 변경 실패: {exc}")
-                    except Exception as exc:  # pragma: no cover
-                        st.error(f"상태 변경 실패: {exc}")
+            # 등록자/담당자 위치별 가능한 전이 수집 (target, role)
+            _options: list = []
+            if is_assignee:
+                for _ns in allowed_transitions(issue.status, Role.developer):
+                    _options.append((_ns, Role.developer))
+            if is_author:
+                for _ns in allowed_transitions(issue.status, Role.reviewer):
+                    _options.append((_ns, Role.reviewer))
+            if not _options:
+                st.caption("이 항목의 등록자/담당자만 상태를 변경할 수 있습니다.")
+            else:
+                # 상태 변경 시 코멘트(사유) 필수
+                _chg_comment = st.text_area(
+                    "변경 사유 (필수)",
+                    key=f"status_change_comment_{item_id}",
+                    placeholder=(
+                        "예: 검토 결과 개발사 확인이 필요하여 메일 송부하였습니다."
+                    ),
+                    height=80,
+                )
+                for _ns, _role in _options:
+                    _nl = STATUS_LABELS_KO.get(_ns, _ns.value)
+                    if st.button(
+                        f"→ {_nl}",
+                        key=f"detail_status_change_{_ns.value}",
+                        width="stretch",
+                    ):
+                        if not _chg_comment.strip():
+                            st.error("상태 변경 시 코멘트(사유)는 필수입니다.")
+                        else:
+                            try:
+                                repository.add_comment(
+                                    item_id, _user_name, _role, _chg_comment.strip()
+                                )
+                                repository.update_status(
+                                    item_id, _ns, _user_name, _role
+                                )
+                                st.toast(
+                                    f"상태가 '{_nl}'로 변경되었습니다", icon="✅"
+                                )
+                                st.rerun()
+                            except WorkflowError as exc:
+                                st.error(f"상태 변경 실패: {exc}")
+                            except Exception as exc:  # pragma: no cover
+                                st.error(f"상태 변경 실패: {exc}")
 
 with meta_c1:
     _card1 = st.container(border=True)
@@ -321,8 +347,8 @@ with meta_c1:
             unsafe_allow_html=True,
         )
     with sub_r:
-        # 담당자 변경은 개발자만 (검토자에겐 표시만)
-        if user_role == Role.developer:
+        # 담당자 변경은 등록자(author)가 관리 (담당자 지정/재지정)
+        if is_author:
             with st.popover("변경", width="stretch"):
                 new_assignee = st.text_input(
                     "담당자 이름",
@@ -749,8 +775,9 @@ with body_col:
                 st.error("코멘트 내용을 입력해주세요.")
             else:
                 try:
+                    _cmt_role = Role.developer if is_assignee else Role.reviewer
                     repository.add_comment(
-                        item_id, user["name"], user_role, body.strip()
+                        item_id, _user_name, _cmt_role, body.strip()
                     )
                     st.toast("코멘트가 등록되었습니다", icon="✅")
                     st.session_state[f"comment_nonce_{item_id}"] = comment_nonce + 1

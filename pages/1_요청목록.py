@@ -35,7 +35,6 @@ if not user:
     st.stop()
 
 name: str = user["name"]
-role: str = user.get("role", "reviewer")
 current_project: str | None = st.session_state.get("_current_project")
 
 
@@ -63,13 +62,13 @@ assignee_set: set[str] = {
 }
 assignee_options = ["(전체)", "(미할당)"] + sorted(assignee_set)
 
-# 역할별 기본 담당자 (개발자는 자기 자신, 검토자는 전체).
+# 기본 담당자 — 내가 담당했던 적이 있으면 내 항목을 기본 필터로.
 default_assignee = "(전체)"
 # 대시보드 [내 큐 전체 보기] CTA 에서 넘긴 값이 있으면 우선.
 preset_assignee = st.session_state.pop("list_default_assignee", None)
 if preset_assignee and preset_assignee in assignee_options:
     default_assignee = preset_assignee
-elif role == "developer" and name in assignee_set:
+elif name in assignee_set:
     default_assignee = name
 
 # ---------------------------------------------------------------------------
@@ -250,13 +249,16 @@ def _fetch_entries() -> list[dict]:
         )
     elif sort_choice == "상태순":
         status_order = {
-            "requested": 0,
-            "reopened": 1,
-            "in_progress": 2,
-            "api_check": 3,
-            "done": 4,
-            "reviewing": 5,
-            "closed": 6,
+            "assignee_request": 0,
+            "assignee_reviewing": 1,
+            "assignee_reviewed": 2,
+            "assignee_developing": 3,
+            "assignee_fixing": 4,
+            "vendor_request": 5,
+            "vendor_reply": 6,
+            "author_request": 7,
+            "author_reviewing": 8,
+            "closed": 9,
         }
         items.sort(
             key=lambda d: (

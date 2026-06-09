@@ -138,29 +138,25 @@ def _closed_at(issue: Issue) -> datetime | None:
 # ---------------------------------------------------------------------------
 
 ACTIVE_STATUSES = {
-    Status.requested.value,
-    Status.dev_review.value,
-    Status.in_progress.value,
-    Status.modifying.value,
-    Status.api_check.value,
-    Status.vendor_dev.value,
-    Status.vendor_fix.value,
-    Status.reviewing.value,
-    Status.needs_recheck.value,
-    Status.rejected.value,
-    Status.reopened.value,  # 레거시 호환
-    Status.done.value,      # 레거시 호환
+    Status.assignee_request.value,
+    Status.assignee_reviewing.value,
+    Status.assignee_reviewed.value,
+    Status.assignee_developing.value,
+    Status.assignee_fixing.value,
+    Status.vendor_request.value,
+    Status.vendor_reply.value,
+    Status.author_request.value,
+    Status.author_reviewing.value,
 }
 IN_PROGRESS_STATUSES = {
-    Status.dev_review.value,
-    Status.in_progress.value,
-    Status.modifying.value,
-    Status.api_check.value,
-    Status.vendor_dev.value,
-    Status.vendor_fix.value,
-    Status.reviewing.value,
-    Status.needs_recheck.value,
-    Status.rejected.value,
+    Status.assignee_reviewing.value,
+    Status.assignee_reviewed.value,
+    Status.assignee_developing.value,
+    Status.assignee_fixing.value,
+    Status.vendor_request.value,
+    Status.vendor_reply.value,
+    Status.author_request.value,
+    Status.author_reviewing.value,
 }
 
 # 활성 / closed 마스크 (IndexEntry 기반)
@@ -179,7 +175,7 @@ for issue in issues:
 
 # 진행 중 / 대기 중
 in_progress_count = int(df["status"].isin(IN_PROGRESS_STATUSES).sum())
-requested_count = int((df["status"] == Status.requested.value).sum())
+requested_count = int((df["status"] == Status.assignee_request.value).sum())
 
 # 정체 — 활성 항목 중 마지막 갱신이 STALE_DAYS 일 이상 경과
 _stale_threshold: datetime = NOW - timedelta(days=STALE_DAYS)
@@ -193,11 +189,11 @@ with k1:
     render_count_metric("이번 주 완료", weekly_closed_count, color="#10B981")
 with k2:
     render_count_metric(
-        "진행 중", in_progress_count, color=STATUS_COLORS["in_progress"]
+        "진행 중", in_progress_count, color=STATUS_COLORS["assignee_developing"]
     )
 with k3:
     render_count_metric(
-        "대기 중", requested_count, color=STATUS_COLORS["requested"]
+        "대기 중", requested_count, color=STATUS_COLORS["assignee_request"]
     )
 with k4:
     render_count_metric(
@@ -210,16 +206,15 @@ st.divider()
 st.subheader("상태별 현황")
 st.caption("개발중·API대기·검토중 등 진행 단계를 분리해서 표시 (삭제 제외).")
 _proc_status_keys = [
-    "requested",
-    "dev_review",
-    "in_progress",
-    "modifying",
-    "api_check",
-    "vendor_dev",
-    "vendor_fix",
-    "reviewing",
-    "needs_recheck",
-    "rejected",
+    "assignee_request",
+    "assignee_reviewing",
+    "assignee_reviewed",
+    "assignee_developing",
+    "assignee_fixing",
+    "vendor_request",
+    "vendor_reply",
+    "author_request",
+    "author_reviewing",
     "closed",
 ]
 _active_df_for_status = df[~df["archived"].fillna(False)]
@@ -437,16 +432,15 @@ st.caption(
 
 URGENCY_ORDER: list[str] = ["critical", "high", "normal", "low"]
 STATUS_ORDER_FOR_STACK: list[str] = [
-    "requested",
-    "dev_review",
-    "in_progress",
-    "modifying",
-    "api_check",
-    "vendor_dev",
-    "vendor_fix",
-    "reviewing",
-    "needs_recheck",
-    "rejected",
+    "assignee_request",
+    "assignee_reviewing",
+    "assignee_reviewed",
+    "assignee_developing",
+    "assignee_fixing",
+    "vendor_request",
+    "vendor_reply",
+    "author_request",
+    "author_reviewing",
     "closed",
 ]
 
@@ -492,15 +486,13 @@ def _build_category_detail(records_payload: list[dict]) -> dict[str, pd.DataFram
         if u in urgency_counts[l1]:
             urgency_counts[l1][u] += 1
 
-        # 상태 분포 — done 은 closed 로 합산 (레거시 호환)
+        # 상태 분포
         s = issue.status.value
-        if s == Status.done.value:
-            status_counts[l1]["closed"] += 1
-        elif s in status_counts[l1]:
+        if s in status_counts[l1]:
             status_counts[l1][s] += 1
 
         # 평균 처리 시간 (closed 항목만)
-        is_closed_like = issue.archived or s in (Status.closed.value, Status.done.value)
+        is_closed_like = issue.archived or s == Status.closed.value
         if is_closed_like:
             ca = _closed_at(issue)
             if ca is not None and issue.created_at is not None:
@@ -514,8 +506,16 @@ def _build_category_detail(records_payload: list[dict]) -> dict[str, pd.DataFram
             if issue.updated_at <= STALE_CUTOFF:
                 stale_cnt[l1] += 1
 
-        # 재요청 횟수: status_history 안에 reopened 가 한 번이라도 등장하는 항목 수
-        if any(ev.status == Status.reopened for ev in issue.status_history):
+        # 재요청(반려) 횟수: 담당자확인요청 이 status_history 에 2 번 이상 등장
+        # (첫 등록 1 회 + 등록자검토중→담당자확인요청 반려가 추가될 때마다 +1).
+        if (
+            sum(
+                1
+                for ev in issue.status_history
+                if ev.status == Status.assignee_request
+            )
+            > 1
+        ):
             reopen_cnt[l1] += 1
 
     if not total_cnt:
