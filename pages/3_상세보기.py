@@ -136,6 +136,21 @@ def _role_color(role: str | Role) -> str:
 #   5행: 상태 변경 버튼 (closed 제외, 가로 한 줄)
 # ---------------------------------------------------------------------------
 
+# 상태 변경 등 popover 팝업을 옆으로 넓게 — 전이 옵션 + 코멘트 입력이 들어가
+# 기본 폭으로는 좁다. (selector 는 Streamlit 버전에 따라 달라질 수 있어 둘 다 지정)
+st.markdown(
+    """
+    <style>
+    [data-testid="stPopoverBody"],
+    div[data-baseweb="popover"] [data-testid="stPopoverBody"] {
+        min-width: 480px !important;
+        max-width: 95vw !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # --- 1행: 목록으로 / ID ----------------------------------------------------
 top_left, top_right = st.columns([4, 1])
 with top_left:
