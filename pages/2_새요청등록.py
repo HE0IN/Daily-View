@@ -81,16 +81,15 @@ nonce: int = int(st.session_state["new_form_nonce"])
 # 담당 개발자 후보 (인덱스 전체에서 unique 추출)
 # ---------------------------------------------------------------------------
 
-# 너무 복잡하지 않게 — 등장한 적이 있는 모든 author/assignee 이름을 후보로.
+# 담당자 후보 = (1) 등록된 사용자 명단(초기 사용자 선택 명단) + (2) 과거에 실제
+# 담당했던 사람(assignee). 등록자=담당자 겸직이 가능하므로 본인도 포함한다.
+from core import user_registry
+
 existing_entries = repository.list_issues(include_archived=True)
-known_names: set[str] = set()
+known_names: set[str] = set(user_registry.list_users())  # 7번: 사용자 명단
 for e in existing_entries:
     if e.assignee:
         known_names.add(e.assignee)
-    # 등록자(author)는 담당 개발자 후보에서 제외한다 — 요청 등록은 주로
-    # 검토자가 하므로, author 를 후보에 넣으면 검토자가 기본 담당자로 잡힌다.
-    # 담당자 후보는 '실제로 담당했던 사람(assignee)' 만으로 한정.
-known_names.discard(name)  # 자기 자신도 제외
 # 담당자 필수화: "(미지정)" 옵션을 제거하여 None 저장이 불가능하도록 함.
 # known_names 가 비어있으면 ["(직접 입력)"] 만 남아 사용자가 직접 입력을 강제받는다.
 assignee_options = sorted(known_names) + ["(직접 입력)"]
@@ -306,7 +305,7 @@ with right:
         )
 
         assignee_choice = st.selectbox(
-            "담당 개발자",
+            "담당자 (필수)",
             options=assignee_options,
             index=_default_assignee_idx,  # 직전 등록 담당자가 기본값 (없으면 미지정)
             key=f"new_assignee_select_{nonce}",
@@ -351,7 +350,7 @@ if submit:
 
     # 담당자 필수 검증: 빈 값이면 등록 차단
     if not final_assignee:
-        st.error("담당 개발자를 지정해주세요.")
+        st.error("⚠️ 담당자를 지정해주세요. (담당자는 필수입니다)")
         st.stop()
 
     # 등록자는 항상 '등록자' 권한 (역할 폐기) → author_role 은 reviewer 고정.

@@ -36,32 +36,50 @@ class WorkflowError(Exception):
 TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
     # 담당자확인요청 → 담당자검토중 (담당자)
     (Status.assignee_request, Role.developer): [Status.assignee_reviewing],
-    # 담당자검토중 → 담당자검토완료 (담당자)
-    (Status.assignee_reviewing, Role.developer): [Status.assignee_reviewed],
-    # 담당자검토완료 → 신규개발 / 코드수정 / 개발사확인 (담당자)
+    # 담당자검토중 → 검토완료 / (되돌리기)확인요청 (담당자)
+    (Status.assignee_reviewing, Role.developer): [
+        Status.assignee_reviewed,
+        Status.assignee_request,  # 직전 단계로
+    ],
+    # 검토완료 → 신규개발 / 코드수정 / 개발사확인 / (되돌리기)검토중 (담당자)
     (Status.assignee_reviewed, Role.developer): [
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_request,
+        Status.assignee_reviewing,  # 직전 단계로
     ],
-    # 개발사확인중 → 개발사회신확인중 (담당자)
-    (Status.vendor_request, Role.developer): [Status.vendor_reply],
-    # 개발사회신확인중 → 등록자확인요청 / 신규개발 / 코드수정 (담당자)
+    # 개발사확인중 → 개발사회신확인중 / (되돌리기)검토완료 (담당자)
+    (Status.vendor_request, Role.developer): [
+        Status.vendor_reply,
+        Status.assignee_reviewed,  # 직전 단계로
+    ],
+    # 개발사회신확인중 → 등록자확인요청 / 신규개발 / 코드수정 / (되돌리기)개발사확인중 (담당자)
     (Status.vendor_reply, Role.developer): [
         Status.author_request,
         Status.assignee_developing,
         Status.assignee_fixing,
+        Status.vendor_request,  # 직전 단계로
     ],
-    # 담당자 신규개발/코드수정 → 등록자확인요청 (담당자)
-    (Status.assignee_developing, Role.developer): [Status.author_request],
-    (Status.assignee_fixing, Role.developer): [Status.author_request],
-    # 등록자확인요청 → 등록자검토중 (등록자)
+    # 신규개발/코드수정 → 등록자확인요청 / (되돌리기)검토완료 (담당자)
+    (Status.assignee_developing, Role.developer): [
+        Status.author_request,
+        Status.assignee_reviewed,  # 직전 단계로
+    ],
+    (Status.assignee_fixing, Role.developer): [
+        Status.author_request,
+        Status.assignee_reviewed,  # 직전 단계로
+    ],
+    # 등록자확인요청 → 등록자검토중 (등록자) / (되돌리기)검토완료 (담당자)
     (Status.author_request, Role.reviewer): [Status.author_reviewing],
-    # 등록자검토중 → 완료 / 담당자확인요청(반려) (등록자)
+    (Status.author_request, Role.developer): [Status.assignee_reviewed],
+    # 등록자검토중 → 완료 / 담당자확인요청(반려) / (되돌리기)등록자확인요청 (등록자)
     (Status.author_reviewing, Role.reviewer): [
         Status.closed,
         Status.assignee_request,
+        Status.author_request,  # 직전 단계로
     ],
+    # 완료 → 등록자검토중 (등록자; 재개발이 필요해 다시 검토 단계로 되돌림)
+    (Status.closed, Role.reviewer): [Status.author_reviewing],
 }
 
 

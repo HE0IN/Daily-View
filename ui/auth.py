@@ -307,17 +307,24 @@ def render_project_selector(user_name: str | None = None) -> str | None:
         options = [ALL] + projects + [NEW]
 
         current = st.session_state.get(_PROJECT_KEY)
-        # 사용자 첫 진입 또는 사용자 바뀐 직후 → 그 사람의 마지막 등록 프로젝트
-        # 를 기본으로. 이미 명시적으로 선택된 값(_current_project) 이 있으면 그대로.
-        if not current and user_name:
-            try:
-                last_proj = repository.last_project_for_user(user_name)
-            except Exception:  # noqa: BLE001
-                last_proj = None
-            if last_proj and last_proj in projects:
-                current = last_proj
-                st.session_state[_PROJECT_KEY] = last_proj
-                # selectbox key 는 nonce 기반이라 직접 수정 X — index= 로 default 결정.
+        # 5번: 첫 진입 시 기본값을 '(전체 프로젝트)' 가 아니라 '등록된 프로젝트' 로.
+        #   우선순위: 그 사람의 마지막 사용 프로젝트 → 없으면 첫 프로젝트.
+        #   사용자별 1회만 적용(_proj_init_<user>) → 이후 사용자가 '(전체)' 를
+        #   골라도 그 선택을 존중한다.
+        _init_key = f"_proj_init_{user_name or ''}"
+        if not current and projects and not st.session_state.get(_init_key):
+            last_proj = None
+            if user_name:
+                try:
+                    last_proj = repository.last_project_for_user(user_name)
+                except Exception:  # noqa: BLE001
+                    last_proj = None
+            current = (
+                last_proj if (last_proj and last_proj in projects) else projects[0]
+            )
+            st.session_state[_PROJECT_KEY] = current
+            st.session_state[_init_key] = True
+            # selectbox key 는 nonce 기반이라 직접 수정 X — index= 로 default 결정.
 
         # 현재 저장된 프로젝트가 옵션에 없으면 ALL(0) 로 fallback.
         default_idx = (

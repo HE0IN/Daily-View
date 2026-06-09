@@ -26,35 +26,50 @@ from core.workflow import (
 EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.assignee_request, Role.developer): {Status.assignee_reviewing},
     (Status.assignee_request, Role.reviewer): set(),
-    (Status.assignee_reviewing, Role.developer): {Status.assignee_reviewed},
+    (Status.assignee_reviewing, Role.developer): {
+        Status.assignee_reviewed,
+        Status.assignee_request,
+    },
     (Status.assignee_reviewing, Role.reviewer): set(),
     (Status.assignee_reviewed, Role.developer): {
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_request,
+        Status.assignee_reviewing,
     },
     (Status.assignee_reviewed, Role.reviewer): set(),
-    (Status.vendor_request, Role.developer): {Status.vendor_reply},
+    (Status.vendor_request, Role.developer): {
+        Status.vendor_reply,
+        Status.assignee_reviewed,
+    },
     (Status.vendor_request, Role.reviewer): set(),
     (Status.vendor_reply, Role.developer): {
         Status.author_request,
         Status.assignee_developing,
         Status.assignee_fixing,
+        Status.vendor_request,
     },
     (Status.vendor_reply, Role.reviewer): set(),
-    (Status.assignee_developing, Role.developer): {Status.author_request},
+    (Status.assignee_developing, Role.developer): {
+        Status.author_request,
+        Status.assignee_reviewed,
+    },
     (Status.assignee_developing, Role.reviewer): set(),
-    (Status.assignee_fixing, Role.developer): {Status.author_request},
+    (Status.assignee_fixing, Role.developer): {
+        Status.author_request,
+        Status.assignee_reviewed,
+    },
     (Status.assignee_fixing, Role.reviewer): set(),
     (Status.author_request, Role.reviewer): {Status.author_reviewing},
-    (Status.author_request, Role.developer): set(),
+    (Status.author_request, Role.developer): {Status.assignee_reviewed},
     (Status.author_reviewing, Role.reviewer): {
         Status.closed,
         Status.assignee_request,
+        Status.author_request,
     },
     (Status.author_reviewing, Role.developer): set(),
     (Status.closed, Role.developer): set(),
-    (Status.closed, Role.reviewer): set(),
+    (Status.closed, Role.reviewer): {Status.author_reviewing},
 }
 
 
@@ -75,10 +90,12 @@ def test_allowed_transitions_matches_spec(
     )
 
 
-def test_closed_is_terminal() -> None:
-    """완료(closed)는 어떤 역할도 다음으로 갈 수 없다 (terminal)."""
-    for role in Role:
-        assert allowed_transitions(Status.closed, role) == []
+def test_closed_can_reopen_to_review() -> None:
+    """완료(closed)는 등록자가 '등록자검토중'으로 되돌릴 수 있다 (재개발)."""
+    assert set(allowed_transitions(Status.closed, Role.reviewer)) == {
+        Status.author_reviewing
+    }
+    assert allowed_transitions(Status.closed, Role.developer) == []
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +131,14 @@ def test_closed_is_terminal() -> None:
         (Status.assignee_request, Role.developer, Status.assignee_reviewed, False),
         (Status.assignee_reviewing, Role.developer, Status.author_request, False),
         (Status.vendor_request, Role.developer, Status.author_request, False),
-        # --- terminal ---
+        # --- 되돌리기(직전 단계로) ---
+        (Status.assignee_reviewing, Role.developer, Status.assignee_request, True),
+        (Status.assignee_reviewed, Role.developer, Status.assignee_reviewing, True),
+        (Status.vendor_reply, Role.developer, Status.vendor_request, True),
+        (Status.author_reviewing, Role.reviewer, Status.author_request, True),
+        # --- 완료 → 등록자검토중 (재개발) ---
+        (Status.closed, Role.reviewer, Status.author_reviewing, True),
+        # --- terminal/위반 ---
         (Status.closed, Role.developer, Status.assignee_request, False),
         (Status.closed, Role.reviewer, Status.assignee_request, False),
     ],
@@ -209,4 +233,5 @@ def test_allowed_transitions_returns_independent_list() -> None:
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_request,
+        Status.assignee_reviewing,
     ], "내부 TRANSITIONS 가 외부 변형에 노출됨"

@@ -62,6 +62,9 @@ if item_id and not _qp_id:
     st.query_params["id"] = item_id
 # 한 번 사용한 session_state 슬롯은 정리 (다른 항목으로 이동 시 stale 방지).
 st.session_state.pop("_detail_item_id", None)
+# 3번: 목록 테이블뷰로 '뒤로' 돌아갈 때 이 항목이 selectbox 에 유지되도록 기억.
+if item_id:
+    st.session_state["_table_return_target"] = item_id
 
 if not item_id:
     st.warning("항목 ID가 지정되지 않았습니다. 요청 목록에서 항목을 선택해주세요.")
@@ -301,7 +304,18 @@ with meta_c0:
                 for _ns in allowed_transitions(issue.status, Role.reviewer):
                     _options.append((_ns, Role.reviewer))
             if not _options:
-                st.caption("이 항목의 등록자/담당자만 상태를 변경할 수 있습니다.")
+                # 2번: 이 단계를 '실제로' 바꿀 수 있는 역할+사람만 정확히 안내.
+                _who = []
+                if allowed_transitions(issue.status, Role.developer):
+                    _who.append(f"담당자({issue.assignee or '미지정'})")
+                if allowed_transitions(issue.status, Role.reviewer):
+                    _who.append(f"등록자({issue.author})")
+                if _who:
+                    st.caption(
+                        f"이 단계는 {' / '.join(_who)} 만 상태를 변경할 수 있습니다."
+                    )
+                else:
+                    st.caption("이 단계에서는 변경할 수 있는 상태가 없습니다.")
             else:
                 # 상태 변경 시 코멘트(사유) 필수
                 _chg_comment = st.text_area(
@@ -707,11 +721,60 @@ with body_col:
     else:
         st.caption("설명이 없습니다.")
 
-    # 코멘트 타임라인
-    st.markdown("### 타임라인")
+    # 10번: 진행 단계 — 이 항목이 거쳐온 상태들을 한 눈에 (배지 체인)
+    st.markdown("### 진행 단계")
+    _hist = issue.status_history
+    if _hist:
+        _chips = []
+        for _ev in _hist:
+            _sv = _ev.status.value if hasattr(_ev.status, "value") else str(_ev.status)
+            _chips.append(
+                f'<span style="display:inline-block;background:'
+                f'{STATUS_COLORS.get(_sv, "#9CA3AF")};color:#fff;padding:3px 10px;'
+                f'border-radius:6px;font-size:0.85em;margin:2px 0;white-space:nowrap;">'
+                f"{STATUS_LABELS.get(_sv, _sv)}</span>"
+            )
+        st.markdown(
+            '<div style="line-height:2.4;">'
+            + ' <span style="color:#9CA3AF;">→</span> '.join(_chips)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption("진행 단계 기록이 없습니다.")
 
+    # 8번: 코멘트 작성을 타임라인 위로 배치
+    st.markdown("### 코멘트 작성")
+    comment_nonce = st.session_state.setdefault(f"comment_nonce_{item_id}", 0)
+    with st.form(key=f"comment_form_{item_id}_{comment_nonce}", clear_on_submit=True):
+        body = st.text_area(
+            "내용 (마크다운 지원)",
+            height=120,
+            key=f"comment_body_{item_id}_{comment_nonce}",
+            placeholder="작성 후 [등록] 버튼을 눌러주세요.",
+        )
+        submit_comment = st.form_submit_button("등록", type="primary")
+        if submit_comment:
+            if not body or not body.strip():
+                st.error("코멘트 내용을 입력해주세요.")
+            else:
+                try:
+                    _cmt_role = Role.developer if is_assignee else Role.reviewer
+                    repository.add_comment(
+                        item_id, _user_name, _cmt_role, body.strip()
+                    )
+                    st.toast("코멘트가 등록되었습니다", icon="✅")
+                    st.session_state[f"comment_nonce_{item_id}"] = comment_nonce + 1
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"코멘트 등록 실패: {exc}")
+
+    # 코멘트 타임라인 — 8번: 최신 코멘트가 위로(역순), 오래된 코멘트는 아래로.
+    st.markdown("### 타임라인")
     comments: list[Comment] = repository.list_comments(item_id)
-    comments.sort(key=lambda c: c.at)
+    comments.sort(key=lambda c: c.at, reverse=True)
 
     if not comments:
         st.caption("아직 코멘트가 없습니다.")
@@ -762,35 +825,6 @@ with body_col:
                                 except Exception as exc:  # pragma: no cover
                                     st.error(f"삭제 실패: {exc}")
                     st.markdown(comment.body)
-
-    # 코멘트 입력
-    st.markdown("### 코멘트 작성")
-
-    comment_nonce = st.session_state.setdefault(f"comment_nonce_{item_id}", 0)
-    with st.form(key=f"comment_form_{item_id}_{comment_nonce}", clear_on_submit=True):
-        body = st.text_area(
-            "내용 (마크다운 지원)",
-            height=120,
-            key=f"comment_body_{item_id}_{comment_nonce}",
-            placeholder="작성 후 [등록] 버튼을 눌러주세요.",
-        )
-        submit_comment = st.form_submit_button("등록", type="primary")
-        if submit_comment:
-            if not body or not body.strip():
-                st.error("코멘트 내용을 입력해주세요.")
-            else:
-                try:
-                    _cmt_role = Role.developer if is_assignee else Role.reviewer
-                    repository.add_comment(
-                        item_id, _user_name, _cmt_role, body.strip()
-                    )
-                    st.toast("코멘트가 등록되었습니다", icon="✅")
-                    st.session_state[f"comment_nonce_{item_id}"] = comment_nonce + 1
-                    st.rerun()
-                except ValueError as exc:
-                    st.error(str(exc))
-                except Exception as exc:  # pragma: no cover
-                    st.error(f"코멘트 등록 실패: {exc}")
 
 
 # ---- 우측: 개발 (TO-BE) ----------------------------------------------------

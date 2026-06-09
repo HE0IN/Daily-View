@@ -68,12 +68,17 @@ assignee_set: set[str] = {
 assignee_options = ["(전체)", "(미할당)"] + sorted(assignee_set)
 
 # 기본 담당자 — 내가 담당했던 적이 있으면 내 항목을 기본 필터로.
+# 9번: 통계 '보기'(상태 preset)로 진입했으면 담당자를 (전체) 로 (내 이름 고정 방지).
+_from_preset = bool(
+    st.session_state.get("list_preset_status")
+    or st.session_state.get("list_preset_statuses")
+)
 default_assignee = "(전체)"
 # 대시보드 [내 큐 전체 보기] CTA 에서 넘긴 값이 있으면 우선.
 preset_assignee = st.session_state.pop("list_default_assignee", None)
 if preset_assignee and preset_assignee in assignee_options:
     default_assignee = preset_assignee
-elif name in assignee_set:
+elif name in assignee_set and not _from_preset:
     default_assignee = name
 
 # ---------------------------------------------------------------------------
@@ -95,6 +100,11 @@ if _preset_statuses:
     st.session_state["list_status"] = list(_preset_statuses)
     if "closed" in _preset_statuses:
         st.session_state["list_inc_closed"] = True
+
+# 9번: 통계 '보기' 로 진입하면 기존 담당자 선택을 제거 → 위의 default((전체))가
+# 적용되게 한다. (session_state 와 selectbox default 동시 지정 경고 방지)
+if _preset_status or _preset_statuses:
+    st.session_state.pop("list_assignee", None)
 
 # 정렬 preset (예: 정체 → 오래된순).
 _preset_sort = st.session_state.pop("list_preset_sort", None)
@@ -363,6 +373,10 @@ def _render_table_view(page_items_local: list[dict]) -> None:
     # 항목 열기 — selectbox + 버튼 (st.dataframe 자체는 클릭 셀 불가).
     open_col1, open_col2 = st.columns([4, 1])
     with open_col1:
+        # 3번: 상세보기 갔다 '뒤로' 로 돌아와도 직전에 고른 항목이 유지되도록 복원.
+        _ret = st.session_state.get("_table_return_target")
+        if _ret in [it.get("id") for it in page_items_local]:
+            st.session_state["list_table_open_target"] = _ret
         target_id = st.selectbox(
             "열어볼 항목",
             options=[item.get("id") for item in page_items_local],
