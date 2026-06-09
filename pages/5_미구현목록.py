@@ -40,41 +40,42 @@ st.caption(
 
 
 # ---------------------------------------------------------------------------
-# 등록 폼 — 제목 + 설명 + 캡쳐(붙여넣기/업로드)
+# 등록 폼 — 좌: 제목/설명(넓게) / 우: 캡쳐(작게)
 # ---------------------------------------------------------------------------
 
 nonce = int(st.session_state.setdefault("unimpl_nonce", 0))
 
 with st.expander("➕ 미구현 항목 추가", expanded=True):
-    u_title = st.text_input(
-        "제목 (안 되는 현상)",
-        key=f"unimpl_title_{nonce}",
-        placeholder="예: 기존 도면의 치수 자동표기가 새 프로그램에선 안 됨",
-    )
-    u_desc = st.text_area(
-        "설명 (상황/조건 메모)",
-        key=f"unimpl_desc_{nonce}",
-        height=80,
-    )
+    form_l, form_r = st.columns([2, 1])
 
-    ic1, ic2 = st.columns(2)
-    with ic1:
-        st.markdown("**파일에서**")
+    with form_l:
+        u_title = st.text_input(
+            "제목 (안 되는 현상)",
+            key=f"unimpl_title_{nonce}",
+            placeholder="예: 기존 도면의 치수 자동표기가 새 프로그램에선 안 됨",
+        )
+        u_desc = st.text_area(
+            "설명 (상황/조건 메모)",
+            key=f"unimpl_desc_{nonce}",
+            height=90,
+        )
+
+    with form_r:
+        st.markdown("**캡쳐 (선택)**")
         u_files = st.file_uploader(
-            "이미지",
+            "파일",
             type=["png", "jpg", "jpeg", "webp", "gif"],
             accept_multiple_files=True,
             key=f"unimpl_files_{nonce}",
             label_visibility="collapsed",
         )
-    with ic2:
-        st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
         try:
             u_paste = paste_clipboard(key=f"unimpl_paste_{nonce}")
         except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
             u_paste = None
-            st.caption(f"paste 컴포넌트 오류: {exc}")
+            st.caption(f"paste 오류: {exc}")
 
+    # 클립보드 누적 처리
     _lk = f"_unimpl_last_paste_{nonce}"
     _pk = f"_unimpl_paste_imgs_{nonce}"
     if u_paste and st.session_state.get(_lk) != u_paste:
@@ -91,28 +92,28 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
             )
 
     u_paste_imgs = list(st.session_state.get(_pk, []))
-    if u_paste_imgs:
-        if st.button(
-            f"클립보드 이미지 비우기 ({len(u_paste_imgs)}장)",
+    _prev = list(u_files or [])
+    _total = len(_prev) + len(u_paste_imgs)
+
+    if _total:
+        if u_paste_imgs and st.button(
+            f"클립보드 비우기 ({len(u_paste_imgs)}장)",
             key=f"unimpl_paste_clear_{nonce}",
         ):
             st.session_state.pop(_pk, None)
             st.session_state.pop(_lk, None)
             st.rerun()
-
-    # 미리보기
-    _prev = list(u_files or [])
-    _total = len(_prev) + len(u_paste_imgs)
-    if _total:
-        cols = st.columns(min(_total, 4))
+        # 작은 썸네일 미리보기 (최대 6열)
+        st.caption(f"첨부 예정 {_total}장")
+        pcols = st.columns(6)
         _i = 0
         for _k, _pi in enumerate(u_paste_imgs, start=1):
-            with cols[_i % len(cols)]:
-                st.image(_pi, caption=f"클립보드#{_k}", width="stretch")
+            with pcols[_i % 6]:
+                st.image(_pi, caption=f"#{_k}", width="stretch")
             _i += 1
         for _f in _prev:
-            with cols[_i % len(cols)]:
-                st.image(_f, caption=_f.name, width="stretch")
+            with pcols[_i % 6]:
+                st.image(_f, width="stretch")
             _i += 1
 
     if st.button("추가", type="primary", key=f"unimpl_add_{nonce}"):
@@ -156,7 +157,7 @@ st.divider()
 
 
 # ---------------------------------------------------------------------------
-# 목록 — 미구현 항목 (제목 + 이미지 수 + [열기] / [개발 요청])
+# 목록 — 4 열 카드 그리드 (개발목록처럼 아래로 늘어남)
 # ---------------------------------------------------------------------------
 
 items = repository.list_issues(
@@ -170,26 +171,28 @@ st.subheader(f"미구현 항목 ({len(items)})")
 if not items:
     st.caption("아직 미구현 항목이 없습니다. 위에서 추가하세요.")
 else:
-    for entry in items:
-        with st.container(border=True):
-            c1, c2, c3 = st.columns([6, 1, 1.2])
-            with c1:
-                st.markdown(f"**{entry.title}**")
-                _created = str(entry.created_at)[:16].replace("T", " ")
-                st.caption(f"📷 이미지 {entry.images_count}장 · {_created}")
-            with c2:
-                if st.button("열기", key=f"unimpl_open_{entry.id}", width="stretch"):
-                    st.session_state["_detail_item_id"] = entry.id
-                    st.session_state["_detail_origin"] = "pages/5_미구현목록.py"
-                    st.query_params["id"] = entry.id
-                    st.switch_page("pages/3_상세보기.py")
-            with c3:
-                if st.button(
-                    "개발 요청",
-                    key=f"unimpl_promote_{entry.id}",
-                    type="primary",
-                    width="stretch",
-                ):
-                    # 새요청등록에 승격 모드로 진입 (제목/설명/이미지는 그 항목에서 로드).
-                    st.session_state["promote_id"] = entry.id
-                    st.switch_page("pages/2_새요청등록.py")
+    COLS_PER_ROW = 4
+    for row_start in range(0, len(items), COLS_PER_ROW):
+        row = items[row_start : row_start + COLS_PER_ROW]
+        col_objs = st.columns(COLS_PER_ROW)
+        for col, entry in zip(col_objs, row):
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"**{entry.title}**")
+                    _created = str(entry.created_at)[:10]
+                    st.caption(f"📷 {entry.images_count}장 · {_created}")
+                    if st.button(
+                        "열기", key=f"unimpl_open_{entry.id}", width="stretch"
+                    ):
+                        st.session_state["_detail_item_id"] = entry.id
+                        st.session_state["_detail_origin"] = "pages/5_미구현목록.py"
+                        st.query_params["id"] = entry.id
+                        st.switch_page("pages/3_상세보기.py")
+                    if st.button(
+                        "개발 요청",
+                        key=f"unimpl_promote_{entry.id}",
+                        type="primary",
+                        width="stretch",
+                    ):
+                        st.session_state["promote_id"] = entry.id
+                        st.switch_page("pages/2_새요청등록.py")

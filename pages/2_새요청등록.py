@@ -163,7 +163,8 @@ def _resolve_category(level_key: str, options: list[str]) -> str | None:
 # 좌우 분할 — 좌측: 이미지 / 우측: 카테고리 + 폼
 # ---------------------------------------------------------------------------
 
-left, right = st.columns([1, 1], gap="large")
+# 이미지(좌, 작게) | 폼(중, 좁게) | 여백(우) — 입력 영역이 가로로 너무 넓지 않게.
+left, right, _pad = st.columns([1, 1.5, 1.2], gap="large")
 
 
 # ---------------------------------------------------------------------------
@@ -172,36 +173,25 @@ left, right = st.columns([1, 1], gap="large")
 
 with left:
     st.markdown("##### 스크린샷")
-    st.caption(
-        f"파일 업로드(다중 가능) 또는 클립보드 붙여넣기. "
-        f"항목당 최대 {MAX_IMAGES_PER_ITEM}장, 1장당 {MAX_FILE_MB}MB 이내. "
-        f"허용 확장자: {', '.join(sorted(ALLOWED_EXT))}"
+    st.caption(f"최대 {MAX_IMAGES_PER_ITEM}장 · 1장 {MAX_FILE_MB}MB")
+
+    # 영역이 좁으므로 파일/클립보드를 세로로 배치.
+    st.markdown("**파일에서**")
+    uploaded_files = st.file_uploader(
+        "이미지 업로드",
+        type=["png", "jpg", "jpeg", "webp", "gif"],
+        accept_multiple_files=True,
+        key=f"new_files_{nonce}",
+        label_visibility="collapsed",
     )
 
-    img_col1, img_col2 = st.columns([1, 1])
-
-    # 파일 업로드
-    with img_col1:
-        st.markdown("**파일에서**")
-        uploaded_files = st.file_uploader(
-            "이미지 업로드",
-            type=["png", "jpg", "jpeg", "webp", "gif"],
-            accept_multiple_files=True,
-            key=f"new_files_{nonce}",
-            label_visibility="collapsed",
-        )
-
-    # 클립보드 붙여넣기 — 정식 declare_component (HTTP+IP 환경 단일 클릭 동작).
-    # paste 이벤트 사용 → Secure Context 무관. iframe ↔ Python 양방향 통신을
-    # 통해 paste 결과 (base64 dataURL) 를 직접 받음. 새 paste 가 들어올 때마다
-    # *누적 리스트* 에 추가 → 사용자가 여러 장 paste 가능.
-    with img_col2:
-        st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
-        try:
-            paste_data_url = paste_clipboard(key=f"new_paste_v2_{nonce}")
-        except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
-            paste_data_url = None
-            st.caption(f"paste 컴포넌트 오류: {exc}")
+    # 클립보드 붙여넣기 — HTTP+IP 환경에서도 단일 클릭 동작. 여러 번 누적 가능.
+    st.markdown("**클립보드 (Ctrl+V)**")
+    try:
+        paste_data_url = paste_clipboard(key=f"new_paste_v2_{nonce}")
+    except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
+        paste_data_url = None
+        st.caption(f"paste 컴포넌트 오류: {exc}")
 
     # 누적 리스트 키
     _last_pasted_key = f"_last_pasted_v2_{nonce}"
