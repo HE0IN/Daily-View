@@ -337,27 +337,38 @@ def _render_card_view(items_local: list[dict]) -> None:
 
 
 def _render_table_view(page_items_local: list[dict]) -> None:
-    """st.dataframe 으로 테이블 표시 + 항목 선택 → 상세보기 이동."""
+    """st.dataframe 표시 — 행을 클릭하면 그 항목 상세보기로 바로 이동.
+
+    열 순서: 카테고리(대>중>소) · 제목 · 비고(설명) · 상태 · 담당자 · 등록.
+    ID 열은 숨기고, 행 선택 위치(index)로 page_items_local 의 항목을 매핑한다.
+    긴급도는 행 배경색용으로만 두고(열 숨김) 표에는 노출하지 않는다.
+    """
     rows = []
     for item in page_items_local:
         urgency = item.get("urgency", "normal")
         urgency_label = URGENCY_LABELS.get(urgency, urgency)
         status_label = STATUS_LABELS.get(item.get("status", ""), "")
         desc_preview = (item.get("description_preview") or "")[:80]
+        _cats = [
+            item.get("category_l1"),
+            item.get("category_l2"),
+            item.get("category_l3"),
+        ]
+        cat_path = " > ".join(c for c in _cats if c) or "(미분류)"
         rows.append({
-            "긴급도": urgency_label,
+            "카테고리": cat_path,
             "제목": item.get("title", ""),
-            "담당자": item.get("assignee") or "(미배정)",
-            "상태": status_label,
             "비고": desc_preview,
+            "상태": status_label,
+            "담당자": item.get("assignee") or "(미배정)",
             "등록": components.humanize_dt(item.get("created_at", "")),
-            "ID": item.get("id", ""),
+            "_긴급도": urgency_label,  # 배경색 전용 — column_order 로 숨김
         })
     df = pd.DataFrame(rows)
 
     # 긴급도별 row 배경색 (Styler.apply 로 행 단위 적용).
     def _row_style(row: pd.Series) -> list[str]:
-        urg_label = row.get("긴급도", "")
+        urg_label = row.get("_긴급도", "")
         bg = ""
         if urg_label == "긴급":
             bg = "background-color: #FEE2E2;"  # 빨강 옅음
@@ -368,30 +379,29 @@ def _render_table_view(page_items_local: list[dict]) -> None:
         return [bg] * len(row)
 
     styler = df.style.apply(_row_style, axis=1)
-    st.dataframe(styler, width="stretch", hide_index=True)
 
-    # 항목 열기 — selectbox + 버튼 (st.dataframe 자체는 클릭 셀 불가).
-    open_col1, open_col2 = st.columns([4, 1])
-    with open_col1:
-        # 3번: 상세보기 갔다 '뒤로' 로 돌아와도 직전에 고른 항목이 유지되도록 복원.
-        _ret = st.session_state.get("_table_return_target")
-        if _ret in [it.get("id") for it in page_items_local]:
-            st.session_state["list_table_open_target"] = _ret
-        target_id = st.selectbox(
-            "열어볼 항목",
-            options=[item.get("id") for item in page_items_local],
-            format_func=lambda i: next(
-                (it.get("title", i) for it in page_items_local if it.get("id") == i),
-                i,
-            ),
-            key="list_table_open_target",
-        )
-    with open_col2:
-        st.markdown("&nbsp;", unsafe_allow_html=True)  # 라벨 높이 맞추기
-        if st.button("상세보기", key="list_table_open_btn", width="stretch"):
-            st.session_state["_detail_item_id"] = target_id
+    st.caption("행을 클릭하면 상세보기로 이동합니다.")
+    event = st.dataframe(
+        styler,
+        width="stretch",
+        hide_index=True,
+        column_order=["카테고리", "제목", "비고", "상태", "담당자", "등록"],
+        on_select="rerun",
+        selection_mode="single-row",
+        key="list_table_df",
+    )
+
+    # 행 선택 → 그 항목 상세보기로 즉시 이동.
+    _sel = getattr(event, "selection", None)
+    _rows_sel = (_sel.get("rows") if isinstance(_sel, dict) else getattr(_sel, "rows", None)) or []
+    if _rows_sel:
+        _idx = int(_rows_sel[0])
+        if 0 <= _idx < len(page_items_local):
+            _id = page_items_local[_idx].get("id")
+            st.session_state["_detail_item_id"] = _id
             st.session_state["_detail_origin"] = "pages/1_요청목록.py"
-            st.query_params["id"] = target_id
+            st.session_state["_table_return_target"] = _id
+            st.query_params["id"] = _id
             st.switch_page("pages/3_상세보기.py")
 
 
