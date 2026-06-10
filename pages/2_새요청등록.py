@@ -186,9 +186,12 @@ with left:
     )
 
     # 클립보드 붙여넣기 — HTTP+IP 환경에서도 단일 클릭 동작. 여러 번 누적 가능.
+    # paste 컴포넌트 전용 sub-nonce: '비우기' 시 증가시켜 컴포넌트를 리셋한다.
+    # (리셋하지 않으면 비운 직후 리렌더에서 같은 dataURL 이 재반환되어 다시 추가됨)
     st.markdown("**클립보드 (Ctrl+V)**")
+    _paste_sub = int(st.session_state.setdefault(f"_paste_sub_{nonce}", 0))
     try:
-        paste_data_url = paste_clipboard(key=f"new_paste_v2_{nonce}")
+        paste_data_url = paste_clipboard(key=f"new_paste_v2_{nonce}_{_paste_sub}")
     except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
         paste_data_url = None
         st.caption(f"paste 컴포넌트 오류: {exc}")
@@ -226,6 +229,8 @@ with left:
         ):
             st.session_state.pop(_pasted_list_key, None)
             st.session_state.pop(_last_pasted_key, None)
+            # 컴포넌트 리셋 — 같은 dataURL 재반환으로 인한 재추가 방지.
+            st.session_state[f"_paste_sub_{nonce}"] = _paste_sub + 1
             st.rerun()
 
     # 미리보기

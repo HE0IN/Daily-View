@@ -69,8 +69,11 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
             key=f"unimpl_files_{nonce}",
             label_visibility="collapsed",
         )
+        # paste 컴포넌트 sub-nonce — '비우기' 시 증가시켜 컴포넌트를 리셋(같은
+        # dataURL 재반환으로 인한 재추가 방지).
+        _paste_sub = int(st.session_state.setdefault(f"_unimpl_paste_sub_{nonce}", 0))
         try:
-            u_paste = paste_clipboard(key=f"unimpl_paste_{nonce}")
+            u_paste = paste_clipboard(key=f"unimpl_paste_{nonce}_{_paste_sub}")
         except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
             u_paste = None
             st.caption(f"paste 오류: {exc}")
@@ -102,6 +105,8 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
         ):
             st.session_state.pop(_pk, None)
             st.session_state.pop(_lk, None)
+            # 컴포넌트 리셋 — 같은 dataURL 재반환으로 인한 재추가 방지.
+            st.session_state[f"_unimpl_paste_sub_{nonce}"] = _paste_sub + 1
             st.rerun()
         # 작은 썸네일 미리보기 (최대 6열)
         st.caption(f"첨부 예정 {_total}장")
