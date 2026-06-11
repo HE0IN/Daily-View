@@ -54,23 +54,21 @@ else:
         for col, entry in zip(col_objs, row):
             with col:
                 _item = entry.model_dump(mode="json")
-                if components.render_card(_item, key_prefix=f"cr_{row_start}"):
+                # 2번: [개발 요청]/[확인목록으로] 버튼을 카드 안으로.
+                _res = components.render_card(
+                    _item,
+                    key_prefix=f"cr_{row_start}",
+                    extra_buttons=[("개발 요청", "dev"), ("확인목록으로", "crit")],
+                )
+                if _res["open"]:
                     st.session_state["_detail_item_id"] = entry.id
                     st.session_state["_detail_origin"] = "pages/6_확인요청목록.py"
                     st.query_params["id"] = entry.id
                     st.switch_page("pages/3_상세보기.py")
-                # 두 갈래 — 개발 요청(개발목록) / 확인목록으로 이동.
-                if st.button(
-                    "개발 요청",
-                    key=f"cr_dev_{entry.id}",
-                    type="primary",
-                    width="stretch",
-                ):
+                if _res["actions"].get("dev"):
                     st.session_state["promote_id"] = entry.id
                     st.switch_page("pages/2_새요청등록.py")
-                if st.button(
-                    "확인목록으로", key=f"cr_crit_{entry.id}", width="stretch"
-                ):
+                if _res["actions"].get("crit"):
                     try:
                         repository.promote_to_criteria(entry.id, name)
                         st.toast("확인목록으로 이동했습니다", icon="✅")

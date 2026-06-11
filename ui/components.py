@@ -93,10 +93,24 @@ def _placeholder_html(text: str = "썸네일 없음") -> str:
     )
 
 
-def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
-    """요청목록 카드 렌더 (컴팩트). 클릭 시 True 반환.
+def render_card(
+    item: dict[str, Any],
+    *,
+    key_prefix: str = "card",
+    extra_buttons: list[tuple[str, str]] | None = None,
+    checkbox: tuple[str, str] | None = None,
+) -> bool | dict:
+    """요청목록 카드 렌더 (컴팩트).
 
     item은 IndexEntry 직렬화 dict. 누락 키는 안전 기본값 사용.
+
+    옵션:
+      - extra_buttons: [(라벨, 액션키), ...] — '열기' 아래 카드 안에 버튼 추가.
+      - checkbox: (라벨, 위젯키) — '열기' 옆에 선택 체크박스 추가.
+
+    반환:
+      - 옵션이 없으면 bool ('열기' 클릭 여부, 기존 호환).
+      - 옵션이 있으면 dict: {"open": bool, "checked": bool, "actions": {액션키: bool}}.
 
     레이아웃 (A 패턴): 좌측 작은 썸네일 (1) + 우측 정보 (2) 가로 분할.
     컴팩트 유지: 폰트/패딩 축소, 한 줄에 등록·담당·상태 모두 표시.
@@ -222,13 +236,42 @@ def render_card(item: dict[str, Any], *, key_prefix: str = "card") -> bool:
                     unsafe_allow_html=True,
                 )
 
-        # 버튼은 카드 폭 전체에
-        clicked = st.button(
-            "열기",
-            key=f"{key_prefix}_{item_id}_detail",
-            width="stretch",
-        )
-    return clicked
+        # (3번) 선택 체크박스 — 있으면 '열기' 옆에 함께 배치.
+        _checked = False
+        if checkbox is not None:
+            _cb_label, _cb_key = checkbox
+            _cbc, _opc = st.columns([1, 3])
+            with _cbc:
+                _checked = st.checkbox(
+                    _cb_label, key=_cb_key, label_visibility="collapsed"
+                )
+            with _opc:
+                clicked = st.button(
+                    "열기",
+                    key=f"{key_prefix}_{item_id}_detail",
+                    width="stretch",
+                )
+        else:
+            # 버튼은 카드 폭 전체에
+            clicked = st.button(
+                "열기",
+                key=f"{key_prefix}_{item_id}_detail",
+                width="stretch",
+            )
+
+        # (2번) 추가 버튼 — 카드 안, '열기' 아래.
+        _actions: dict[str, bool] = {}
+        if extra_buttons:
+            for _lbl, _akey in extra_buttons:
+                _actions[_akey] = st.button(
+                    _lbl,
+                    key=f"{key_prefix}_{item_id}_{_akey}",
+                    width="stretch",
+                )
+
+    if extra_buttons is None and checkbox is None:
+        return clicked
+    return {"open": clicked, "checked": _checked, "actions": _actions}
 
 
 # ---------------------------------------------------------------------------

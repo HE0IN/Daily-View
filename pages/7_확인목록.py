@@ -51,8 +51,21 @@ else:
         for col, entry in zip(col_objs, row):
             with col:
                 _item = entry.model_dump(mode="json")
-                if components.render_card(_item, key_prefix=f"crit_{row_start}"):
+                # 1번: 확인목록 → 확인요청목록 되돌리기 버튼을 카드 안에.
+                _res = components.render_card(
+                    _item,
+                    key_prefix=f"crit_{row_start}",
+                    extra_buttons=[("확인요청목록으로", "revert")],
+                )
+                if _res["open"]:
                     st.session_state["_detail_item_id"] = entry.id
                     st.session_state["_detail_origin"] = "pages/7_확인목록.py"
                     st.query_params["id"] = entry.id
                     st.switch_page("pages/3_상세보기.py")
+                if _res["actions"].get("revert"):
+                    try:
+                        repository.revert_criteria_to_request(entry.id, name)
+                        st.toast("확인요청목록으로 되돌렸습니다", icon="↩️")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"되돌리기 실패: {exc}")
