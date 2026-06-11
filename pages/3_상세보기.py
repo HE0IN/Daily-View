@@ -692,7 +692,15 @@ def _render_uploader_for_kind(kind: str) -> None:
     nonce_key = f"upload_nonce_{kind}_{item_id}"
     upload_nonce = st.session_state.setdefault(nonce_key, 0)
     label = "요청(AS-IS)" if kind == "request" else "개발(TO-BE)"
-    with st.expander(f"{label} 사진 추가 (남은 슬롯 {remaining})", expanded=False):
+    # 5번: expander 제거 — AS-IS/TO-BE 영역 바로 아래에 항상 표시.
+    st.markdown(f"**{label} 사진 추가** · 남은 슬롯 {remaining}")
+    # 파일 업로더 dropzone 을 클립보드(height=160)와 비슷한 높이로 (상세보기 한정).
+    st.markdown(
+        "<style>[data-testid='stFileUploaderDropzone']"
+        "{min-height:120px !important;}</style>",
+        unsafe_allow_html=True,
+    )
+    with st.container(border=True):
         if remaining <= 0:
             st.warning(f"이미지 한도({MAX_IMAGES_PER_ITEM}장)에 도달했습니다.")
             return

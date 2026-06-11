@@ -67,6 +67,9 @@ assignee_set: set[str] = {
     e.assignee for e in all_entries_for_options if e.assignee
 }
 assignee_options = ["(전체)", "(미할당)"] + sorted(assignee_set)
+# 1번: 등록자(author) 필터 옵션도 같은 방식으로 추출.
+author_set: set[str] = {e.author for e in all_entries_for_options if e.author}
+author_options = ["(전체)"] + sorted(author_set)
 
 # 1번: 담당자 기본값은 무조건 '(전체)' — 자기 이름이 자동 선택되지 않게 한다.
 default_assignee = "(전체)"
@@ -119,8 +122,8 @@ if (
 ):
     st.session_state["list_category_l1"] = "(전체)"
 
-# 9번: 필터 셀렉트박스를 모두 한 줄에 (긴급도/상태/담당자/검색/정렬/카테고리).
-f1, f2, f3, f4, f5, f6 = st.columns([1, 1.8, 1.3, 1.8, 1.2, 1.5])
+# 9번: 필터 셀렉트박스를 한 줄에 (긴급도/상태/담당자/등록자/검색/정렬/카테고리).
+f1, f2, f3, f3b, f4, f5, f6 = st.columns([1, 1.6, 1.1, 1.1, 1.5, 1, 1.3])
 
 with f1:
     urgency_choice = st.selectbox(
@@ -132,7 +135,7 @@ with f1:
 with f2:
     status_choice: list[str] = st.multiselect(
         "상태 (다중)",
-        options=[s.value for s in Status],
+        options=[s.value for s in Status if s != Status.pending_check],
         format_func=lambda v: STATUS_LABELS.get(v, v),
         key="list_status",
         help="비어 있으면 전체",
@@ -145,6 +148,12 @@ with f3:
         if default_assignee in assignee_options
         else 0,
         key="list_assignee",
+    )
+with f3b:
+    author_choice = st.selectbox(
+        "등록자",
+        options=author_options,
+        key="list_author",
     )
 with f4:
     search_query = st.text_input(
@@ -245,6 +254,9 @@ def _fetch_entries() -> list[dict]:
         entries = [
             e for e in entries if (e.category_l1 or "") == category_l1_choice
         ]
+    # 1번: 등록자(author) 필터 — list_issues 가 author 인자를 받지 않아 후처리.
+    if author_choice and author_choice != "(전체)":
+        entries = [e for e in entries if e.author == author_choice]
 
     items = [e.model_dump(mode="json") for e in entries]
 
@@ -267,11 +279,12 @@ def _fetch_entries() -> list[dict]:
             "assignee_reviewed": 2,
             "assignee_developing": 3,
             "assignee_fixing": 4,
-            "vendor_request": 5,
-            "vendor_reply": 6,
-            "author_request": 7,
-            "author_reviewing": 8,
-            "closed": 9,
+            "vendor_wait": 5,
+            "vendor_request": 6,
+            "vendor_reply": 7,
+            "author_request": 8,
+            "author_reviewing": 9,
+            "closed": 10,
         }
         items.sort(
             key=lambda d: (

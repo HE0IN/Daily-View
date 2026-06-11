@@ -123,9 +123,11 @@ _grid(assignee_items, key_prefix="dash_assignee")
 st.divider()
 
 # 3) 개발사
-vendor_items = _by_status([Status.vendor_request, Status.vendor_reply])
+vendor_items = _by_status(
+    [Status.vendor_wait, Status.vendor_request, Status.vendor_reply]
+)
 st.subheader(f"개발사 ({len(vendor_items)})")
-st.caption("개발사확인중 · 개발사회신확인중")
+st.caption("개발사요청대기 · 개발사확인중 · 개발사회신확인중")
 _grid(vendor_items, key_prefix="dash_vendor")
 
 st.divider()
@@ -166,6 +168,7 @@ STATUS_NAV_KEYS = [
     "assignee_reviewed",
     "assignee_developing",
     "assignee_fixing",
+    "vendor_wait",
     "vendor_request",
     "vendor_reply",
     "author_request",
