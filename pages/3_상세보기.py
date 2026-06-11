@@ -726,7 +726,7 @@ def _render_uploader_for_kind(kind: str) -> None:
     # 파일 업로더 dropzone 을 클립보드(height=160)와 비슷한 높이로 (상세보기 한정).
     st.markdown(
         "<style>[data-testid='stFileUploaderDropzone']"
-        "{min-height:120px !important;}</style>",
+        "{min-height:80px !important;}</style>",
         unsafe_allow_html=True,
     )
     with st.container(border=True):
@@ -773,7 +773,7 @@ def _render_uploader_for_kind(kind: str) -> None:
             try:
                 paste_data_url = paste_clipboard(
                     key=f"detail_paste_{kind}_{item_id}_{upload_nonce}",
-                    height=160,
+                    height=80,
                 )
             except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
                 paste_data_url = None
