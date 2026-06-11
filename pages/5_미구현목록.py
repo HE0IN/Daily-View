@@ -74,7 +74,9 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
         # dataURL 재반환으로 인한 재추가 방지).
         _paste_sub = int(st.session_state.setdefault(f"_unimpl_paste_sub_{nonce}", 0))
         try:
-            u_paste = paste_clipboard(key=f"unimpl_paste_{nonce}_{_paste_sub}")
+            u_paste = paste_clipboard(
+                key=f"unimpl_paste_{nonce}_{_paste_sub}", height=160
+            )
         except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
             u_paste = None
             st.caption(f"paste 오류: {exc}")

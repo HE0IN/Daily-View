@@ -72,7 +72,12 @@
 
       function refreshHeight() {
         // 약간의 여유를 더해 스크롤바를 피한다.
-        setFrameHeight(document.body.scrollHeight + 20);
+        // height 인자가 있으면 그 값을 '최소 높이'로 보장한다 — expander/2열 컬럼
+        // 안에서 iframe 높이가 비동기로 반영돼 잘리는 문제를 방지.
+        var contentH = document.body.scrollHeight + 20;
+        var minH = (componentArgs.height && componentArgs.height > 0)
+          ? componentArgs.height : 0;
+        setFrameHeight(Math.max(contentH, minH));
       }
 
       // contenteditable 이지만 텍스트 입력은 막고 paste 만 허용 (UX)

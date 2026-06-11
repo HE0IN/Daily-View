@@ -192,7 +192,8 @@ with left:
         _paste_sub = int(st.session_state.setdefault(f"_paste_sub_{nonce}", 0))
         try:
             paste_data_url = paste_clipboard(
-                key=f"new_paste_v2_{nonce}_{_paste_sub}"
+                key=f"new_paste_v2_{nonce}_{_paste_sub}",
+                height=160,
             )
         except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
             paste_data_url = None

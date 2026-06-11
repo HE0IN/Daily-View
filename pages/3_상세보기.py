@@ -723,7 +723,8 @@ def _render_uploader_for_kind(kind: str) -> None:
             st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
             try:
                 paste_data_url = paste_clipboard(
-                    key=f"detail_paste_{kind}_{item_id}_{upload_nonce}"
+                    key=f"detail_paste_{kind}_{item_id}_{upload_nonce}",
+                    height=160,
                 )
             except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
                 paste_data_url = None
