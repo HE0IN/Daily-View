@@ -190,7 +190,7 @@ st.markdown(
 pg = st.navigation(
     {
         " ": [_dashboard],
-        "  ": [_confirm_req, _new, _confirm_list],
+        "  ": [_confirm_req, _confirm_list, _new],
         "   ": [_list, _stats, _detail, _criteria],
     }
 )

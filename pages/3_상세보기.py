@@ -373,8 +373,9 @@ with meta_c1:
         sub_l, sub_r = st.columns([3, 1])
     with sub_l:
         st.markdown(
-            f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
-            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            f'<div style="font-size:0.9em;color:#374151;line-height:1.9;'
+            f'min-height:34px;white-space:nowrap;overflow:hidden;'
+            f'text-overflow:ellipsis;">'
             f"등록: <b>{safe_author}</b> ({_role_label(issue.author_role)}) · "
             f'<span title="{html.escape(created_abs)}">{created_human}</span> · '
             f"담당: <b>{safe_assignee}</b></div>",

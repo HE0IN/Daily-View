@@ -12,6 +12,7 @@ from __future__ import annotations
 import streamlit as st
 
 from core import repository
+from ui import components
 
 user = st.session_state.get("user")
 if not user:
@@ -44,42 +45,35 @@ st.subheader(f"확인요청 ({len(items)})")
 if not items:
     st.caption("확인요청 항목이 없습니다. '확인 요청' 메뉴에서 등록하세요.")
 else:
+    # 4번: 개발목록처럼 썸네일 카드(render_card)로 — 높이 통일 + 이미지 표시.
+    components.render_card_grid_css()
     COLS_PER_ROW = 4
     for row_start in range(0, len(items), COLS_PER_ROW):
         row = items[row_start : row_start + COLS_PER_ROW]
         col_objs = st.columns(COLS_PER_ROW)
         for col, entry in zip(col_objs, row):
             with col:
-                with st.container(border=True):
-                    st.markdown(f"**{entry.title}**")
-                    if entry.description_preview:
-                        st.caption(entry.description_preview[:100])
-                    _created = str(entry.created_at)[:10]
-                    st.caption(
-                        f"👤 {entry.author} · 📷 {entry.images_count}장 · {_created}"
-                    )
-                    if st.button(
-                        "열기", key=f"cr_open_{entry.id}", width="stretch"
-                    ):
-                        st.session_state["_detail_item_id"] = entry.id
-                        st.session_state["_detail_origin"] = "pages/6_확인요청목록.py"
-                        st.query_params["id"] = entry.id
-                        st.switch_page("pages/3_상세보기.py")
-                    if st.button(
-                        "개발 요청",
-                        key=f"cr_dev_{entry.id}",
-                        type="primary",
-                        width="stretch",
-                    ):
-                        # 새요청등록으로 승격 (제목/설명 prefill + 등록 시 kind=dev).
-                        st.session_state["promote_id"] = entry.id
-                        st.switch_page("pages/2_새요청등록.py")
-                    if st.button(
-                        "확인목록으로", key=f"cr_crit_{entry.id}", width="stretch"
-                    ):
-                        try:
-                            repository.promote_to_criteria(entry.id, name)
-                            st.toast("확인목록으로 이동했습니다", icon="✅")
-                            st.rerun()
-                        except Exception as exc:  # noqa: BLE001
-                            st.error(f"이동 실패: {exc}")
+                _item = entry.model_dump(mode="json")
+                if components.render_card(_item, key_prefix=f"cr_{row_start}"):
+                    st.session_state["_detail_item_id"] = entry.id
+                    st.session_state["_detail_origin"] = "pages/6_확인요청목록.py"
+                    st.query_params["id"] = entry.id
+                    st.switch_page("pages/3_상세보기.py")
+                # 두 갈래 — 개발 요청(개발목록) / 확인목록으로 이동.
+                if st.button(
+                    "개발 요청",
+                    key=f"cr_dev_{entry.id}",
+                    type="primary",
+                    width="stretch",
+                ):
+                    st.session_state["promote_id"] = entry.id
+                    st.switch_page("pages/2_새요청등록.py")
+                if st.button(
+                    "확인목록으로", key=f"cr_crit_{entry.id}", width="stretch"
+                ):
+                    try:
+                        repository.promote_to_criteria(entry.id, name)
+                        st.toast("확인목록으로 이동했습니다", icon="✅")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"이동 실패: {exc}")
