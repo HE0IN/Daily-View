@@ -181,9 +181,14 @@ for issue in issues:
     if closed_at.astimezone(KST).date() >= WEEK_START:
         weekly_closed_count += 1
 
-# 진행 중 / 대기 중
-in_progress_count = int(df["status"].isin(IN_PROGRESS_STATUSES).sum())
-requested_count = int((df["status"] == Status.assignee_request.value).sum())
+# 진행 중 / 대기 중 — 상태별 현황과 동일하게 '삭제(archived) 제외' 기준으로 집계.
+_not_archived = ~df["archived"].fillna(False)
+in_progress_count = int(
+    (df["status"].isin(IN_PROGRESS_STATUSES) & _not_archived).sum()
+)
+requested_count = int(
+    ((df["status"] == Status.assignee_request.value) & _not_archived).sum()
+)
 
 # 정체 — 활성 항목 중 마지막 갱신이 STALE_DAYS 일 이상 경과
 _stale_threshold: datetime = NOW - timedelta(days=STALE_DAYS)

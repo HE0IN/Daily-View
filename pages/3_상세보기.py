@@ -778,12 +778,13 @@ with asis_col:
         f'font-weight:700;color:#1E3A8A;">요청 (AS-IS) · {len(_req_imgs)}</div>',
         unsafe_allow_html=True,
     )
+    # 2번: 사진 추가를 이미지보다 위(요청 헤더 바로 아래)에 배치.
+    _render_uploader_for_kind("request")
     if _req_imgs:
         for _idx, _ref in _req_imgs:
             _render_image(_idx, _ref)
     else:
         st.caption("요청(현황) 사진이 없습니다.")
-    _render_uploader_for_kind("request")
 
 
 # ---- 가운데: 설명 + 타임라인 + 코멘트 작성 ---------------------------------
@@ -931,7 +932,12 @@ with body_col:
                                     st.rerun()
                                 except Exception as exc:  # pragma: no cover
                                     st.error(f"삭제 실패: {exc}")
-                    st.markdown(comment.body)
+                    # 3번: 줄바꿈(\n)을 그대로 보여준다 (markdown 은 줄바꿈 무시).
+                    st.markdown(
+                        f'<div style="white-space:pre-wrap;font-size:0.92em;'
+                        f'line-height:1.5;">{html.escape(comment.body)}</div>',
+                        unsafe_allow_html=True,
+                    )
                     if getattr(comment, "edited", False):
                         st.caption("✏ 수정됨")
 
@@ -944,12 +950,13 @@ with tobe_col:
         f'font-weight:700;color:#065F46;">개발 (TO-BE) · {len(_dev_imgs)}</div>',
         unsafe_allow_html=True,
     )
+    # 2번: 사진 추가를 이미지보다 위(개발 헤더 바로 아래)에 배치.
+    _render_uploader_for_kind("dev")
     if _dev_imgs:
         for _idx, _ref in _dev_imgs:
             _render_image(_idx, _ref)
     else:
         st.caption("개발(결과) 사진이 없습니다.")
-    _render_uploader_for_kind("dev")
 
 
 # (삭제(보관)은 상단 우측 [🗑 삭제] popover 로 이동됨)
