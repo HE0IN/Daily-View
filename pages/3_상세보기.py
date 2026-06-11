@@ -736,9 +736,8 @@ def _render_uploader_for_kind(kind: str) -> None:
     nonce_key = f"upload_nonce_{kind}_{item_id}"
     upload_nonce = st.session_state.setdefault(nonce_key, 0)
     label = "요청(AS-IS)" if kind == "request" else "개발(TO-BE)"
-    # 5번: expander 제거 — AS-IS/TO-BE 영역 바로 아래에 항상 표시.
-    st.markdown(f"**{label} 사진 추가** · 남은 슬롯 {remaining}")
-    # 파일 업로더 dropzone 을 클립보드(height=160)와 비슷한 높이로 (상세보기 한정).
+    # 5번 expander 제거 + 1번: 사진추가 헤더는 AS-IS/TO-BE 제목줄에 합침(여기선 생략).
+    # 파일 업로더 dropzone 을 클립보드와 비슷한 높이로 (상세보기 한정).
     st.markdown(
         "<style>[data-testid='stFileUploaderDropzone']"
         "{min-height:80px !important;}</style>",
@@ -812,14 +811,26 @@ def _render_uploader_for_kind(kind: str) -> None:
                     st.error(f"붙여넣기 저장 실패: {exc}")
 
 
-asis_col, body_col, tobe_col = st.columns([1, 1.6, 1], gap="medium")
+# 2번: 요청 / 설명 / 개발 3열 사이에 세로 디바이더(얇은 열 + 세로선).
+asis_col, _dvA, body_col, _dvB, tobe_col = st.columns(
+    [1, 0.04, 1.55, 0.04, 1], gap="small"
+)
+for _dv in (_dvA, _dvB):
+    with _dv:
+        st.markdown(
+            '<div style="border-left:1px solid #D1D5DB;min-height:640px;'
+            'width:0;margin:0 auto;"></div>',
+            unsafe_allow_html=True,
+        )
 
 # ---- 좌측: 요청 (AS-IS) ----------------------------------------------------
 with asis_col:
     _req_imgs = _images_of_kind(want_dev=False)
     st.markdown(
         f'<div style="margin-bottom:6px;padding:4px 10px;border-left:4px solid #3B82F6;'
-        f'font-weight:700;color:#1E3A8A;">요청 (AS-IS) · {len(_req_imgs)}</div>',
+        f'font-weight:700;color:#1E3A8A;">요청 (AS-IS) · {len(_req_imgs)}장'
+        f'<span style="font-weight:400;font-size:0.8em;color:#6B7280;">'
+        f" · 사진 추가 (남은 {MAX_IMAGES_PER_ITEM - len(issue.images)})</span></div>",
         unsafe_allow_html=True,
     )
     # 2번: 사진 추가를 이미지보다 위(요청 헤더 바로 아래)에 배치.
@@ -850,28 +861,6 @@ with body_col:
             st.markdown(issue.description)
     else:
         st.caption("설명이 없습니다.")
-
-    # 10번: 진행 단계 — 이 항목이 거쳐온 상태들을 한 눈에 (배지 체인)
-    st.markdown("### 진행 단계")
-    _hist = issue.status_history
-    if _hist:
-        _chips = []
-        for _ev in _hist:
-            _sv = _ev.status.value if hasattr(_ev.status, "value") else str(_ev.status)
-            _chips.append(
-                f'<span style="display:inline-block;background:'
-                f'{STATUS_COLORS.get(_sv, "#9CA3AF")};color:#fff;padding:3px 10px;'
-                f'border-radius:6px;font-size:0.85em;margin:2px 0;white-space:nowrap;">'
-                f"{STATUS_LABELS.get(_sv, _sv)}</span>"
-            )
-        st.markdown(
-            '<div style="line-height:2.4;">'
-            + ' <span style="color:#9CA3AF;">→</span> '.join(_chips)
-            + "</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.caption("진행 단계 기록이 없습니다.")
 
     # 8번: 코멘트 작성을 타임라인 위로 배치
     st.markdown("### 코멘트 작성")
@@ -905,6 +894,8 @@ with body_col:
     st.markdown("### 타임라인")
     comments: list[Comment] = repository.list_comments(item_id)
     comments.sort(key=lambda c: c.at, reverse=True)
+    # 4번: 시스템 코멘트는 아래로 — 텍스트 코멘트를 먼저 보이게 (stable 정렬).
+    comments.sort(key=lambda c: 1 if c.kind == "system" else 0)
 
     if not comments:
         st.caption("아직 코멘트가 없습니다.")
@@ -986,13 +977,38 @@ with body_col:
                     if getattr(comment, "edited", False):
                         st.caption("✏ 수정됨")
 
+    # 3번: 진행 단계 — 타임라인 아래로 이동 (이 항목이 거쳐온 상태 배지 체인).
+    st.divider()
+    st.markdown("#### 진행 단계")
+    _hist = issue.status_history
+    if _hist:
+        _chips = []
+        for _ev in _hist:
+            _sv = _ev.status.value if hasattr(_ev.status, "value") else str(_ev.status)
+            _chips.append(
+                f'<span style="display:inline-block;background:'
+                f'{STATUS_COLORS.get(_sv, "#9CA3AF")};color:#fff;padding:3px 10px;'
+                f'border-radius:6px;font-size:0.85em;margin:2px 0;white-space:nowrap;">'
+                f"{STATUS_LABELS.get(_sv, _sv)}</span>"
+            )
+        st.markdown(
+            '<div style="line-height:2.4;">'
+            + ' <span style="color:#9CA3AF;">→</span> '.join(_chips)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption("진행 단계 기록이 없습니다.")
+
 
 # ---- 우측: 개발 (TO-BE) ----------------------------------------------------
 with tobe_col:
     _dev_imgs = _images_of_kind(want_dev=True)
     st.markdown(
         f'<div style="margin-bottom:6px;padding:4px 10px;border-left:4px solid #10B981;'
-        f'font-weight:700;color:#065F46;">개발 (TO-BE) · {len(_dev_imgs)}</div>',
+        f'font-weight:700;color:#065F46;">개발 (TO-BE) · {len(_dev_imgs)}장'
+        f'<span style="font-weight:400;font-size:0.8em;color:#6B7280;">'
+        f" · 사진 추가 (남은 {MAX_IMAGES_PER_ITEM - len(issue.images)})</span></div>",
         unsafe_allow_html=True,
     )
     # 2번: 사진 추가를 이미지보다 위(개발 헤더 바로 아래)에 배치.
