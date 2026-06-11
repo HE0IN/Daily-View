@@ -191,9 +191,12 @@ class IndexEntry(BaseModel):
     ) -> IndexEntry:
         """Issue 와 카운트로부터 인덱스 엔트리 생성."""
         first_image_thumb = None
-        if issue.images:
-            img0 = issue.images[0]
-            first_image_thumb = img0.thumb or img0.file
+        # 썸네일이 있는 첫 이미지를 사용. PDF 등 thumb 가 없는 첨부는 건너뛴다
+        # (file 로 폴백하면 카드에서 이미지로 디코드를 시도하다 깨진다).
+        for _img in issue.images:
+            if _img.thumb:
+                first_image_thumb = _img.thumb
+                break
         desc = issue.description or ""
         description_preview = desc[:200]
         return cls(

@@ -248,7 +248,10 @@ with left:
             idx += 1
         for f in preview_files:
             with cols[idx % len(cols)]:
-                st.image(f, caption=f.name, width="stretch")
+                if f.name.lower().endswith(".pdf"):
+                    st.caption(f"📄 {f.name}")
+                else:
+                    st.image(f, caption=f.name, width="stretch")
             idx += 1
 
 

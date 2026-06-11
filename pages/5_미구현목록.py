@@ -157,7 +157,10 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
             _i += 1
         for _f in _prev:
             with pcols[_i % 6]:
-                st.image(_f, width="stretch")
+                if _f.name.lower().endswith(".pdf"):
+                    st.caption(f"📄 {_f.name}")
+                else:
+                    st.image(_f, width="stretch")
             _i += 1
 
 
