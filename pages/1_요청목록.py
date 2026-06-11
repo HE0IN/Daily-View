@@ -67,19 +67,12 @@ assignee_set: set[str] = {
 }
 assignee_options = ["(전체)", "(미할당)"] + sorted(assignee_set)
 
-# 기본 담당자 — 내가 담당했던 적이 있으면 내 항목을 기본 필터로.
-# 9번: 통계 '보기'(상태 preset)로 진입했으면 담당자를 (전체) 로 (내 이름 고정 방지).
-_from_preset = bool(
-    st.session_state.get("list_preset_status")
-    or st.session_state.get("list_preset_statuses")
-)
+# 1번: 담당자 기본값은 무조건 '(전체)' — 자기 이름이 자동 선택되지 않게 한다.
 default_assignee = "(전체)"
-# 대시보드 [내 큐 전체 보기] CTA 에서 넘긴 값이 있으면 우선.
+# 대시보드 [내 큐 전체 보기] CTA 에서 넘긴 값이 있으면 그것만 우선.
 preset_assignee = st.session_state.pop("list_default_assignee", None)
 if preset_assignee and preset_assignee in assignee_options:
     default_assignee = preset_assignee
-elif name in assignee_set and not _from_preset:
-    default_assignee = name
 
 # ---------------------------------------------------------------------------
 # 필터 UI
@@ -169,7 +162,8 @@ with f6:
         key="list_category_l1",
     )
 
-opt_col1, opt_col2 = st.columns([1, 1])
+# 2번: 완료포함 · 삭제(보관) · 보기(카드/테이블)를 한 줄에.
+opt_col1, opt_col2, opt_col3 = st.columns([1, 1.2, 1])
 with opt_col1:
     include_closed = st.checkbox(
         "완료된 작업 포함",
@@ -189,12 +183,13 @@ with opt_col2:
 include_archived = archive_view != "제외"
 
 # 보기 모드 토글 — 카드/테이블
-view_mode = st.radio(
-    "보기",
-    options=["카드", "테이블"],
-    horizontal=True,
-    key="list_view_mode",
-)
+with opt_col3:
+    view_mode = st.radio(
+        "보기",
+        options=["카드", "테이블"],
+        horizontal=True,
+        key="list_view_mode",
+    )
 
 # ---------------------------------------------------------------------------
 # 데이터 조회 (서버측 필터 가능한 항목만 repository 에 위임,

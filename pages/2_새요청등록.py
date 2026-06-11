@@ -164,7 +164,7 @@ def _resolve_category(level_key: str, options: list[str]) -> str | None:
 # ---------------------------------------------------------------------------
 
 # 이미지(좌, 작게) | 폼(중, 좁게) | 여백(우) — 입력 영역이 가로로 너무 넓지 않게.
-left, right, _pad = st.columns([1, 1.5, 1.2], gap="large")
+left, right, _pad = st.columns([1.5, 1.5, 1], gap="large")
 
 
 # ---------------------------------------------------------------------------
@@ -175,26 +175,28 @@ with left:
     st.markdown("##### 스크린샷")
     st.caption(f"최대 {MAX_IMAGES_PER_ITEM}장 · 1장 {MAX_FILE_MB}MB")
 
-    # 영역이 좁으므로 파일/클립보드를 세로로 배치.
-    st.markdown("**파일에서**")
-    uploaded_files = st.file_uploader(
-        "이미지 업로드",
-        type=["png", "jpg", "jpeg", "webp", "gif"],
-        accept_multiple_files=True,
-        key=f"new_files_{nonce}",
-        label_visibility="collapsed",
-    )
-
-    # 클립보드 붙여넣기 — HTTP+IP 환경에서도 단일 클릭 동작. 여러 번 누적 가능.
-    # paste 컴포넌트 전용 sub-nonce: '비우기' 시 증가시켜 컴포넌트를 리셋한다.
-    # (리셋하지 않으면 비운 직후 리렌더에서 같은 dataURL 이 재반환되어 다시 추가됨)
-    st.markdown("**클립보드 (Ctrl+V)**")
-    _paste_sub = int(st.session_state.setdefault(f"_paste_sub_{nonce}", 0))
-    try:
-        paste_data_url = paste_clipboard(key=f"new_paste_v2_{nonce}_{_paste_sub}")
-    except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
-        paste_data_url = None
-        st.caption(f"paste 컴포넌트 오류: {exc}")
+    # 3번: 파일/클립보드를 한 줄(가로)로 — 칸이 작아도 클릭만 하면 되므로.
+    _fc, _pc = st.columns(2)
+    with _fc:
+        st.markdown("**파일**")
+        uploaded_files = st.file_uploader(
+            "이미지 업로드",
+            type=["png", "jpg", "jpeg", "webp", "gif"],
+            accept_multiple_files=True,
+            key=f"new_files_{nonce}",
+            label_visibility="collapsed",
+        )
+    with _pc:
+        st.markdown("**클립보드 (Ctrl+V)**")
+        # paste 컴포넌트 전용 sub-nonce: '비우기' 시 증가시켜 컴포넌트 리셋.
+        _paste_sub = int(st.session_state.setdefault(f"_paste_sub_{nonce}", 0))
+        try:
+            paste_data_url = paste_clipboard(
+                key=f"new_paste_v2_{nonce}_{_paste_sub}"
+            )
+        except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
+            paste_data_url = None
+            st.caption(f"paste 오류: {exc}")
 
     # 누적 리스트 키
     _last_pasted_key = f"_last_pasted_v2_{nonce}"
