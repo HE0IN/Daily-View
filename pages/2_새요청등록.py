@@ -180,8 +180,8 @@ with left:
     with _fc:
         st.markdown("**파일**")
         uploaded_files = st.file_uploader(
-            "이미지 업로드",
-            type=["png", "jpg", "jpeg", "webp", "gif"],
+            "이미지/PDF 업로드",
+            type=["png", "jpg", "jpeg", "webp", "gif", "pdf"],
             accept_multiple_files=True,
             key=f"new_files_{nonce}",
             label_visibility="collapsed",

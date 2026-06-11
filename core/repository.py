@@ -642,6 +642,32 @@ def promote_unimplemented(
     return issue
 
 
+def promote_to_criteria(item_id: str, actor: str) -> Issue:
+    """확인요청(unimplemented) 항목을 확인목록(criteria, 프로젝트 기준)으로 이동.
+
+    kind 만 unimplemented → criteria 로 바꾼다. 이미지/설명은 그대로 따라가며,
+    확인요청목록에서는 빠지고 확인목록에 나타난다.
+    """
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        if issue.kind != "unimplemented":
+            raise ValueError("확인요청 항목만 확인목록으로 옮길 수 있습니다.")
+        issue.kind = "criteria"
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    _add_system_comment(item_id, "확인목록(프로젝트 기준)으로 이동되었습니다.")
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CONTENT,
+        item_id=item_id,
+        detail={"move": "unimplemented->criteria"},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+    return _read_meta(item_id)
+
+
 def update_urgency(
     item_id: str,
     new_urgency: Urgency | str,

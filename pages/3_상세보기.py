@@ -604,19 +604,56 @@ def _show_image_dialog(rel_path: str, filename: str) -> None:
 
 
 def _render_image(idx: int, img_ref) -> None:
-    """이미지 1장 렌더 (썸네일 우선, 원본 보기 버튼)."""
-    display_rel = img_ref.file
-    display_abs = _abs_image_path(display_rel)
-    if not display_abs.exists() and img_ref.thumb:
-        display_rel = img_ref.thumb
-        display_abs = _abs_image_path(display_rel)
-    if display_abs.exists():
-        st.image(str(display_abs), width="stretch")
-    else:
-        st.caption("(이미지 파일 없음)")
+    """이미지/PDF 1장 렌더.
+
+    - PDF: 미리보기 대신 다운로드 버튼.
+    - 이미지: 표시 시도 → 실패(DRM 등)하면 안내. 어느 경우든 원본 다운로드 제공
+      (DRM 으로 화면 표시가 막혀도 내려받아 확인할 수 있게 — 14번).
+    """
     filename = Path(img_ref.file).name
+    src_abs = _abs_image_path(img_ref.file)
+    is_pdf = img_ref.file.lower().endswith(".pdf")
+
+    if is_pdf:
+        st.caption(f"📄 {filename} (PDF)")
+        if src_abs.exists():
+            st.download_button(
+                "PDF 다운로드",
+                data=src_abs.read_bytes(),
+                file_name=filename,
+                mime="application/pdf",
+                key=f"dl_pdf_{idx}",
+                width="stretch",
+            )
+        else:
+            st.caption("(파일 없음)")
+        st.markdown("")
+        return
+
+    # 이미지 — 썸네일/원본 표시 (DRM 등으로 실패하면 안내).
+    display_abs = src_abs
+    if not display_abs.exists() and img_ref.thumb:
+        display_abs = _abs_image_path(img_ref.thumb)
+    shown = False
+    if display_abs.exists():
+        try:
+            st.image(str(display_abs), width="stretch")
+            shown = True
+        except Exception:  # noqa: BLE001
+            shown = False
+    if not shown:
+        st.caption("⚠ 이미지를 표시할 수 없습니다 (DRM 보호 등). 내려받아 확인하세요.")
     st.caption(filename)
-    if st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
+    # 원본 다운로드 — 표시 여부와 무관하게 제공.
+    if src_abs.exists():
+        st.download_button(
+            "다운로드",
+            data=src_abs.read_bytes(),
+            file_name=filename,
+            key=f"dl_img_{idx}",
+            width="stretch",
+        )
+    if shown and st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
         _show_image_dialog(img_ref.file, filename)
     st.markdown("")  # 이미지 사이 간격
 

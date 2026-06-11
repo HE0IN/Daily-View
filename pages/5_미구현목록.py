@@ -31,11 +31,12 @@ for _ek in list(st.session_state.keys()):
         st.session_state[_ek] = False
 
 if current_project:
-    st.caption(f"{current_project} / 미구현목록")
-st.title("미구현목록")
+    st.caption(f"{current_project} / 확인 요청")
+st.title("확인 요청")
 st.caption(
-    "새 프로그램에서 '안 되는 것'을 캡쳐+메모로 모아둡니다. "
-    "정식 개발이 필요하면 항목의 **[개발 요청]** 으로 승격하세요."
+    "새 프로그램에서 '안 되는 것'을 캡쳐+메모로 **등록**합니다. "
+    "등록한 항목은 **확인요청목록** 메뉴에서 확인하고, 거기서 개발 요청 또는 "
+    "확인목록으로 보냅니다."
 )
 
 
@@ -64,7 +65,7 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
         st.markdown("**캡쳐 (선택)**")
         u_files = st.file_uploader(
             "파일",
-            type=["png", "jpg", "jpeg", "webp", "gif"],
+            type=["png", "jpg", "jpeg", "webp", "gif", "pdf"],
             accept_multiple_files=True,
             key=f"unimpl_files_{nonce}",
             label_visibility="collapsed",
@@ -161,45 +162,4 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
 
 
 st.divider()
-
-
-# ---------------------------------------------------------------------------
-# 목록 — 4 열 카드 그리드 (개발목록처럼 아래로 늘어남)
-# ---------------------------------------------------------------------------
-
-items = repository.list_issues(
-    kind="unimplemented",
-    project=current_project,
-    include_closed=True,
-    include_archived=False,
-)
-st.subheader(f"미구현 항목 ({len(items)})")
-
-if not items:
-    st.caption("아직 미구현 항목이 없습니다. 위에서 추가하세요.")
-else:
-    COLS_PER_ROW = 4
-    for row_start in range(0, len(items), COLS_PER_ROW):
-        row = items[row_start : row_start + COLS_PER_ROW]
-        col_objs = st.columns(COLS_PER_ROW)
-        for col, entry in zip(col_objs, row):
-            with col:
-                with st.container(border=True):
-                    st.markdown(f"**{entry.title}**")
-                    _created = str(entry.created_at)[:10]
-                    st.caption(f"📷 {entry.images_count}장 · {_created}")
-                    if st.button(
-                        "열기", key=f"unimpl_open_{entry.id}", width="stretch"
-                    ):
-                        st.session_state["_detail_item_id"] = entry.id
-                        st.session_state["_detail_origin"] = "pages/5_미구현목록.py"
-                        st.query_params["id"] = entry.id
-                        st.switch_page("pages/3_상세보기.py")
-                    if st.button(
-                        "개발 요청",
-                        key=f"unimpl_promote_{entry.id}",
-                        type="primary",
-                        width="stretch",
-                    ):
-                        st.session_state["promote_id"] = entry.id
-                        st.switch_page("pages/2_새요청등록.py")
+st.caption("➡ 등록한 항목은 **확인요청목록** 메뉴에서 카드로 확인할 수 있습니다.")

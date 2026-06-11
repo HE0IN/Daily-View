@@ -72,7 +72,7 @@ def decode_image_data_url(text: str) -> tuple[Image.Image, bytes, str]:
 
 MAX_FILE_MB: int = int(os.environ.get("MAX_UPLOAD_MB", "10"))
 MAX_IMAGES_PER_ITEM: int = int(os.environ.get("MAX_IMAGES_PER_ITEM", "20"))
-ALLOWED_EXT: set[str] = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+ALLOWED_EXT: set[str] = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf"}
 
 # 썸네일은 카드/목록의 작은 영역에 보일 뿐 아니라 모바일/HiDPI 디스플레이에서
 # 2배 픽셀로 렌더되므로 800px 정도가 화질·용량 균형이 좋다.
@@ -145,31 +145,35 @@ def save_image_bytes(
     # 경로 구성
     base = dest_dir / f"{seq:03d}_{slug}"
     src_path = base.with_suffix(ext)
-    thumb_path = base.with_suffix(".thumb.jpg")
 
     # 원본 저장
     src_path.write_bytes(data)
 
-    # 썸네일 생성 (EXIF 회전 보정 + 가로 200px)
-    try:
-        with Image.open(io.BytesIO(data)) as img:
-            img = ImageOps.exif_transpose(img)
-            img.thumbnail((_THUMB_MAX_WIDTH, _THUMB_MAX_WIDTH * 10))
-            img.convert("RGB").save(thumb_path, "JPEG", quality=_THUMB_QUALITY)
-    except Exception:
-        # 썸네일 실패해도 원본은 남도록 — 다만 일관성 위해 원본도 롤백.
+    item_root = dest_dir.parent  # items/{id}/
+
+    # PDF 는 이미지가 아니므로 썸네일을 만들지 않는다 (thumb=None → 표시 대신 다운로드).
+    rel_thumb: str | None = None
+    if ext != ".pdf":
+        thumb_path = base.with_suffix(".thumb.jpg")
+        # 썸네일 생성 (EXIF 회전 보정 + 가로 200px)
         try:
-            src_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+            with Image.open(io.BytesIO(data)) as img:
+                img = ImageOps.exif_transpose(img)
+                img.thumbnail((_THUMB_MAX_WIDTH, _THUMB_MAX_WIDTH * 10))
+                img.convert("RGB").save(thumb_path, "JPEG", quality=_THUMB_QUALITY)
+        except Exception:
+            # 썸네일 실패해도 원본은 남도록 — 다만 일관성 위해 원본도 롤백.
+            try:
+                src_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+        rel_thumb = thumb_path.relative_to(item_root).as_posix()
 
     sha256 = hashlib.sha256(data).hexdigest()
 
     # 항목 디렉토리에 대한 상대경로로 기록 (meta.json 휴대성 ↑)
-    item_root = dest_dir.parent  # items/{id}/
     rel_src = src_path.relative_to(item_root).as_posix()
-    rel_thumb = thumb_path.relative_to(item_root).as_posix()
 
     return ImageRef(
         file=rel_src,

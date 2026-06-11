@@ -127,10 +127,20 @@ _stats = st.Page("pages/4_통계.py", title="통계", icon=":material/bar_chart:
 _detail = st.Page(
     "pages/3_상세보기.py", title="상세보기", icon=":material/description:"
 )
-_unimpl = st.Page(
+_confirm_req = st.Page(
     "pages/5_미구현목록.py",
-    title="미구현목록",
-    icon=":material/playlist_add_check:",
+    title="확인 요청",
+    icon=":material/playlist_add:",
+)
+_confirm_list = st.Page(
+    "pages/6_확인요청목록.py",
+    title="확인요청목록",
+    icon=":material/fact_check:",
+)
+_criteria = st.Page(
+    "pages/7_확인목록.py",
+    title="확인목록",
+    icon=":material/checklist:",
 )
 
 # 메뉴 스타일: 상세보기 항목 숨김 + 새 요청 등록 강조(빨강).
@@ -180,8 +190,8 @@ st.markdown(
 pg = st.navigation(
     {
         " ": [_dashboard],
-        "  ": [_new],
-        "   ": [_list, _unimpl, _stats, _detail],
+        "  ": [_confirm_req, _new, _confirm_list],
+        "   ": [_list, _stats, _detail, _criteria],
     }
 )
 pg.run()
