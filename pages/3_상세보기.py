@@ -380,8 +380,7 @@ with meta_c1:
     with sub_l:
         st.markdown(
             f'<div style="font-size:0.9em;color:#374151;line-height:1.9;'
-            f'min-height:34px;white-space:nowrap;overflow:hidden;'
-            f'text-overflow:ellipsis;">'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
             f"등록: <b>{safe_author}</b> ({_role_label(issue.author_role)}) · "
             f'<span title="{html.escape(created_abs)}">{created_human}</span> · '
             f"담당: <b>{safe_assignee}</b></div>",
@@ -423,7 +422,7 @@ with meta_c2:
     with sub_l:
         _urg_label = _URG_LABELS.get(issue.urgency.value, issue.urgency.value)
         st.markdown(
-            f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
+            f'<div style="font-size:0.9em;color:#374151;line-height:1.9;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
             f"긴급도: {urgency_badge_html(issue.urgency.value)}</div>",
             unsafe_allow_html=True,
@@ -462,7 +461,7 @@ with meta_c3:
         sub_l, sub_r = st.columns([3, 2])
     with sub_l:
         st.markdown(
-            f'<div style="font-size:0.9em;color:#374151;padding-top:6px;'
+            f'<div style="font-size:0.9em;color:#374151;line-height:1.9;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" '
             f'title="{_cat_display}">'
             f"카테고리: <b>{_cat_display}</b></div>",

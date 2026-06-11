@@ -814,6 +814,9 @@ def test_update_status_api_check_no_auto_assignee(
     repository.update_status(
         issue.id, Status.assignee_reviewed, actor="내부이", actor_role=Role.developer
     )
+    repository.update_status(
+        issue.id, Status.vendor_wait, actor="내부이", actor_role=Role.developer
+    )
     issue2 = repository.update_status(
         issue.id, Status.vendor_request, actor="내부이", actor_role=Role.developer
     )
@@ -844,6 +847,9 @@ def test_api_check_no_api_assignee(
     repository.update_status(
         issue.id, Status.assignee_reviewed, actor="dev", actor_role=Role.developer
     )
+    repository.update_status(
+        issue.id, Status.vendor_wait, actor="dev", actor_role=Role.developer
+    )
     issue2 = repository.update_status(
         issue.id, Status.vendor_request, actor="dev", actor_role=Role.developer
     )
@@ -872,6 +878,9 @@ def test_api_check_assignee_already_matches(
     )
     repository.update_status(
         issue.id, Status.assignee_reviewed, actor="외부김", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.vendor_wait, actor="외부김", actor_role=Role.developer
     )
     issue2 = repository.update_status(
         issue.id, Status.vendor_request, actor="외부김", actor_role=Role.developer
@@ -910,6 +919,9 @@ def test_api_check_no_project_set(
     )
     repository.update_status(
         issue.id, Status.assignee_reviewed, actor="dev", actor_role=Role.developer
+    )
+    repository.update_status(
+        issue.id, Status.vendor_wait, actor="dev", actor_role=Role.developer
     )
     issue2 = repository.update_status(
         issue.id, Status.vendor_request, actor="dev", actor_role=Role.developer

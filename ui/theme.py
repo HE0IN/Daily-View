@@ -34,6 +34,7 @@ STATUS_COLORS: dict[str, str] = {
     "assignee_reviewed": "#8B5CF6",     # 보라 (담당자검토완료)
     "assignee_developing": "#A855F7",   # 자주 (담당자신규개발중)
     "assignee_fixing": "#C026D3",       # 자홍 (담당자코드수정중)
+    "vendor_wait": "#67E8F9",           # 연청록 (개발사요청대기)
     "vendor_request": "#06B6D4",        # 청록 (개발사확인중)
     "vendor_reply": "#0891B2",          # 진청록 (개발사회신확인중)
     "author_request": "#F59E0B",        # 주황 (등록자확인요청)
@@ -48,6 +49,7 @@ STATUS_LABELS: dict[str, str] = {
     "assignee_reviewed": "담당자검토완료",
     "assignee_developing": "담당자신규개발중",
     "assignee_fixing": "담당자코드수정중",
+    "vendor_wait": "개발사요청대기",
     "vendor_request": "개발사확인중",
     "vendor_reply": "개발사회신확인중",
     "author_request": "등록자확인요청",

@@ -55,6 +55,7 @@ class Status(str, Enum):
     assignee_reviewed = "assignee_reviewed"      # 담당자검토완료
     assignee_developing = "assignee_developing"  # 담당자신규개발중
     assignee_fixing = "assignee_fixing"          # 담당자코드수정중
+    vendor_wait = "vendor_wait"                  # 개발사요청대기 (요청 전 모아두기)
     vendor_request = "vendor_request"            # 개발사확인중
     vendor_reply = "vendor_reply"                # 개발사회신확인중
     author_request = "author_request"            # 등록자확인요청

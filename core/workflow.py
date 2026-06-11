@@ -45,13 +45,18 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
     (Status.assignee_reviewed, Role.developer): [
         Status.assignee_developing,
         Status.assignee_fixing,
-        Status.vendor_request,
+        Status.vendor_wait,
         Status.assignee_reviewing,  # 직전 단계로
     ],
-    # 개발사확인중 → 개발사회신확인중 / (되돌리기)검토완료 (담당자)
+    # 개발사요청대기 → 개발사확인중(요청 송부) / (되돌리기)검토완료 (담당자)
+    (Status.vendor_wait, Role.developer): [
+        Status.vendor_request,
+        Status.assignee_reviewed,  # 직전 단계로
+    ],
+    # 개발사확인중 → 개발사회신확인중 / (되돌리기)개발사요청대기 (담당자)
     (Status.vendor_request, Role.developer): [
         Status.vendor_reply,
-        Status.assignee_reviewed,  # 직전 단계로
+        Status.vendor_wait,  # 직전 단계로
     ],
     # 개발사회신확인중 → 등록자확인요청 / 신규개발 / 코드수정 / (되돌리기)개발사확인중 (담당자)
     (Status.vendor_reply, Role.developer): [
@@ -60,9 +65,11 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
         Status.assignee_fixing,
         Status.vendor_request,  # 직전 단계로
     ],
-    # 신규개발/코드수정 → 등록자확인요청 / (되돌리기)검토완료 (담당자)
+    # 신규개발 → 등록자확인요청 / 개발사요청대기 / (되돌리기)검토완료 (담당자)
+    #   개발 중 개발사 요청이 필요한 상황이 생기면 개발사요청대기로 보낼 수 있다.
     (Status.assignee_developing, Role.developer): [
         Status.author_request,
+        Status.vendor_wait,
         Status.assignee_reviewed,  # 직전 단계로
     ],
     (Status.assignee_fixing, Role.developer): [
@@ -96,6 +103,7 @@ STATUS_LABELS_KO: dict[Status, str] = {
     Status.assignee_reviewed: "담당자검토완료",
     Status.assignee_developing: "담당자신규개발중",
     Status.assignee_fixing: "담당자코드수정중",
+    Status.vendor_wait: "개발사요청대기",
     Status.vendor_request: "개발사확인중",
     Status.vendor_reply: "개발사회신확인중",
     Status.author_request: "등록자확인요청",

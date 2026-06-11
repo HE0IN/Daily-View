@@ -34,13 +34,18 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.assignee_reviewed, Role.developer): {
         Status.assignee_developing,
         Status.assignee_fixing,
-        Status.vendor_request,
+        Status.vendor_wait,
         Status.assignee_reviewing,
     },
     (Status.assignee_reviewed, Role.reviewer): set(),
+    (Status.vendor_wait, Role.developer): {
+        Status.vendor_request,
+        Status.assignee_reviewed,
+    },
+    (Status.vendor_wait, Role.reviewer): set(),
     (Status.vendor_request, Role.developer): {
         Status.vendor_reply,
-        Status.assignee_reviewed,
+        Status.vendor_wait,
     },
     (Status.vendor_request, Role.reviewer): set(),
     (Status.vendor_reply, Role.developer): {
@@ -52,6 +57,7 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.vendor_reply, Role.reviewer): set(),
     (Status.assignee_developing, Role.developer): {
         Status.author_request,
+        Status.vendor_wait,
         Status.assignee_reviewed,
     },
     (Status.assignee_developing, Role.reviewer): set(),
@@ -114,7 +120,8 @@ def test_closed_can_reopen_to_review() -> None:
         (Status.assignee_reviewing, Role.developer, Status.assignee_reviewed, True),
         (Status.assignee_reviewed, Role.developer, Status.assignee_developing, True),
         (Status.assignee_reviewed, Role.developer, Status.assignee_fixing, True),
-        (Status.assignee_reviewed, Role.developer, Status.vendor_request, True),
+        (Status.assignee_reviewed, Role.developer, Status.vendor_wait, True),
+        (Status.vendor_wait, Role.developer, Status.vendor_request, True),
         (Status.vendor_request, Role.developer, Status.vendor_reply, True),
         (Status.vendor_reply, Role.developer, Status.author_request, True),
         (Status.vendor_reply, Role.developer, Status.assignee_developing, True),
@@ -240,6 +247,6 @@ def test_allowed_transitions_returns_independent_list() -> None:
     assert second == [
         Status.assignee_developing,
         Status.assignee_fixing,
-        Status.vendor_request,
+        Status.vendor_wait,
         Status.assignee_reviewing,
     ], "내부 TRANSITIONS 가 외부 변형에 노출됨"
