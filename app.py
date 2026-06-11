@@ -122,6 +122,9 @@ _dashboard = st.Page(
 _my_work = st.Page(
     "pages/0b_내작업.py", title="내 작업", icon=":material/assignment_ind:"
 )
+_vendor_req = st.Page(
+    "pages/0c_개발사요청.py", title="개발사 요청", icon=":material/forward_to_inbox:"
+)
 _new = st.Page(
     "pages/2_새요청등록.py", title="새 요청 등록", icon=":material/add_circle:"
 )
@@ -192,7 +195,7 @@ st.markdown(
 # 상세보기는 '조회' 섹션에 포함하되 위 CSS 로 사이드바에서 숨긴다.
 pg = st.navigation(
     {
-        " ": [_dashboard, _my_work],
+        " ": [_dashboard, _my_work, _vendor_req],
         "  ": [_confirm_req, _confirm_list, _new],
         "   ": [_list, _stats, _detail, _criteria],
     }

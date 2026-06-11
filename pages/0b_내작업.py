@@ -28,15 +28,13 @@ for _ek in list(st.session_state.keys()):
         st.session_state[_ek] = False
 
 # '내 차례' 상태 집합 — 담당자(developer) / 등록자(reviewer) 가 행동할 단계.
+# 개발사 단계(vendor_*)는 '내 작업'에서 제외 — 별도 '개발사 요청' 페이지에서 관리.
 _ASSIGNEE_TURN = {
     Status.assignee_request,
     Status.assignee_reviewing,
     Status.assignee_reviewed,
     Status.assignee_developing,
     Status.assignee_fixing,
-    Status.vendor_wait,
-    Status.vendor_request,
-    Status.vendor_reply,
 }
 _AUTHOR_TURN = {Status.author_request, Status.author_reviewing}
 

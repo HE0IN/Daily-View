@@ -308,31 +308,7 @@ total = len(items)
 
 st.caption(f"총 {total}건")
 
-# 개발목록 전체 PDF (개발사 API 요청 송부용) — A4 페이지당 항목 1개(제목/설명/사진).
-# [만들기] 로 생성(세션 저장) → [다운로드]. 매 렌더 재생성을 피하려 2단계로 나눔.
-if items:
-    _pdf_c1, _pdf_c2 = st.columns([1, 3])
-    with _pdf_c1:
-        if st.button("📄 전체 PDF 만들기", key="dev_pdf_build", width="stretch"):
-            from core import pdf_export
-
-            _issues_for_pdf = [
-                repository.get_issue(it["id"]) for it in items if it.get("id")
-            ]
-            st.session_state["_dev_list_pdf"] = pdf_export.build_issues_pdf(
-                _issues_for_pdf
-            )
-            st.toast(f"{len(_issues_for_pdf)}건 PDF 생성 완료", icon="📄")
-    if st.session_state.get("_dev_list_pdf"):
-        with _pdf_c2:
-            st.download_button(
-                "⬇ PDF 다운로드 (개발목록)",
-                data=st.session_state["_dev_list_pdf"],
-                file_name="개발목록.pdf",
-                mime="application/pdf",
-                key="dev_pdf_dl",
-                width="stretch",
-            )
+# PDF 출력은 '개발사 요청' 페이지로 이관 — 여기(개발목록)는 단계 전환만 담당.
 
 # 5번: 카드의 체크박스로 선택한 항목들을 한 번에 다음 단계로 — 코멘트 필수.
 #   카드뷰에서 각 카드를 체크하면 (같은 상태끼리) 아래 일괄 전환 UI 가 나타난다.
@@ -344,31 +320,7 @@ if _bulk_sel_ids:
     _sel_items = [it for it in items if it["id"] in _bulk_sel_ids]
     _sel_statuses = {it["status"] for it in _sel_items}
     with st.container(border=True):
-        _hc1, _hc2 = st.columns([3, 2])
-        with _hc1:
-            st.markdown(f"**☑ 선택한 {len(_bulk_sel_ids)}건**")
-        with _hc2:
-            # 2번: 선택 항목만 PDF (상태 무관 — 일괄 전환과 별개로 동작).
-            if st.button("📄 선택 PDF 만들기", key="bulk_pdf", width="stretch"):
-                from core import pdf_export
-
-                _sel_iss = [repository.get_issue(_i) for _i in _bulk_sel_ids]
-                st.session_state["_bulk_sel_pdf"] = pdf_export.build_issues_pdf(
-                    _sel_iss
-                )
-                st.toast(f"{len(_sel_iss)}건 PDF 생성 완료", icon="📄")
-        if st.session_state.get("_bulk_sel_pdf"):
-            st.download_button(
-                "⬇ 선택 PDF 다운로드",
-                data=st.session_state["_bulk_sel_pdf"],
-                file_name="선택목록.pdf",
-                mime="application/pdf",
-                key="bulk_sel_pdf_dl",
-                width="stretch",
-            )
-
-        st.divider()
-        st.markdown("**일괄 전환**")
+        st.markdown(f"**☑ 선택한 {len(_bulk_sel_ids)}건 일괄 전환**")
         if len(_sel_statuses) > 1:
             st.warning(
                 "일괄 전환은 같은 상태(단계)끼리만 됩니다 — 선택 항목의 상태가 "
