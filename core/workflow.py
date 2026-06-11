@@ -111,6 +111,7 @@ STATUS_LABELS_KO: dict[Status, str] = {
     Status.author_reviewing: "등록자검토중",
     Status.closed: "완료",
     Status.pending_check: "확인대기",
+    Status.temp: "Temp",
 }
 
 URGENCY_LABELS_KO: dict[str, str] = {

@@ -31,8 +31,21 @@ if current_project:
 st.title("확인요청목록")
 st.caption(
     "확인 요청으로 등록된 항목들입니다. 개발이 필요하면 **[개발 요청]**, "
-    "프로젝트 기준이면 **[확인목록으로]** 보내세요."
+    "확정 보류면 **[Temp로]** 보내세요."
 )
+
+# 5번: 확인요청(확인대기) 항목은 담당자가 없어야 한다 — 남아 있으면 해제.
+for _e in repository.list_issues(
+    kind="unimplemented",
+    project=current_project,
+    include_closed=True,
+    include_archived=False,
+):
+    if _e.assignee:
+        try:
+            repository.clear_assignee(_e.id, name)
+        except Exception:  # noqa: BLE001
+            pass
 
 items = repository.list_issues(
     kind="unimplemented",
@@ -58,7 +71,8 @@ else:
                 _res = components.render_card(
                     _item,
                     key_prefix=f"cr_{row_start}",
-                    extra_buttons=[("개발 요청", "dev"), ("확인목록으로", "crit")],
+                    extra_buttons=[("개발 요청", "dev"), ("Temp로", "temp")],
+                    buttons_inline=True,
                 )
                 if _res["open"]:
                     st.session_state["_detail_item_id"] = entry.id
@@ -68,10 +82,10 @@ else:
                 if _res["actions"].get("dev"):
                     st.session_state["promote_id"] = entry.id
                     st.switch_page("pages/2_새요청등록.py")
-                if _res["actions"].get("crit"):
+                if _res["actions"].get("temp"):
                     try:
                         repository.promote_to_criteria(entry.id, name)
-                        st.toast("확인목록으로 이동했습니다", icon="✅")
+                        st.toast("Temp 로 이동했습니다", icon="✅")
                         st.rerun()
                     except Exception as exc:  # noqa: BLE001
                         st.error(f"이동 실패: {exc}")

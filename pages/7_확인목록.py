@@ -25,26 +25,28 @@ for _ek in list(st.session_state.keys()):
         st.session_state[_ek] = False
 
 if current_project:
-    st.caption(f"{current_project} / 확인목록")
-st.title("확인목록")
+    st.caption(f"{current_project} / Temp")
+st.title("Temp")
 st.caption(
-    "프로젝트의 기준이 되는 항목들입니다. "
-    "확인요청목록에서 **[확인목록으로]** 보낸 항목이 모입니다."
+    "확정 보류(Temp) 항목들입니다. 확인요청목록에서 **[Temp로]** 보낸 항목이 모입니다. "
+    "나중에 어떻게 바뀔지 몰라 임시로 보관합니다."
 )
 
-# 확인대기(pending_check) 상태인 criteria 항목은 '확인요청목록' 소속이므로
-# kind 를 unimplemented 로 자동 되돌려 확인목록에서 빠지게 한다 (옛 데이터 정리).
+# 옛 데이터 정리: 확인대기(pending_check) criteria 는 확인요청목록 소속이라
+# 되돌리고, Temp 항목에 담당자가 남아 있으면 해제한다 (5번).
 for _e in repository.list_issues(
     kind="criteria",
     project=current_project,
     include_closed=True,
     include_archived=False,
 ):
-    if _e.status == Status.pending_check:
-        try:
+    try:
+        if _e.status == Status.pending_check:
             repository.revert_criteria_to_request(_e.id, name)
-        except Exception:  # noqa: BLE001
-            pass
+        elif _e.assignee:
+            repository.clear_assignee(_e.id, name)
+    except Exception:  # noqa: BLE001
+        pass
 
 items = repository.list_issues(
     kind="criteria",

@@ -64,6 +64,7 @@ class Status(str, Enum):
     # 확인대기 — 확인요청(unimplemented) 항목 전용. 새요청등록(개발) 또는
     # 확인목록으로 가기 '전' 단계. dev 항목 워크플로우에는 노출되지 않는다.
     pending_check = "pending_check"              # 확인대기
+    temp = "temp"                                # Temp (확정 보류 — 옛 '확인목록')
 
 
 class Role(str, Enum):

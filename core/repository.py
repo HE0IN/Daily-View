@@ -678,25 +678,27 @@ def promote_unimplemented(
 
 
 def promote_to_criteria(item_id: str, actor: str) -> Issue:
-    """확인요청(unimplemented) 항목을 확인목록(criteria, 프로젝트 기준)으로 이동.
+    """확인요청(unimplemented) 항목을 Temp(kind=criteria, status=temp)로 이동.
 
-    kind 만 unimplemented → criteria 로 바꾼다. 이미지/설명은 그대로 따라가며,
-    확인요청목록에서는 빠지고 확인목록에 나타난다.
+    상태를 Temp 로 바꾸고 담당자를 비운다 (확인대기·Temp 는 담당자 없음, 5번).
+    확인요청목록에서 빠지고 Temp 목록에 나타난다.
     """
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
         if issue.kind != "unimplemented":
-            raise ValueError("확인요청 항목만 확인목록으로 옮길 수 있습니다.")
+            raise ValueError("확인요청 항목만 Temp 로 옮길 수 있습니다.")
         issue.kind = "criteria"
+        issue.status = Status.temp
+        issue.assignee = None
         issue.updated_at = now()
         _write_meta_unlocked(issue)
 
-    _add_system_comment(item_id, "확인목록(프로젝트 기준)으로 이동되었습니다.")
+    _add_system_comment(item_id, "Temp 로 이동되었습니다 (상태: Temp · 담당자 해제).")
     audit.audit_log(
         actor=actor,
         action=audit.UPDATE_CONTENT,
         item_id=item_id,
-        detail={"move": "unimplemented->criteria"},
+        detail={"move": "unimplemented->temp"},
     )
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
@@ -704,24 +706,47 @@ def promote_to_criteria(item_id: str, actor: str) -> Issue:
 
 
 def revert_criteria_to_request(item_id: str, actor: str) -> Issue:
-    """확인목록(criteria) → 확인요청목록(unimplemented) 되돌리기 — kind 만 변경.
+    """Temp(kind=criteria) → 확인요청목록(unimplemented) 되돌리기.
 
-    promote_to_criteria 의 역방향. 상태/이미지/설명은 그대로 유지된다.
+    kind 를 unimplemented 로, 상태를 확인대기(pending_check)로 되돌리고
+    담당자를 비운다 (5번). promote_to_criteria 의 역방향.
     """
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
         if issue.kind != "criteria":
-            raise ValueError("확인목록 항목만 확인요청목록으로 되돌릴 수 있습니다.")
+            raise ValueError("Temp 항목만 확인요청목록으로 되돌릴 수 있습니다.")
         issue.kind = "unimplemented"
+        issue.status = Status.pending_check
+        issue.assignee = None
         issue.updated_at = now()
         _write_meta_unlocked(issue)
 
-    _add_system_comment(item_id, "확인요청목록으로 되돌렸습니다.")
+    _add_system_comment(item_id, "확인요청목록으로 되돌렸습니다 (상태: 확인대기).")
     audit.audit_log(
         actor=actor,
         action=audit.UPDATE_CONTENT,
         item_id=item_id,
         detail={"move": "criteria->unimplemented"},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+    return _read_meta(item_id)
+
+
+def clear_assignee(item_id: str, actor: str) -> Issue:
+    """담당자 해제 — 확인대기·Temp 항목은 담당자가 없어야 한다 (5번)."""
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        if issue.assignee is None:
+            return issue
+        issue.assignee = None
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_ASSIGNEE,
+        item_id=item_id,
+        detail={"clear": True},
     )
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)

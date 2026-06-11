@@ -145,7 +145,7 @@ _confirm_list = st.Page(
 )
 _criteria = st.Page(
     "pages/7_확인목록.py",
-    title="확인목록",
+    title="Temp",
     icon=":material/checklist:",
 )
 

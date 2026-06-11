@@ -99,6 +99,7 @@ def render_card(
     key_prefix: str = "card",
     extra_buttons: list[tuple[str, str]] | None = None,
     checkbox: tuple[str, str] | None = None,
+    buttons_inline: bool = False,
 ) -> bool | dict:
     """요청목록 카드 렌더 (컴팩트).
 
@@ -236,38 +237,51 @@ def render_card(
                     unsafe_allow_html=True,
                 )
 
-        # (3번) 선택 체크박스 — 있으면 '열기' 옆에 함께 배치.
         _checked = False
-        if checkbox is not None:
-            _cb_label, _cb_key = checkbox
-            _cbc, _opc = st.columns([1, 3])
-            with _cbc:
-                _checked = st.checkbox(
-                    _cb_label, key=_cb_key, label_visibility="collapsed"
+        _actions: dict[str, bool] = {}
+        # (4번) buttons_inline: '열기' + extra_buttons 를 한 행에 (폭 좁은 3열 등).
+        if buttons_inline and extra_buttons and checkbox is None:
+            _bcols = st.columns(1 + len(extra_buttons))
+            with _bcols[0]:
+                clicked = st.button(
+                    "열기", key=f"{key_prefix}_{item_id}_detail", width="stretch"
                 )
-            with _opc:
+            for _i, (_lbl, _akey) in enumerate(extra_buttons, start=1):
+                with _bcols[_i]:
+                    _actions[_akey] = st.button(
+                        _lbl,
+                        key=f"{key_prefix}_{item_id}_{_akey}",
+                        width="stretch",
+                    )
+        else:
+            # (3번) 선택 체크박스 — 있으면 '열기' 옆에 함께 배치.
+            if checkbox is not None:
+                _cb_label, _cb_key = checkbox
+                _cbc, _opc = st.columns([1, 3])
+                with _cbc:
+                    _checked = st.checkbox(
+                        _cb_label, key=_cb_key, label_visibility="collapsed"
+                    )
+                with _opc:
+                    clicked = st.button(
+                        "열기",
+                        key=f"{key_prefix}_{item_id}_detail",
+                        width="stretch",
+                    )
+            else:
                 clicked = st.button(
                     "열기",
                     key=f"{key_prefix}_{item_id}_detail",
                     width="stretch",
                 )
-        else:
-            # 버튼은 카드 폭 전체에
-            clicked = st.button(
-                "열기",
-                key=f"{key_prefix}_{item_id}_detail",
-                width="stretch",
-            )
-
-        # (2번) 추가 버튼 — 카드 안, '열기' 아래.
-        _actions: dict[str, bool] = {}
-        if extra_buttons:
-            for _lbl, _akey in extra_buttons:
-                _actions[_akey] = st.button(
-                    _lbl,
-                    key=f"{key_prefix}_{item_id}_{_akey}",
-                    width="stretch",
-                )
+            # (2번) 추가 버튼 — 카드 안, '열기' 아래(세로).
+            if extra_buttons:
+                for _lbl, _akey in extra_buttons:
+                    _actions[_akey] = st.button(
+                        _lbl,
+                        key=f"{key_prefix}_{item_id}_{_akey}",
+                        width="stretch",
+                    )
 
     if extra_buttons is None and checkbox is None:
         return clicked
