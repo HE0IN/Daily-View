@@ -380,6 +380,15 @@ with meta_c0:
                             st.error("상태 변경 시 코멘트(사유)는 필수입니다.")
                         else:
                             try:
+                                # criteria(확인목록) 항목을 확인대기로 보내면 확인요청
+                                # 목록(unimplemented)으로 이동 — kind 를 되돌린다.
+                                if (
+                                    _ns == Status.pending_check
+                                    and issue.kind == "criteria"
+                                ):
+                                    repository.revert_criteria_to_request(
+                                        item_id, _user_name
+                                    )
                                 if _c:
                                     repository.add_comment(
                                         item_id, _user_name, _role, _c

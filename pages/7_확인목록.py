@@ -9,6 +9,7 @@ from __future__ import annotations
 import streamlit as st
 
 from core import repository
+from core.models import Status
 from ui import components
 
 user = st.session_state.get("user")
@@ -30,6 +31,20 @@ st.caption(
     "프로젝트의 기준이 되는 항목들입니다. "
     "확인요청목록에서 **[확인목록으로]** 보낸 항목이 모입니다."
 )
+
+# 확인대기(pending_check) 상태인 criteria 항목은 '확인요청목록' 소속이므로
+# kind 를 unimplemented 로 자동 되돌려 확인목록에서 빠지게 한다 (옛 데이터 정리).
+for _e in repository.list_issues(
+    kind="criteria",
+    project=current_project,
+    include_closed=True,
+    include_archived=False,
+):
+    if _e.status == Status.pending_check:
+        try:
+            repository.revert_criteria_to_request(_e.id, name)
+        except Exception:  # noqa: BLE001
+            pass
 
 items = repository.list_issues(
     kind="criteria",
