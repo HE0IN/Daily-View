@@ -339,12 +339,16 @@ with meta_c0:
                     st.caption("이 단계에서는 변경할 수 있는 상태가 없습니다.")
             else:
                 # 상태 변경 시 코멘트(사유) 필수 — 단, 검토중→검토완료는 생략 가능(2번).
-                _reviewing_now = issue.status == Status.assignee_reviewing
+                # 담당자확인요청→검토중, 검토중→검토완료 는 코멘트 생략 가능 (2번).
+                _comment_skippable = issue.status in (
+                    Status.assignee_request,
+                    Status.assignee_reviewing,
+                )
                 _chg_comment = st.text_area(
                     "변경 사유"
                     + (
-                        " (검토완료 전환은 생략 가능)"
-                        if _reviewing_now
+                        " (검토 단계 전환은 생략 가능)"
+                        if _comment_skippable
                         else " (필수)"
                     ),
                     key=f"status_change_comment_{item_id}",
@@ -362,6 +366,9 @@ with meta_c0:
                     ):
                         # 2번: 검토중→검토완료 전환은 코멘트 없이도 허용.
                         _comment_optional = (
+                            issue.status == Status.assignee_request
+                            and _ns == Status.assignee_reviewing
+                        ) or (
                             issue.status == Status.assignee_reviewing
                             and _ns == Status.assignee_reviewed
                         )
@@ -682,27 +689,35 @@ def _render_image(idx: int, img_ref) -> None:
     if not shown:
         st.caption("⚠ 이미지를 표시할 수 없습니다 (DRM 보호 등). 내려받아 확인하세요.")
     st.caption(filename)
-    # 원본 다운로드 — 표시 여부와 무관하게 제공.
-    if src_abs.exists():
-        st.download_button(
-            "다운로드",
-            data=src_abs.read_bytes(),
-            file_name=filename,
-            key=f"dl_img_{idx}",
-            width="stretch",
-        )
-    if shown and st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
-        _show_image_dialog(img_ref.file, filename)
-    # 잘못 첨부한 사진 삭제 (2단계 확인) — 요청/개발 공통.
-    with st.popover("🗑 삭제", width="stretch"):
-        st.warning("이 사진을 삭제할까요? 되돌릴 수 없습니다.")
-        if st.button("삭제 확인", key=f"del_img_btn_{idx}", type="primary"):
-            try:
-                repository.delete_image(item_id, idx, user["name"])
-                st.toast("사진이 삭제되었습니다", icon="🗑")
-                st.rerun()
-            except Exception as exc:  # pragma: no cover
-                st.error(f"삭제 실패: {exc}")
+    # 1번: 다운로드 / 원본 보기 / 삭제 를 한 행에 배치.
+    _dlc, _viewc, _delc = st.columns(3)
+    with _dlc:
+        if src_abs.exists():
+            st.download_button(
+                "다운로드",
+                data=src_abs.read_bytes(),
+                file_name=filename,
+                key=f"dl_img_{idx}",
+                width="stretch",
+            )
+    with _viewc:
+        if shown and st.button(
+            "원본 보기", key=f"view_img_{idx}", width="stretch"
+        ):
+            _show_image_dialog(img_ref.file, filename)
+    with _delc:
+        # 잘못 첨부한 사진 삭제 (2단계 확인) — 요청/개발 공통.
+        with st.popover("🗑 삭제", width="stretch"):
+            st.warning("이 사진을 삭제할까요? 되돌릴 수 없습니다.")
+            if st.button(
+                "삭제 확인", key=f"del_img_btn_{idx}", type="primary"
+            ):
+                try:
+                    repository.delete_image(item_id, idx, user["name"])
+                    st.toast("사진이 삭제되었습니다", icon="🗑")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"삭제 실패: {exc}")
     st.markdown("")  # 이미지 사이 간격
 
 
@@ -964,7 +979,8 @@ with body_col:
                     # 3번: 줄바꿈(\n)을 그대로 보여준다 (markdown 은 줄바꿈 무시).
                     st.markdown(
                         f'<div style="white-space:pre-wrap;font-size:0.92em;'
-                        f'line-height:1.5;">{html.escape(comment.body)}</div>',
+                        f'line-height:1.5;padding:2px 2px 10px;">'
+                        f"{html.escape(comment.body)}</div>",
                         unsafe_allow_html=True,
                     )
                     if getattr(comment, "edited", False):
