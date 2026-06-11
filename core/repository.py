@@ -1067,6 +1067,37 @@ def _next_image_seq(item_id: str) -> int:
     return images_mod.count_images(item_id) + 1
 
 
+def delete_image(item_id: str, image_index: int, actor: str) -> Issue:
+    """이미지 한 장 삭제 — issue.images 에서 제거하고 파일(원본+썸네일)도 지운다.
+
+    잘못 첨부한 이미지를 제거하는 용도. image_index 는 issue.images 의 인덱스.
+    """
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        if not (0 <= image_index < len(issue.images)):
+            raise ValueError("이미지를 찾을 수 없습니다.")
+        img = issue.images.pop(image_index)
+        item_dir = paths.item_dir(item_id)
+        for _rel in (img.file, img.thumb):
+            if _rel:
+                try:
+                    (item_dir / _rel).unlink(missing_ok=True)
+                except OSError:
+                    pass
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CONTENT,
+        item_id=item_id,
+        detail={"delete_image": image_index},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+    return _read_meta(item_id)
+
+
 def add_image_from_bytes(
     item_id: str,
     data: bytes,

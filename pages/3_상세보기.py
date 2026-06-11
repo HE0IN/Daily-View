@@ -425,6 +425,16 @@ with meta_c1:
                         st.rerun()
                     except Exception as exc:  # pragma: no cover - 방어적
                         st.error(f"변경 실패: {exc}")
+        else:
+            # 1번: 등록자가 아니면 비활성 [변경] 버튼으로 자리를 채워 다른 메타
+            # 카드(상태/긴급도/카테고리)와 높이를 맞춘다. (담당자 변경은 등록자만)
+            st.button(
+                "변경",
+                key=f"assignee_change_disabled_{item_id}",
+                disabled=True,
+                width="stretch",
+                help="담당자는 등록자만 변경할 수 있습니다.",
+            )
 
 with meta_c2:
     # 긴급도 표시 + 변경 popover (프로젝트 변경 자리를 대체)
@@ -646,6 +656,15 @@ def _render_image(idx: int, img_ref) -> None:
             )
         else:
             st.caption("(파일 없음)")
+        with st.popover("🗑 삭제", width="stretch"):
+            st.warning("이 PDF를 삭제할까요? 되돌릴 수 없습니다.")
+            if st.button("삭제 확인", key=f"del_pdf_btn_{idx}", type="primary"):
+                try:
+                    repository.delete_image(item_id, idx, user["name"])
+                    st.toast("삭제되었습니다", icon="🗑")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"삭제 실패: {exc}")
         st.markdown("")
         return
 
@@ -674,6 +693,16 @@ def _render_image(idx: int, img_ref) -> None:
         )
     if shown and st.button("원본 보기", key=f"view_img_{idx}", width="stretch"):
         _show_image_dialog(img_ref.file, filename)
+    # 잘못 첨부한 사진 삭제 (2단계 확인) — 요청/개발 공통.
+    with st.popover("🗑 삭제", width="stretch"):
+        st.warning("이 사진을 삭제할까요? 되돌릴 수 없습니다.")
+        if st.button("삭제 확인", key=f"del_img_btn_{idx}", type="primary"):
+            try:
+                repository.delete_image(item_id, idx, user["name"])
+                st.toast("사진이 삭제되었습니다", icon="🗑")
+                st.rerun()
+            except Exception as exc:  # pragma: no cover
+                st.error(f"삭제 실패: {exc}")
     st.markdown("")  # 이미지 사이 간격
 
 
