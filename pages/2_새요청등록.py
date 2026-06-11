@@ -319,11 +319,13 @@ with right:
             key=f"new_urgency_{nonce}",
         )
 
-        assignee_choice = st.selectbox(
+        # 11번: 인원이 적어 selectbox 대신 라디오(가로)로 선택.
+        assignee_choice = st.radio(
             "담당자 (필수)",
             options=assignee_options,
-            index=_default_assignee_idx,  # 직전 등록 담당자가 기본값 (없으면 미지정)
+            index=_default_assignee_idx,  # 직전 등록 담당자가 기본값
             key=f"new_assignee_select_{nonce}",
+            horizontal=True,
         )
 
         assignee_manual = st.text_input(

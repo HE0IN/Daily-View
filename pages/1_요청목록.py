@@ -111,7 +111,22 @@ _preset_sort = st.session_state.pop("list_preset_sort", None)
 if _preset_sort:
     st.session_state["list_sort"] = _preset_sort
 
-f1, f2, f3, f4, f5 = st.columns([1, 2, 1.4, 2.4, 1.2])
+# 카테고리 대분류 옵션 (현재 프로젝트로 좁힘) — 필터 한 줄에 포함하기 위해 먼저 계산.
+try:
+    cat_tree = repository.list_categories(project=current_project)
+except TypeError:
+    cat_tree = repository.list_categories()
+except Exception:  # noqa: BLE001
+    cat_tree = {}
+category_l1_options = ["(전체)"] + sorted(cat_tree.keys())
+if (
+    st.session_state.get("list_category_l1")
+    and st.session_state["list_category_l1"] not in category_l1_options
+):
+    st.session_state["list_category_l1"] = "(전체)"
+
+# 9번: 필터 셀렉트박스를 모두 한 줄에 (긴급도/상태/담당자/검색/정렬/카테고리).
+f1, f2, f3, f4, f5, f6 = st.columns([1, 1.8, 1.3, 1.8, 1.2, 1.5])
 
 with f1:
     urgency_choice = st.selectbox(
@@ -120,16 +135,14 @@ with f1:
         format_func=lambda v: "전체" if v == "(전체)" else URGENCY_LABELS.get(v, v),
         key="list_urgency",
     )
-
 with f2:
     status_choice: list[str] = st.multiselect(
-        "상태 (다중 선택)",
+        "상태 (다중)",
         options=[s.value for s in Status],
         format_func=lambda v: STATUS_LABELS.get(v, v),
         key="list_status",
         help="비어 있으면 전체",
     )
-
 with f3:
     assignee_choice = st.selectbox(
         "담당자",
@@ -139,45 +152,22 @@ with f3:
         else 0,
         key="list_assignee",
     )
-
 with f4:
     search_query = st.text_input(
-        "검색", placeholder="제목 또는 태그", key="list_search"
+        "검색", placeholder="제목/태그", key="list_search"
     )
-
 with f5:
     sort_choice = st.selectbox(
         "정렬",
         options=["최신순", "오래된순", "긴급도순", "상태순"],
         key="list_sort",
     )
-
-# 카테고리 대분류 옵션 (현재 프로젝트로 좁힘).
-# repository.list_categories 의 시그니처가 project 인자를 받도록 갱신될 예정 —
-# 구버전(인자 없음)에서도 동작하도록 try/except 로 폴백.
-try:
-    cat_tree = repository.list_categories(project=current_project)
-except TypeError:
-    cat_tree = repository.list_categories()
-except Exception:  # noqa: BLE001
-    cat_tree = {}
-category_l1_options = ["(전체)"] + sorted(cat_tree.keys())
-
-f6, f7 = st.columns([1.5, 4.5])
 with f6:
-    # 직전에 선택된 값이 옵션에서 사라졌으면(프로젝트 전환 등) 기본값으로 복귀.
-    if (
-        st.session_state.get("list_category_l1")
-        and st.session_state["list_category_l1"] not in category_l1_options
-    ):
-        st.session_state["list_category_l1"] = "(전체)"
     category_l1_choice = st.selectbox(
-        "카테고리(대분류)",
+        "카테고리",
         options=category_l1_options,
         key="list_category_l1",
     )
-with f7:
-    pass  # 향후 다른 필터용 여유 공간
 
 opt_col1, opt_col2 = st.columns([1, 1])
 with opt_col1:

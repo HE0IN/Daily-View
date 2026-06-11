@@ -139,6 +139,24 @@ _unimpl = st.Page(
 st.markdown(
     """
     <style>
+    /* 페이지 본문 상단 여백 축소 — Streamlit 기본 padding-top 이 과도하게 큼.
+       버전별 컨테이너 이름이 달라 여러 selector 를 함께 지정. */
+    .block-container,
+    section.main > div.block-container,
+    div[data-testid="stMainBlockContainer"],
+    div[data-testid="stAppViewBlockContainer"] {
+        padding-top: 2rem !important;
+    }
+    /* 13번: 파일 업로더 dropzone 축소 — 사진/파일만 넣는 곳이라 작아도 됨.
+       드래그 안내문구는 숨기고 [Browse files] 클릭만으로 쓰게 한다. */
+    [data-testid="stFileUploaderDropzone"] {
+        min-height: 2.2rem !important;
+        padding: 0.2rem 0.75rem !important;
+        align-items: center !important;
+    }
+    [data-testid="stFileUploaderDropzoneInstructions"] {
+        display: none !important;
+    }
     /* 상세보기 메뉴 항목 숨김 — 카드 클릭으로만 진입 */
     section[data-testid="stSidebarNav"] li:has(a[href*="%EC%83%81%EC%84%B8"]) {
         display: none !important;

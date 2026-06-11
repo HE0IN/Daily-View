@@ -98,29 +98,8 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
     _prev = list(u_files or [])
     _total = len(_prev) + len(u_paste_imgs)
 
-    if _total:
-        if u_paste_imgs and st.button(
-            f"클립보드 비우기 ({len(u_paste_imgs)}장)",
-            key=f"unimpl_paste_clear_{nonce}",
-        ):
-            st.session_state.pop(_pk, None)
-            st.session_state.pop(_lk, None)
-            # 컴포넌트 리셋 — 같은 dataURL 재반환으로 인한 재추가 방지.
-            st.session_state[f"_unimpl_paste_sub_{nonce}"] = _paste_sub + 1
-            st.rerun()
-        # 작은 썸네일 미리보기 (최대 6열)
-        st.caption(f"첨부 예정 {_total}장")
-        pcols = st.columns(6)
-        _i = 0
-        for _k, _pi in enumerate(u_paste_imgs, start=1):
-            with pcols[_i % 6]:
-                st.image(_pi, caption=f"#{_k}", width="stretch")
-            _i += 1
-        for _f in _prev:
-            with pcols[_i % 6]:
-                st.image(_f, width="stretch")
-            _i += 1
-
+    # 12번: [추가] 버튼을 미리보기보다 위(상단)에 고정 — 사진을 넣어도 버튼이
+    # 아래로 밀리지 않게 한다.
     if st.button("추가", type="primary", key=f"unimpl_add_{nonce}"):
         if not u_title.strip():
             st.error("제목을 입력해주세요.")
@@ -156,6 +135,29 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
                 st.rerun()
             except Exception as exc:  # noqa: BLE001
                 st.error(f"추가 실패: {exc}")
+
+    # 첨부 미리보기 ([추가] 아래) + 클립보드 비우기.
+    if _total:
+        if u_paste_imgs and st.button(
+            f"클립보드 비우기 ({len(u_paste_imgs)}장)",
+            key=f"unimpl_paste_clear_{nonce}",
+        ):
+            st.session_state.pop(_pk, None)
+            st.session_state.pop(_lk, None)
+            # 컴포넌트 리셋 — 같은 dataURL 재반환으로 인한 재추가 방지.
+            st.session_state[f"_unimpl_paste_sub_{nonce}"] = _paste_sub + 1
+            st.rerun()
+        st.caption(f"첨부 예정 {_total}장")
+        pcols = st.columns(6)
+        _i = 0
+        for _k, _pi in enumerate(u_paste_imgs, start=1):
+            with pcols[_i % 6]:
+                st.image(_pi, caption=f"#{_k}", width="stretch")
+            _i += 1
+        for _f in _prev:
+            with pcols[_i % 6]:
+                st.image(_f, width="stretch")
+            _i += 1
 
 
 st.divider()
