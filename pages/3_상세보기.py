@@ -969,8 +969,9 @@ with body_col:
                                     st.error(f"삭제 실패: {exc}")
                     # 3번: 줄바꿈(\n)을 그대로 보여준다 (markdown 은 줄바꿈 무시).
                     st.markdown(
-                        f'<div style="white-space:pre-wrap;font-size:0.92em;'
-                        f'line-height:1.5;padding:2px 2px 10px;">'
+                        f'<div style="white-space:pre-wrap;font-size:1.02em;'
+                        f'font-weight:500;color:#1F2937;line-height:1.55;'
+                        f'padding:2px 2px 10px;">'
                         f"{html.escape(comment.body)}</div>",
                         unsafe_allow_html=True,
                     )
