@@ -38,6 +38,15 @@ _ASSIGNEE_TURN = {
 }
 _AUTHOR_TURN = {Status.author_request, Status.author_reviewing}
 
+# '목록순' 정렬용 — 담당자 프로세스 단계 순서(확인요청→검토중→검토완료→개발→수정).
+_PROCESS_ORDER = {
+    Status.assignee_request: 0,
+    Status.assignee_reviewing: 1,
+    Status.assignee_reviewed: 2,
+    Status.assignee_developing: 3,
+    Status.assignee_fixing: 4,
+}
+
 if current_project:
     st.caption(f"{current_project} / 내 작업")
 st.title("내 작업")
@@ -71,8 +80,25 @@ def _render_my(items: list, prefix: str) -> None:
                     st.switch_page("pages/3_상세보기.py")
 
 
-st.subheader(f"📋 담당자 처리 목록 ({len(_assignee_items)})")
-st.caption("내가 담당자이고, 지금 내가 처리할 차례인 항목")
+_ah1, _ah2 = st.columns([3, 1], vertical_alignment="bottom")
+with _ah1:
+    st.subheader(f"📋 담당자 처리 목록 ({len(_assignee_items)})")
+with _ah2:
+    # 정렬을 헤더 같은 행 오른쪽 끝에.
+    _asg_sort = st.selectbox(
+        "정렬",
+        ["최신순", "오래된순", "목록순"],
+        key="mywork_asg_sort",
+        label_visibility="collapsed",
+    )
+st.caption("내가 담당자이고, 지금 내가 처리할 차례인 항목 · 목록순 = 프로세스 단계 순서")
+
+if _asg_sort == "최신순":
+    _assignee_items.sort(key=lambda e: e.updated_at, reverse=True)
+elif _asg_sort == "오래된순":
+    _assignee_items.sort(key=lambda e: e.updated_at)
+else:  # 목록순 — 프로세스 단계 순서대로
+    _assignee_items.sort(key=lambda e: _PROCESS_ORDER.get(e.status, 99))
 _render_my(_assignee_items, "mywork_asg")
 
 st.divider()
