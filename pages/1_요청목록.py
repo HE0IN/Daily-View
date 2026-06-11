@@ -294,6 +294,32 @@ total = len(items)
 
 st.caption(f"총 {total}건")
 
+# 개발목록 전체 PDF (개발사 API 요청 송부용) — A4 페이지당 항목 1개(제목/설명/사진).
+# [만들기] 로 생성(세션 저장) → [다운로드]. 매 렌더 재생성을 피하려 2단계로 나눔.
+if items:
+    _pdf_c1, _pdf_c2 = st.columns([1, 3])
+    with _pdf_c1:
+        if st.button("📄 전체 PDF 만들기", key="dev_pdf_build", width="stretch"):
+            from core import pdf_export
+
+            _issues_for_pdf = [
+                repository.get_issue(it["id"]) for it in items if it.get("id")
+            ]
+            st.session_state["_dev_list_pdf"] = pdf_export.build_issues_pdf(
+                _issues_for_pdf
+            )
+            st.toast(f"{len(_issues_for_pdf)}건 PDF 생성 완료", icon="📄")
+    if st.session_state.get("_dev_list_pdf"):
+        with _pdf_c2:
+            st.download_button(
+                "⬇ PDF 다운로드 (개발목록)",
+                data=st.session_state["_dev_list_pdf"],
+                file_name="개발목록.pdf",
+                mime="application/pdf",
+                key="dev_pdf_dl",
+                width="stretch",
+            )
+
 def _render_card_view(items_local: list[dict]) -> None:
     """카드 그리드 (4열) — 전체 항목을 한 번에 표시."""
     # 같은 행 카드들이 가장 긴 카드 높이로 stretch — 한 번만 주입.
