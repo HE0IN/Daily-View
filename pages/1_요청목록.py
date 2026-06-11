@@ -331,11 +331,35 @@ if _bulk_sel_ids:
     _sel_items = [it for it in items if it["id"] in _bulk_sel_ids]
     _sel_statuses = {it["status"] for it in _sel_items}
     with st.container(border=True):
-        st.markdown(f"**☑ 선택한 {len(_bulk_sel_ids)}건 일괄 전환**")
+        _hc1, _hc2 = st.columns([3, 2])
+        with _hc1:
+            st.markdown(f"**☑ 선택한 {len(_bulk_sel_ids)}건**")
+        with _hc2:
+            # 2번: 선택 항목만 PDF (상태 무관 — 일괄 전환과 별개로 동작).
+            if st.button("📄 선택 PDF 만들기", key="bulk_pdf", width="stretch"):
+                from core import pdf_export
+
+                _sel_iss = [repository.get_issue(_i) for _i in _bulk_sel_ids]
+                st.session_state["_bulk_sel_pdf"] = pdf_export.build_issues_pdf(
+                    _sel_iss
+                )
+                st.toast(f"{len(_sel_iss)}건 PDF 생성 완료", icon="📄")
+        if st.session_state.get("_bulk_sel_pdf"):
+            st.download_button(
+                "⬇ 선택 PDF 다운로드",
+                data=st.session_state["_bulk_sel_pdf"],
+                file_name="선택목록.pdf",
+                mime="application/pdf",
+                key="bulk_sel_pdf_dl",
+                width="stretch",
+            )
+
+        st.divider()
+        st.markdown("**일괄 전환**")
         if len(_sel_statuses) > 1:
             st.warning(
-                "같은 상태(단계)끼리만 일괄 전환할 수 있습니다 — "
-                "선택 항목의 상태가 섞여 있어요."
+                "일괄 전환은 같은 상태(단계)끼리만 됩니다 — 선택 항목의 상태가 "
+                "섞여 있어요. (PDF 추출은 위에서 가능)"
             )
         else:
             _sval = next(iter(_sel_statuses))

@@ -686,60 +686,65 @@ def _render_uploader_for_kind(kind: str) -> None:
             return
         ext_list = sorted(e.lstrip(".") for e in ALLOWED_EXT)
 
-        uploaded = st.file_uploader(
-            f"파일 업로드 (최대 {MAX_FILE_MB}MB, {','.join(ext_list)})",
-            accept_multiple_files=True,
-            type=ext_list,
-            key=f"detail_upload_{kind}_{item_id}_{upload_nonce}",
-        )
-        if uploaded and st.button(
-            "업로드",
-            key=f"detail_upload_btn_{kind}_{item_id}_{upload_nonce}",
-            type="primary",
-            width="stretch",
-        ):
-            added = 0
-            for uf in uploaded[:remaining]:
-                try:
-                    data = uf.getbuffer().tobytes()
-                    repository.add_image_from_bytes(
-                        item_id, data, uf.name, user["name"], kind=kind
-                    )
-                    added += 1
-                except ValueError as exc:
-                    st.error(f"{uf.name}: {exc}")
-                except Exception as exc:  # pragma: no cover
-                    st.error(f"{uf.name}: 업로드 실패 — {exc}")
-            if added:
-                st.toast(f"{added}장 추가되었습니다", icon="✅")
-                st.session_state[nonce_key] = upload_nonce + 1
-                st.rerun()
+        # 1번: 파일 업로드(좌) / 클립보드(우) 를 2 열로 나란히.
+        _col_file, _col_paste = st.columns(2, gap="medium")
 
-        st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
-        try:
-            paste_data_url = paste_clipboard(
-                key=f"detail_paste_{kind}_{item_id}_{upload_nonce}"
+        with _col_file:
+            uploaded = st.file_uploader(
+                f"파일 업로드 (최대 {MAX_FILE_MB}MB, {','.join(ext_list)})",
+                accept_multiple_files=True,
+                type=ext_list,
+                key=f"detail_upload_{kind}_{item_id}_{upload_nonce}",
             )
-        except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
-            paste_data_url = None
-            st.caption(f"paste 컴포넌트 오류: {exc}")
+            if uploaded and st.button(
+                "업로드",
+                key=f"detail_upload_btn_{kind}_{item_id}_{upload_nonce}",
+                type="primary",
+                width="stretch",
+            ):
+                added = 0
+                for uf in uploaded[:remaining]:
+                    try:
+                        data = uf.getbuffer().tobytes()
+                        repository.add_image_from_bytes(
+                            item_id, data, uf.name, user["name"], kind=kind
+                        )
+                        added += 1
+                    except ValueError as exc:
+                        st.error(f"{uf.name}: {exc}")
+                    except Exception as exc:  # pragma: no cover
+                        st.error(f"{uf.name}: 업로드 실패 — {exc}")
+                if added:
+                    st.toast(f"{added}장 추가되었습니다", icon="✅")
+                    st.session_state[nonce_key] = upload_nonce + 1
+                    st.rerun()
 
-        last_key = f"_detail_last_pasted_{kind}_{item_id}_{upload_nonce}"
-        if paste_data_url and st.session_state.get(last_key) != paste_data_url:
-            st.session_state[last_key] = paste_data_url
+        with _col_paste:
+            st.markdown("**클립보드 (Ctrl+V)** — 여러 번 가능")
             try:
-                _img, _, _ = decode_image_data_url(paste_data_url)
-                repository.add_image_from_pil(
-                    item_id, _img, "pasted.png", user["name"], kind=kind
+                paste_data_url = paste_clipboard(
+                    key=f"detail_paste_{kind}_{item_id}_{upload_nonce}"
                 )
-                st.toast("붙여넣기 이미지가 추가되었습니다", icon="✅")
-                st.session_state[nonce_key] = upload_nonce + 1
-                st.session_state.pop(last_key, None)
-                st.rerun()
-            except ValueError as exc:
-                st.error(f"붙여넣기 실패: {exc}")
-            except Exception as exc:  # pragma: no cover
-                st.error(f"붙여넣기 저장 실패: {exc}")
+            except Exception as exc:  # pragma: no cover - 컴포넌트 환경 의존
+                paste_data_url = None
+                st.caption(f"paste 컴포넌트 오류: {exc}")
+
+            last_key = f"_detail_last_pasted_{kind}_{item_id}_{upload_nonce}"
+            if paste_data_url and st.session_state.get(last_key) != paste_data_url:
+                st.session_state[last_key] = paste_data_url
+                try:
+                    _img, _, _ = decode_image_data_url(paste_data_url)
+                    repository.add_image_from_pil(
+                        item_id, _img, "pasted.png", user["name"], kind=kind
+                    )
+                    st.toast("붙여넣기 이미지가 추가되었습니다", icon="✅")
+                    st.session_state[nonce_key] = upload_nonce + 1
+                    st.session_state.pop(last_key, None)
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(f"붙여넣기 실패: {exc}")
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"붙여넣기 저장 실패: {exc}")
 
 
 asis_col, body_col, tobe_col = st.columns([1, 1.6, 1], gap="medium")
