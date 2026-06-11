@@ -317,8 +317,11 @@ with meta_c0:
                     _options.append((_ns, Role.developer))
             if is_author:
                 for _ns in allowed_transitions(issue.status, Role.reviewer):
-                    # 확인대기는 확인요청(unimplemented) 항목에서만 — dev 항목엔 숨김.
-                    if _ns == Status.pending_check and issue.kind != "unimplemented":
+                    # 확인대기는 확인요청(unimplemented)·확인목록(criteria) 항목에서만.
+                    if _ns == Status.pending_check and issue.kind not in (
+                        "unimplemented",
+                        "criteria",
+                    ):
                         continue
                     _options.append((_ns, Role.reviewer))
             if not _options:
@@ -327,7 +330,7 @@ with meta_c0:
                 if allowed_transitions(issue.status, Role.developer):
                     _who.append(f"담당자({issue.assignee or '미지정'})")
                 _rev_t = allowed_transitions(issue.status, Role.reviewer)
-                if issue.kind != "unimplemented":
+                if issue.kind not in ("unimplemented", "criteria"):
                     _rev_t = [s for s in _rev_t if s != Status.pending_check]
                 if _rev_t:
                     _who.append(f"등록자({issue.author})")
@@ -818,8 +821,8 @@ asis_col, _dvA, body_col, _dvB, tobe_col = st.columns(
 for _dv in (_dvA, _dvB):
     with _dv:
         st.markdown(
-            '<div style="border-left:1px solid #D1D5DB;min-height:640px;'
-            'width:0;margin:0 auto;"></div>',
+            '<div style="border-left:1px solid #D1D5DB;min-height:1280px;'
+            'height:100%;width:0;margin:0 auto;"></div>',
             unsafe_allow_html=True,
         )
 
@@ -861,6 +864,23 @@ with body_col:
             st.markdown(issue.description)
     else:
         st.caption("설명이 없습니다.")
+
+    # 2번: 가장 최근 코멘트 1개를 설명과 코멘트작성 사이에 강조 표시.
+    _recent = [
+        c for c in repository.list_comments(item_id) if c.kind != "system"
+    ]
+    if _recent:
+        _latest = max(_recent, key=lambda c: c.at)
+        st.markdown(
+            f'<div style="border-left:3px solid #6366F1;background:#EEF2FF;'
+            f'padding:8px 12px;border-radius:6px;margin:10px 0;">'
+            f'<div style="font-size:0.78em;color:#6B7280;margin-bottom:3px;">'
+            f"💬 최근 코멘트 · {html.escape(str(_latest.author))}</div>"
+            f'<div style="white-space:pre-wrap;font-size:1.0em;font-weight:500;'
+            f'color:#1F2937;line-height:1.5;">{html.escape(_latest.body)}</div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
     # 8번: 코멘트 작성을 타임라인 위로 배치
     st.markdown("### 코멘트 작성")
