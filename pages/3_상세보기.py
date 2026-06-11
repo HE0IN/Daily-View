@@ -317,13 +317,19 @@ with meta_c0:
                     _options.append((_ns, Role.developer))
             if is_author:
                 for _ns in allowed_transitions(issue.status, Role.reviewer):
+                    # 확인대기는 확인요청(unimplemented) 항목에서만 — dev 항목엔 숨김.
+                    if _ns == Status.pending_check and issue.kind != "unimplemented":
+                        continue
                     _options.append((_ns, Role.reviewer))
             if not _options:
                 # 2번: 이 단계를 '실제로' 바꿀 수 있는 역할+사람만 정확히 안내.
                 _who = []
                 if allowed_transitions(issue.status, Role.developer):
                     _who.append(f"담당자({issue.assignee or '미지정'})")
-                if allowed_transitions(issue.status, Role.reviewer):
+                _rev_t = allowed_transitions(issue.status, Role.reviewer)
+                if issue.kind != "unimplemented":
+                    _rev_t = [s for s in _rev_t if s != Status.pending_check]
+                if _rev_t:
                     _who.append(f"등록자({issue.author})")
                 if _who:
                     st.caption(

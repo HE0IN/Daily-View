@@ -12,7 +12,8 @@ import pandas as pd
 import streamlit as st
 
 from core import paths, repository
-from core.models import Status, Urgency
+from core.models import Role, Status, Urgency
+from core.workflow import allowed_transitions, can_transition
 from ui import components
 from ui.auth import get_or_init_user, render_project_selector, require_user
 from ui.theme import STATUS_LABELS, URGENCY_LABELS
@@ -319,6 +320,96 @@ if items:
                 key="dev_pdf_dl",
                 width="stretch",
             )
+
+# 5번: 같은 단계(status)의 여러 건을 한 번에 다음 단계로 전환 — 코멘트 필수.
+#   ① 상태 선택 → ② 항목 체크 → ③ 다음 단계 → ④ 코멘트 → 일괄 적용.
+#   각 항목의 권한(담당자/등록자)을 개별 판단해 가능한 건만 전환하고 나머지는 보고.
+if items:
+    with st.expander("⏩ 여러 건 한 번에 다음 단계로 (일괄 전환)", expanded=False):
+        from collections import defaultdict
+
+        _by_status: dict[str, list[dict]] = defaultdict(list)
+        for _it in items:
+            _by_status[_it["status"]].append(_it)
+        _status_vals = list(_by_status.keys())
+        _status_labels = [STATUS_LABELS.get(s, s) for s in _status_vals]
+        _sel_label = st.selectbox("① 상태 선택", _status_labels, key="bulk_status")
+        _sel_val = _status_vals[_status_labels.index(_sel_label)]
+        _group = _by_status[_sel_val]
+
+        # 이 상태에서 담당자/등록자가 갈 수 있는 다음 단계(중복 제거).
+        # 확인대기는 확인요청 전용이라 개발목록 일괄전환에서는 제외한다.
+        _next_uniq: list[Status] = []
+        for _r in (Role.developer, Role.reviewer):
+            for _ns in allowed_transitions(Status(_sel_val), _r):
+                if _ns == Status.pending_check or _ns in _next_uniq:
+                    continue
+                _next_uniq.append(_ns)
+
+        if not _next_uniq:
+            st.caption(f"'{_sel_label}' 단계에서 넘어갈 다음 단계가 없습니다.")
+        else:
+            st.caption(f"② 넘길 항목 선택 — {_sel_label} {len(_group)}건")
+            _checked: list[str] = []
+            for _it in _group:
+                if st.checkbox(_it["title"], key=f"bulk_chk_{_it['id']}"):
+                    _checked.append(_it["id"])
+
+            _next_labels = [STATUS_LABELS.get(s.value, s.value) for s in _next_uniq]
+            _next_sel = st.selectbox("③ 다음 단계", _next_labels, key="bulk_next")
+            _next_status = _next_uniq[_next_labels.index(_next_sel)]
+            _bulk_comment = st.text_area(
+                "④ 코멘트 (필수)",
+                key="bulk_comment",
+                height=70,
+                placeholder="일괄 전환 사유를 적어주세요.",
+            )
+
+            if st.button(
+                f"⏩ 선택 {len(_checked)}건 → {_next_sel}",
+                type="primary",
+                disabled=not _checked,
+                key="bulk_apply",
+            ):
+                if not _bulk_comment.strip():
+                    st.error("코멘트는 필수입니다.")
+                else:
+                    _ok, _skip = 0, []
+                    for _iid in _checked:
+                        _iss = repository.get_issue(_iid)
+                        _role = None
+                        if _iss.assignee == name and can_transition(
+                            _iss.status, Role.developer, _next_status
+                        ):
+                            _role = Role.developer
+                        elif _iss.author == name and can_transition(
+                            _iss.status, Role.reviewer, _next_status
+                        ):
+                            _role = Role.reviewer
+                        if _role is not None:
+                            repository.add_comment(
+                                _iid,
+                                name,
+                                _role,
+                                f"[일괄 전환] {_bulk_comment.strip()}",
+                            )
+                            repository.update_status(
+                                _iid, _next_status, name, _role
+                            )
+                            _ok += 1
+                        else:
+                            _skip.append(_iss.title)
+                    if _ok:
+                        st.success(f"{_ok}건을 '{_next_sel}'(으)로 전환했습니다.")
+                    if _skip:
+                        st.warning(
+                            f"권한이 없어 제외 {len(_skip)}건: "
+                            f"{', '.join(_skip[:5])}"
+                        )
+                    for _iid in _checked:
+                        st.session_state.pop(f"bulk_chk_{_iid}", None)
+                    st.rerun()
+
 
 def _render_card_view(items_local: list[dict]) -> None:
     """카드 그리드 (4열) — 전체 항목을 한 번에 표시."""

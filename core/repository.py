@@ -123,20 +123,25 @@ def create_issue(
     paths.item_images_dir(item_id).mkdir(parents=True, exist_ok=True)
 
     timestamp = now()
+    _kind = kind if kind in ("dev", "unimplemented", "criteria") else "dev"
+    # 확인요청(unimplemented) 항목은 '확인대기'로 시작한다 (담당자확인요청 아님).
+    _initial_status = (
+        Status.pending_check if _kind == "unimplemented" else Status.assignee_request
+    )
     issue = Issue(
         id=item_id,
         title=title,
         description=description,
         urgency=Urgency(urgency) if not isinstance(urgency, Urgency) else urgency,
-        status=Status.assignee_request,
-        kind=kind if kind in ("dev", "unimplemented") else "dev",
+        status=_initial_status,
+        kind=_kind,
         author=author,
         author_role=Role(author_role) if not isinstance(author_role, Role) else author_role,
         assignee=assignee,
         created_at=timestamp,
         updated_at=timestamp,
         status_history=[
-            StatusEvent(status=Status.assignee_request, at=timestamp, by=author),
+            StatusEvent(status=_initial_status, at=timestamp, by=author),
         ],
         images=[],
         reviewer_confirmed=False,

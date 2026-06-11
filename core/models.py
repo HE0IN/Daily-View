@@ -60,6 +60,9 @@ class Status(str, Enum):
     author_request = "author_request"            # 등록자확인요청
     author_reviewing = "author_reviewing"        # 등록자검토중
     closed = "closed"                            # 완료
+    # 확인대기 — 확인요청(unimplemented) 항목 전용. 새요청등록(개발) 또는
+    # 확인목록으로 가기 '전' 단계. dev 항목 워크플로우에는 노출되지 않는다.
+    pending_check = "pending_check"              # 확인대기
 
 
 class Role(str, Enum):

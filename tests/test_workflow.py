@@ -25,7 +25,7 @@ from core.workflow import (
 # ---------------------------------------------------------------------------
 EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.assignee_request, Role.developer): {Status.assignee_reviewing},
-    (Status.assignee_request, Role.reviewer): set(),
+    (Status.assignee_request, Role.reviewer): {Status.pending_check},
     (Status.assignee_reviewing, Role.developer): {
         Status.assignee_reviewed,
         Status.assignee_request,
@@ -70,6 +70,9 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.author_reviewing, Role.developer): set(),
     (Status.closed, Role.developer): set(),
     (Status.closed, Role.reviewer): {Status.author_reviewing},
+    # 확인대기 — 확인요청(unimplemented) 항목 전용. 등록자만 담당자확인요청으로.
+    (Status.pending_check, Role.developer): set(),
+    (Status.pending_check, Role.reviewer): {Status.assignee_request},
 }
 
 
@@ -138,6 +141,10 @@ def test_closed_can_reopen_to_review() -> None:
         (Status.author_reviewing, Role.reviewer, Status.author_request, True),
         # --- 완료 → 등록자검토중 (재개발) ---
         (Status.closed, Role.reviewer, Status.author_reviewing, True),
+        # --- 확인대기 (확인요청 항목 전용, 등록자) ---
+        (Status.assignee_request, Role.reviewer, Status.pending_check, True),
+        (Status.pending_check, Role.reviewer, Status.assignee_request, True),
+        (Status.pending_check, Role.developer, Status.assignee_request, False),
         # --- terminal/위반 ---
         (Status.closed, Role.developer, Status.assignee_request, False),
         (Status.closed, Role.reviewer, Status.assignee_request, False),
@@ -212,6 +219,7 @@ def test_status_labels_ko_specific_values() -> None:
     assert STATUS_LABELS_KO[Status.author_request] == "등록자확인요청"
     assert STATUS_LABELS_KO[Status.author_reviewing] == "등록자검토중"
     assert STATUS_LABELS_KO[Status.closed] == "완료"
+    assert STATUS_LABELS_KO[Status.pending_check] == "확인대기"
 
 
 def test_urgency_labels_ko_are_complete() -> None:

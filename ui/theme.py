@@ -39,6 +39,7 @@ STATUS_COLORS: dict[str, str] = {
     "author_request": "#F59E0B",        # 주황 (등록자확인요청)
     "author_reviewing": "#F97316",      # 진주황 (등록자검토중)
     "closed": "#6B7280",                # 회색 (완료)
+    "pending_check": "#0D9488",         # 청록 (확인대기 — 확인요청 항목)
 }
 
 STATUS_LABELS: dict[str, str] = {
@@ -52,6 +53,7 @@ STATUS_LABELS: dict[str, str] = {
     "author_request": "등록자확인요청",
     "author_reviewing": "등록자검토중",
     "closed": "완료",
+    "pending_check": "확인대기",
 }
 
 # ---------------------------------------------------------------------------
