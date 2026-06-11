@@ -338,9 +338,15 @@ with meta_c0:
                 else:
                     st.caption("이 단계에서는 변경할 수 있는 상태가 없습니다.")
             else:
-                # 상태 변경 시 코멘트(사유) 필수
+                # 상태 변경 시 코멘트(사유) 필수 — 단, 검토중→검토완료는 생략 가능(2번).
+                _reviewing_now = issue.status == Status.assignee_reviewing
                 _chg_comment = st.text_area(
-                    "변경 사유 (필수)",
+                    "변경 사유"
+                    + (
+                        " (검토완료 전환은 생략 가능)"
+                        if _reviewing_now
+                        else " (필수)"
+                    ),
                     key=f"status_change_comment_{item_id}",
                     placeholder=(
                         "예: 검토 결과 개발사 확인이 필요하여 메일 송부하였습니다."
@@ -354,13 +360,20 @@ with meta_c0:
                         key=f"detail_status_change_{_ns.value}",
                         width="stretch",
                     ):
-                        if not _chg_comment.strip():
+                        # 2번: 검토중→검토완료 전환은 코멘트 없이도 허용.
+                        _comment_optional = (
+                            issue.status == Status.assignee_reviewing
+                            and _ns == Status.assignee_reviewed
+                        )
+                        _c = _chg_comment.strip()
+                        if not _c and not _comment_optional:
                             st.error("상태 변경 시 코멘트(사유)는 필수입니다.")
                         else:
                             try:
-                                repository.add_comment(
-                                    item_id, _user_name, _role, _chg_comment.strip()
-                                )
+                                if _c:
+                                    repository.add_comment(
+                                        item_id, _user_name, _role, _c
+                                    )
                                 repository.update_status(
                                     item_id, _ns, _user_name, _role
                                 )
@@ -861,7 +874,7 @@ with body_col:
                 role_label = _role_label(comment.role)
                 safe_comment_author = html.escape(str(comment.author))
                 with st.container(border=True):
-                    _ch, _cd = st.columns([7, 1])
+                    _ch, _ce, _cd = st.columns([6, 1, 1])
                     with _ch:
                         st.markdown(
                             f'<div style="font-size:0.9em;">'
@@ -871,6 +884,28 @@ with body_col:
                             f"</div>",
                             unsafe_allow_html=True,
                         )
+                    with _ce:
+                        # 코멘트 수정 (4번) — 본문을 고치면 '수정됨'으로 표시.
+                        with st.popover("✏", help="코멘트 수정"):
+                            _new_body = st.text_area(
+                                "내용 수정",
+                                value=comment.body,
+                                key=f"edit_cmt_ta_{comment.id}",
+                                height=100,
+                            )
+                            if st.button(
+                                "저장",
+                                key=f"edit_cmt_btn_{comment.id}",
+                                type="primary",
+                            ):
+                                try:
+                                    repository.edit_comment(
+                                        item_id, comment.id, _new_body, user["name"]
+                                    )
+                                    st.toast("코멘트가 수정되었습니다", icon="✏")
+                                    st.rerun()
+                                except Exception as exc:  # pragma: no cover
+                                    st.error(f"수정 실패: {exc}")
                     with _cd:
                         # 코멘트 삭제 — 누구나, 2단계 확인 (audit 로그 기록).
                         with st.popover("🗑", help="코멘트 삭제"):
@@ -889,6 +924,8 @@ with body_col:
                                 except Exception as exc:  # pragma: no cover
                                     st.error(f"삭제 실패: {exc}")
                     st.markdown(comment.body)
+                    if getattr(comment, "edited", False):
+                        st.caption("✏ 수정됨")
 
 
 # ---- 우측: 개발 (TO-BE) ----------------------------------------------------

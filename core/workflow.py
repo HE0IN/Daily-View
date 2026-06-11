@@ -46,6 +46,7 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_wait,
+        Status.author_request,  # 개발 불필요 시 바로 등록자확인요청
         Status.assignee_reviewing,  # 직전 단계로
     ],
     # 개발사요청대기 → 개발사확인중(요청 송부) / (되돌리기)검토완료 (담당자)

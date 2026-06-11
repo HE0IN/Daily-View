@@ -35,6 +35,7 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_wait,
+        Status.author_request,
         Status.assignee_reviewing,
     },
     (Status.assignee_reviewed, Role.reviewer): set(),
@@ -248,5 +249,6 @@ def test_allowed_transitions_returns_independent_list() -> None:
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_wait,
+        Status.author_request,
         Status.assignee_reviewing,
     ], "내부 TRANSITIONS 가 외부 변형에 노출됨"

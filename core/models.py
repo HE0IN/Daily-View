@@ -113,6 +113,7 @@ class Comment(BaseModel):
     role: Role | Literal["system"]
     body: str
     kind: Literal["comment", "system"] = "comment"
+    edited: bool = False  # 수정 여부 — 타임라인에서 '(수정됨)' 표시용 (4번)
 
 
 # ---------------------------------------------------------------------------

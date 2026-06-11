@@ -457,6 +457,36 @@ def delete_comment(item_id: str, comment_id: str, actor: str) -> None:
     index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
 
 
+def edit_comment(
+    item_id: str, comment_id: str, new_body: str, actor: str
+) -> None:
+    """일반 코멘트 한 건의 본문을 수정하고 edited=True 로 표시 (4번).
+
+    시스템 코멘트(상태 변경 등 이력)는 수정할 수 없다(ValueError).
+    빈 본문도 거부한다. 코멘트 개수는 그대로라 인덱스 갱신은 생략한다.
+    """
+    cleaned = (new_body or "").strip()
+    if not cleaned:
+        raise ValueError("코멘트 내용은 비울 수 없습니다.")
+    with file_lock(_meta_lock_path(item_id)):
+        comments = list_comments(item_id)
+        target = next((c for c in comments if c.id == comment_id), None)
+        if target is None:
+            raise ValueError("코멘트를 찾을 수 없습니다.")
+        if target.kind == "system":
+            raise ValueError("시스템 코멘트(이력)는 수정할 수 없습니다.")
+        target.body = cleaned
+        target.edited = True
+        _rewrite_comments_unlocked(item_id, comments)
+
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CONTENT,
+        item_id=item_id,
+        detail={"edit_comment": comment_id},
+    )
+
+
 # ---------------------------------------------------------------------------
 # 상태 / 메타 갱신
 # ---------------------------------------------------------------------------
