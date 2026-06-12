@@ -317,22 +317,16 @@ with meta_c0:
                     _options.append((_ns, Role.developer))
             if is_author:
                 for _ns in allowed_transitions(issue.status, Role.reviewer):
-                    # 확인대기는 확인요청(unimplemented)·확인목록(criteria) 항목에서만.
-                    if _ns == Status.pending_check and issue.kind not in (
-                        "unimplemented",
-                        "criteria",
-                    ):
-                        continue
+                    # 확인대기는 등록자(author)만, 담당자확인요청 단계에서 노출.
+                    # (확인요청/개발/Temp 어느 kind 든 담당자확인요청 ↔ 확인대기 가능 —
+                    #  kind 는 전환 시 함께 바뀌어 목록 사이를 이동한다, 1·3번.)
                     _options.append((_ns, Role.reviewer))
             if not _options:
                 # 2번: 이 단계를 '실제로' 바꿀 수 있는 역할+사람만 정확히 안내.
                 _who = []
                 if allowed_transitions(issue.status, Role.developer):
                     _who.append(f"담당자({issue.assignee or '미지정'})")
-                _rev_t = allowed_transitions(issue.status, Role.reviewer)
-                if issue.kind not in ("unimplemented", "criteria"):
-                    _rev_t = [s for s in _rev_t if s != Status.pending_check]
-                if _rev_t:
+                if allowed_transitions(issue.status, Role.reviewer):
                     _who.append(f"등록자({issue.author})")
                 if _who:
                     st.caption(
@@ -341,11 +335,12 @@ with meta_c0:
                 else:
                     st.caption("이 단계에서는 변경할 수 있는 상태가 없습니다.")
             else:
-                # 상태 변경 시 코멘트(사유) 필수 — 단, 검토중→검토완료는 생략 가능(2번).
-                # 담당자확인요청→검토중, 검토중→검토완료 는 코멘트 생략 가능 (2번).
+                # 상태 변경 시 코멘트(사유) 필수 — 단, 검토 단계 전환과
+                # 확인대기↔담당자확인요청 토글은 생략 가능 (2·3번).
                 _comment_skippable = issue.status in (
                     Status.assignee_request,
                     Status.assignee_reviewing,
+                    Status.pending_check,
                 )
                 _chg_comment = st.text_area(
                     "변경 사유"
@@ -367,35 +362,65 @@ with meta_c0:
                         key=f"detail_status_change_{_ns.value}",
                         width="stretch",
                     ):
-                        # 2번: 검토중→검토완료 전환은 코멘트 없이도 허용.
+                        # 검토 단계 전환과 확인대기↔담당자확인요청 토글은
+                        # 코멘트 없이도 허용 (2·3번).
                         _comment_optional = (
-                            issue.status == Status.assignee_request
-                            and _ns == Status.assignee_reviewing
-                        ) or (
-                            issue.status == Status.assignee_reviewing
-                            and _ns == Status.assignee_reviewed
+                            (
+                                issue.status == Status.assignee_request
+                                and _ns == Status.assignee_reviewing
+                            )
+                            or (
+                                issue.status == Status.assignee_reviewing
+                                and _ns == Status.assignee_reviewed
+                            )
+                            or (
+                                issue.status == Status.pending_check
+                                and _ns == Status.assignee_request
+                            )
+                            or (
+                                issue.status == Status.assignee_request
+                                and _ns == Status.pending_check
+                            )
                         )
                         _c = _chg_comment.strip()
                         if not _c and not _comment_optional:
                             st.error("상태 변경 시 코멘트(사유)는 필수입니다.")
                         else:
                             try:
-                                # criteria(확인목록) 항목을 확인대기로 보내면 확인요청
-                                # 목록(unimplemented)으로 이동 — kind 를 되돌린다.
-                                if (
-                                    _ns == Status.pending_check
-                                    and issue.kind == "criteria"
-                                ):
-                                    repository.revert_criteria_to_request(
-                                        item_id, _user_name
-                                    )
                                 if _c:
                                     repository.add_comment(
                                         item_id, _user_name, _role, _c
                                     )
-                                repository.update_status(
-                                    item_id, _ns, _user_name, _role
-                                )
+                                # 확인대기 ↔ 담당자확인요청 은 kind 도 함께 바꿔
+                                # 확인요청목록 ↔ 개발목록 사이를 이동시킨다 (1·3번).
+                                if (
+                                    _ns == Status.assignee_request
+                                    and issue.status == Status.pending_check
+                                    and issue.kind == "unimplemented"
+                                ):
+                                    repository.send_pending_to_dev(
+                                        item_id, _user_name
+                                    )
+                                elif (
+                                    _ns == Status.pending_check
+                                    and issue.kind == "dev"
+                                ):
+                                    repository.send_dev_to_pending(
+                                        item_id, _user_name
+                                    )
+                                elif (
+                                    _ns == Status.pending_check
+                                    and issue.kind == "criteria"
+                                ):
+                                    # Temp(criteria) → 확인대기 안전망
+                                    # (보통 temp 상태라 미도달).
+                                    repository.revert_criteria_to_request(
+                                        item_id, _user_name
+                                    )
+                                else:
+                                    repository.update_status(
+                                        item_id, _ns, _user_name, _role
+                                    )
                                 st.toast(
                                     f"상태가 '{_nl}'로 변경되었습니다", icon="✅"
                                 )

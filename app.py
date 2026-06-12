@@ -192,12 +192,15 @@ st.markdown(
 )
 
 # dict 형태 → 섹션 사이에 구분 영역이 생겨 '선 긋기' 효과.
-# 상세보기는 '조회' 섹션에 포함하되 위 CSS 로 사이드바에서 숨긴다.
+# 1구역: 개발 흐름(내 작업·개발사 요청·개발목록·새 요청 등록)
+# 2구역: 확인 흐름(확인 요청·확인요청목록·Temp)
+# 3구역: 조회(대시보드·통계·상세보기) — 대시보드/통계는 추후 통합 예정.
+# 상세보기는 3구역에 포함하되 위 CSS 로 사이드바에서 숨긴다.
 pg = st.navigation(
     {
-        " ": [_dashboard, _my_work, _vendor_req],
-        "  ": [_confirm_req, _confirm_list, _new],
-        "   ": [_list, _stats, _detail, _criteria],
+        " ": [_my_work, _vendor_req, _list, _new],
+        "  ": [_confirm_req, _confirm_list, _criteria],
+        "   ": [_dashboard, _stats, _detail],
     }
 )
 pg.run()

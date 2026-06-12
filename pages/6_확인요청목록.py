@@ -12,6 +12,7 @@ from __future__ import annotations
 import streamlit as st
 
 from core import repository
+from core.models import Status
 from ui import components
 
 user = st.session_state.get("user")
@@ -35,17 +36,21 @@ st.caption(
 )
 
 # 5번: 확인요청(확인대기) 항목은 담당자가 없어야 한다 — 남아 있으면 해제.
+# 1번: 확인대기가 아닌(담당자확인요청 등으로 보내졌으나 kind 가 안 바뀐) 옛 항목은
+#      개발목록(dev)으로 정규화해 확인요청목록에서 빠지게 한다.
 for _e in repository.list_issues(
     kind="unimplemented",
     project=current_project,
     include_closed=True,
     include_archived=False,
 ):
-    if _e.assignee:
-        try:
+    try:
+        if _e.status != Status.pending_check:
+            repository.send_pending_to_dev(_e.id, name)
+        elif _e.assignee:
             repository.clear_assignee(_e.id, name)
-        except Exception:  # noqa: BLE001
-            pass
+    except Exception:  # noqa: BLE001
+        pass
 
 items = repository.list_issues(
     kind="unimplemented",

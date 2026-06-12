@@ -930,3 +930,76 @@ def test_api_check_no_project_set(
 
     comments = repository.list_comments(issue.id)
     assert not any("API 담당자로 자동 변경" in c.body for c in comments)
+
+
+# ---------------------------------------------------------------------------
+# 확인대기 ↔ 담당자확인요청 (확인요청목록 ↔ 개발목록) 토글
+# ---------------------------------------------------------------------------
+
+
+def test_send_pending_to_dev_flips_kind_and_status(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """확인요청(확인대기) → 담당자확인요청: kind unimplemented→dev, 목록 이동 (1번)."""
+    kw = dict(sample_issue_kwargs)
+    kw["kind"] = "unimplemented"
+    issue = repository.create_issue(**kw)
+    # 확인요청 항목은 확인대기로 시작.
+    assert issue.kind == "unimplemented"
+    assert issue.status == Status.pending_check
+
+    moved = repository.send_pending_to_dev(issue.id, actor="등록자")
+    assert moved.kind == "dev"
+    assert moved.status == Status.assignee_request
+    # status_history 에 담당자확인요청 이벤트가 추가됨.
+    assert moved.status_history[-1].status == Status.assignee_request
+
+    # 개발목록(kind=dev)에는 보이고 확인요청목록(kind=unimplemented)에선 빠진다.
+    dev_ids = [e.id for e in repository.list_issues(kind="dev")]
+    unimpl_ids = [e.id for e in repository.list_issues(kind="unimplemented")]
+    assert issue.id in dev_ids
+    assert issue.id not in unimpl_ids
+
+
+def test_send_pending_to_dev_rejects_non_unimplemented(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """dev 항목에 send_pending_to_dev → ValueError."""
+    issue = repository.create_issue(**sample_issue_kwargs)  # 기본 kind=dev
+    with pytest.raises(ValueError):
+        repository.send_pending_to_dev(issue.id, actor="등록자")
+
+
+def test_send_dev_to_pending_roundtrip(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """담당자확인요청 → 확인대기: kind dev→unimplemented, 담당자 해제, 목록 복귀 (3번)."""
+    kw = dict(sample_issue_kwargs)
+    kw["kind"] = "unimplemented"
+    issue = repository.create_issue(**kw)
+    dev = repository.send_pending_to_dev(issue.id, actor="등록자")
+    # 담당자를 배정해 둔 상태에서 되돌려도 해제되는지 확인.
+    repository.update_assignee(dev.id, "담당이", actor="등록자")
+
+    back = repository.send_dev_to_pending(issue.id, actor="등록자")
+    assert back.kind == "unimplemented"
+    assert back.status == Status.pending_check
+    assert back.assignee is None
+    assert back.status_history[-1].status == Status.pending_check
+
+    unimpl_ids = [e.id for e in repository.list_issues(kind="unimplemented")]
+    dev_ids = [e.id for e in repository.list_issues(kind="dev")]
+    assert issue.id in unimpl_ids
+    assert issue.id not in dev_ids
+
+
+def test_send_dev_to_pending_requires_assignee_request(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """담당자확인요청이 아닌 상태에서 send_dev_to_pending → ValueError."""
+    issue = repository.create_issue(**sample_issue_kwargs)  # 기본 kind=dev, 담당자확인요청
+    repository.update_status(
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
+    )
+    with pytest.raises(ValueError):
+        repository.send_dev_to_pending(issue.id, actor="등록자")

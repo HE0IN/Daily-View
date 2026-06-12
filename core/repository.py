@@ -733,6 +733,78 @@ def revert_criteria_to_request(item_id: str, actor: str) -> Issue:
     return _read_meta(item_id)
 
 
+def send_pending_to_dev(item_id: str, actor: str) -> Issue:
+    """확인요청(확인대기) 항목을 담당자확인요청(개발목록)으로 보낸다 (1·3번).
+
+    kind 를 unimplemented→dev, 상태를 확인대기(pending_check)→담당자확인요청
+    (assignee_request)으로 바꾼다. 확인요청목록에서 빠지고 개발목록에 나타난다.
+    담당자는 비어 있을 수 있으며(확인대기는 담당자 없음), 이후 상세보기에서 배정한다.
+    """
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        if issue.kind != "unimplemented":
+            raise ValueError("확인요청 항목만 담당자확인요청으로 보낼 수 있습니다.")
+        timestamp = now()
+        issue.kind = "dev"
+        issue.status = Status.assignee_request
+        issue.updated_at = timestamp
+        issue.status_history.append(
+            StatusEvent(status=Status.assignee_request, at=timestamp, by=actor)
+        )
+        _write_meta_unlocked(issue)
+
+    _add_system_comment(
+        item_id, "담당자확인요청으로 보냈습니다 (확인요청목록 → 개발목록)."
+    )
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_STATUS,
+        item_id=item_id,
+        detail={"move": "unimplemented->dev", "to": Status.assignee_request.value},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+    return _read_meta(item_id)
+
+
+def send_dev_to_pending(item_id: str, actor: str) -> Issue:
+    """담당자확인요청(개발목록) 항목을 확인대기(확인요청목록)로 되돌린다 (3번).
+
+    kind 를 dev→unimplemented, 상태를 담당자확인요청→확인대기(pending_check)로
+    바꾸고 담당자를 비운다(확인대기는 담당자 없음). 개발목록에서 빠지고
+    확인요청목록에 나타난다. send_pending_to_dev 의 역방향.
+    """
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        if issue.status != Status.assignee_request:
+            raise ValueError(
+                "담당자확인요청 상태에서만 확인대기로 되돌릴 수 있습니다."
+            )
+        timestamp = now()
+        issue.kind = "unimplemented"
+        issue.status = Status.pending_check
+        issue.assignee = None
+        issue.updated_at = timestamp
+        issue.status_history.append(
+            StatusEvent(status=Status.pending_check, at=timestamp, by=actor)
+        )
+        _write_meta_unlocked(issue)
+
+    _add_system_comment(
+        item_id,
+        "확인대기로 되돌렸습니다 (개발목록 → 확인요청목록 · 담당자 해제).",
+    )
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_STATUS,
+        item_id=item_id,
+        detail={"move": "dev->unimplemented", "to": Status.pending_check.value},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+    return _read_meta(item_id)
+
+
 def clear_assignee(item_id: str, actor: str) -> Issue:
     """담당자 해제 — 확인대기·Temp 항목은 담당자가 없어야 한다 (5번)."""
     with file_lock(_meta_lock_path(item_id)):
