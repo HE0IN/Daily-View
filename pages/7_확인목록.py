@@ -56,8 +56,11 @@ items = repository.list_issues(
 )
 st.subheader(f"기준 항목 ({len(items)})")
 
+# 6번: 상세보기 [다음 →] 용 — 이 목록 순서대로 이동.
+st.session_state["_detail_nav_ids"] = [e.id for e in items]
+
 if not items:
-    st.caption("확인목록 항목이 없습니다. 확인요청목록에서 [확인목록으로] 보내세요.")
+    st.caption("Temp 항목이 없습니다. 확인요청목록에서 [Temp로] 보내세요.")
 else:
     # 6번: 개발목록처럼 썸네일 카드(render_card)로 — 높이 통일 + 이미지 표시.
     components.render_card_grid_css()
@@ -68,11 +71,12 @@ else:
         for col, entry in zip(col_objs, row):
             with col:
                 _item = entry.model_dump(mode="json")
-                # 1번: 확인목록 → 확인요청목록 되돌리기 버튼을 카드 안에.
+                # R1: Temp → 확인대기(확인요청목록) 되돌리기. revert_criteria_to_request
+                #     가 kind=unimplemented·status=확인대기 로 보내므로 라벨도 '확인대기로'.
                 _res = components.render_card(
                     _item,
                     key_prefix=f"crit_{row_start}",
-                    extra_buttons=[("확인요청목록으로", "revert")],
+                    extra_buttons=[("확인대기로", "revert")],
                 )
                 if _res["open"]:
                     st.session_state["_detail_item_id"] = entry.id
@@ -82,7 +86,7 @@ else:
                 if _res["actions"].get("revert"):
                     try:
                         repository.revert_criteria_to_request(entry.id, name)
-                        st.toast("확인요청목록으로 되돌렸습니다", icon="↩️")
+                        st.toast("확인대기로 보냈습니다 (확인요청목록)", icon="↩️")
                         st.rerun()
                     except Exception as exc:  # noqa: BLE001
                         st.error(f"되돌리기 실패: {exc}")

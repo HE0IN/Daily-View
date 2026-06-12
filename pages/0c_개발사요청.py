@@ -36,6 +36,9 @@ _req = [e for e in _all if e.status == Status.vendor_request]
 _reply = [e for e in _all if e.status == Status.vendor_reply]
 _vendor_all = _wait + _req + _reply
 
+# 6번: 상세보기 [다음 →] 이 이 목록(대기→확인중→회신확인중) 순서대로 이동하도록.
+st.session_state["_detail_nav_ids"] = [e.id for e in _vendor_all]
+
 # ---------------------------------------------------------------------------
 # PDF 출력 (선택 / 전체) — 개발사 API 요청 송부용. A4 페이지당 항목 1개.
 # ---------------------------------------------------------------------------

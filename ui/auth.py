@@ -247,6 +247,14 @@ def require_user() -> dict:
 # session_state 키 — 다른 페이지 / 모듈에서 참조할 수 있도록 상수화
 _PROJECT_KEY = "_current_project"
 _LAST_USER_KEY = "_proj_last_user"
+# 사용자별 마지막 선택 프로젝트 기억 — 사용자 변경/다른 액션에도 풀리지 않게 고정 (R3).
+_PROJ_MEM_PREFIX = "_proj_mem_"
+# "아직 한 번도 선택 안 함" 과 "(전체 프로젝트)=None" 을 구분하기 위한 sentinel.
+_UNSET = object()
+
+
+def _proj_mem_key(user_name: str | None) -> str:
+    return f"{_PROJ_MEM_PREFIX}{user_name or ''}"
 
 
 def render_project_selector(user_name: str | None = None) -> str | None:
@@ -272,15 +280,20 @@ def render_project_selector(user_name: str | None = None) -> str | None:
     # 지연 임포트 — 사이클 방지 + 테스트 환경 안전.
     from core import repository, user_projects as up_mod
 
-    # 사용자 변경 감지 — 다른 사람으로 바뀌면 그 사람의 "마지막 등록 프로젝트"
-    # 를 기본으로 새로 채운다 (프로젝트 풀은 글로벌이지만 default 는 사용자별).
+    # 사용자 변경 감지 — 다른 사람으로 바뀌면 그 사람이 *마지막으로 보던* 프로젝트
+    # 를 그대로 복원한다 (R3: 사용자 변경에도 프로젝트가 풀리지 않게 고정).
+    #   · 기억(_proj_mem_<user>)이 있으면 그 값(프로젝트명 또는 None=전체)으로 복원.
+    #   · 한 번도 선택 안 한 사용자면 비워서 아래 init 로직(마지막 작업/첫 프로젝트)에 맡김.
     if user_name is not None:
         last_user = st.session_state.get(_LAST_USER_KEY)
         if last_user != user_name:
             st.session_state[_LAST_USER_KEY] = user_name
-            # 사용자 바뀌었으니 이전 컨텍스트 무효화 → 아래에서 새로 채움
-            st.session_state.pop(_PROJECT_KEY, None)
-            # widget key 도 갱신 (옛 사용자가 selectbox 에 set 한 값 무효화).
+            remembered = st.session_state.get(_proj_mem_key(user_name), _UNSET)
+            if remembered is not _UNSET:
+                st.session_state[_PROJECT_KEY] = remembered  # None=전체 / str=프로젝트
+            else:
+                st.session_state.pop(_PROJECT_KEY, None)  # 첫 진입 → 아래 init 가 채움
+            # widget key 갱신 — 옛 사용자가 selectbox 에 set 한 값 무효화 + 복원값 반영.
             st.session_state["_proj_nonce"] = (
                 int(st.session_state.get("_proj_nonce", 0)) + 1
             )
@@ -307,12 +320,11 @@ def render_project_selector(user_name: str | None = None) -> str | None:
         options = [ALL] + projects + [NEW]
 
         current = st.session_state.get(_PROJECT_KEY)
-        # 5번: 첫 진입 시 기본값을 '(전체 프로젝트)' 가 아니라 '등록된 프로젝트' 로.
+        # 첫 진입(기억 없음) 시 기본값을 '(전체 프로젝트)' 가 아니라 '등록된 프로젝트' 로.
         #   우선순위: 그 사람의 마지막 사용 프로젝트 → 없으면 첫 프로젝트.
-        #   사용자별 1회만 적용(_proj_init_<user>) → 이후 사용자가 '(전체)' 를
-        #   골라도 그 선택을 존중한다.
-        _init_key = f"_proj_init_{user_name or ''}"
-        if not current and projects and not st.session_state.get(_init_key):
+        #   기억(_proj_mem_<user>)이 생긴 뒤엔 건너뛰어 사용자의 선택(전체 포함)을 존중.
+        _has_mem = st.session_state.get(_proj_mem_key(user_name), _UNSET) is not _UNSET
+        if not current and projects and not _has_mem:
             last_proj = None
             if user_name:
                 try:
@@ -323,7 +335,6 @@ def render_project_selector(user_name: str | None = None) -> str | None:
                 last_proj if (last_proj and last_proj in projects) else projects[0]
             )
             st.session_state[_PROJECT_KEY] = current
-            st.session_state[_init_key] = True
             # selectbox key 는 nonce 기반이라 직접 수정 X — index= 로 default 결정.
 
         # 현재 저장된 프로젝트가 옵션에 없으면 ALL(0) 로 fallback.
@@ -378,6 +389,9 @@ def render_project_selector(user_name: str | None = None) -> str | None:
         # ALL 또는 기존 프로젝트
         selected = None if pick == ALL else pick
         st.session_state[_PROJECT_KEY] = selected
+        # R3: 사용자별 마지막 선택을 기억 — 사용자 변경/다른 액션에도 이 값으로 고정 복원.
+        if user_name is not None:
+            st.session_state[_proj_mem_key(user_name)] = selected
 
         # ── 글로벌 삭제 영역 — 특정 프로젝트 선택 시에만 표시 ─────────────
         if selected:

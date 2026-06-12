@@ -151,7 +151,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 1행: 목록으로 / ID ----------------------------------------------------
+# --- 1행: 목록으로 / 다음 / ID ---------------------------------------------
+# 6번: 들어온 목록의 순서를 session_state(_detail_nav_ids)로 받아, 목록으로
+#      돌아갔다 다시 들어오지 않고 [다음 →] 으로 바로 다음 처리 항목으로 이동.
 top_left, top_right = st.columns([4, 1])
 with top_left:
     # 뒤로 — 들어온 화면(대시보드/목록)으로 복귀. 출처가 없으면 목록으로.
@@ -159,12 +161,30 @@ with top_left:
     _back_label = (
         "← 뒤로 (대시보드)" if "대시보드" in _back_target else "← 뒤로 (목록)"
     )
-    if st.button(_back_label, key="detail_back_btn"):
-        st.switch_page(_back_target)
+    _nav_ids = [i for i in (st.session_state.get("_detail_nav_ids") or []) if i]
+    _cur_idx = _nav_ids.index(item_id) if item_id in _nav_ids else -1
+    _has_next = 0 <= _cur_idx < len(_nav_ids) - 1
+    _bcol, _ncol = st.columns([2, 1])
+    with _bcol:
+        if st.button(_back_label, key="detail_back_btn", width="stretch"):
+            st.switch_page(_back_target)
+    with _ncol:
+        if st.button(
+            "다음 →",
+            key="detail_next_btn",
+            width="stretch",
+            disabled=not _has_next,
+            help="목록의 다음 항목으로 (목록으로 돌아가지 않고 이어서 처리)",
+        ):
+            _nid = _nav_ids[_cur_idx + 1]
+            st.session_state["_detail_item_id"] = _nid
+            st.query_params["id"] = _nid
+            st.rerun()
 with top_right:
+    _pos = f" · {_cur_idx + 1}/{len(_nav_ids)}" if _cur_idx >= 0 else ""
     st.markdown(
         f'<div style="text-align:right;color:#6B7280;font-size:0.85em;">'
-        f"#{item_id}</div>",
+        f"#{item_id}{_pos}</div>",
         unsafe_allow_html=True,
     )
 
@@ -335,20 +355,38 @@ with meta_c0:
                 else:
                     st.caption("이 단계에서는 변경할 수 있는 상태가 없습니다.")
             else:
-                # 상태 변경 시 코멘트(사유) 필수 — 단, 검토 단계 전환과
-                # 확인대기↔담당자확인요청 토글은 생략 가능 (2·3번).
-                _comment_skippable = issue.status in (
-                    Status.assignee_request,
+                # 코멘트(사유) 규칙 — 기본 필수, 단 아래는 생략 가능:
+                #  · 어떤 단계에서든 '검토중'(담당자검토중·등록자검토중) 또는
+                #    '검토완료'로 넘어갈 때 (4번)
+                #  · 확인대기 ↔ 담당자확인요청 토글 (3번)
+                _REVIEW_TARGETS = (
                     Status.assignee_reviewing,
-                    Status.pending_check,
+                    Status.author_reviewing,
+                    Status.assignee_reviewed,
                 )
+
+                def _is_comment_optional(cur: Status, nxt: Status) -> bool:
+                    if nxt in _REVIEW_TARGETS:
+                        return True
+                    if cur == Status.pending_check and nxt == Status.assignee_request:
+                        return True
+                    if cur == Status.assignee_request and nxt == Status.pending_check:
+                        return True
+                    return False
+
+                # 라벨 힌트 — 가능한 전이 전부 생략 가능이면 (생략 가능),
+                # 일부만이면 (검토중·검토완료 전환은 생략 가능), 전무면 (필수).
+                _opt_flags = [
+                    _is_comment_optional(issue.status, _t) for (_t, _r) in _options
+                ]
+                if _opt_flags and all(_opt_flags):
+                    _label_hint = " (생략 가능)"
+                elif any(_opt_flags):
+                    _label_hint = " (검토중·검토완료 전환은 생략 가능)"
+                else:
+                    _label_hint = " (필수)"
                 _chg_comment = st.text_area(
-                    "변경 사유"
-                    + (
-                        " (검토 단계 전환은 생략 가능)"
-                        if _comment_skippable
-                        else " (필수)"
-                    ),
+                    "변경 사유" + _label_hint,
                     key=f"status_change_comment_{item_id}",
                     placeholder=(
                         "예: 검토 결과 개발사 확인이 필요하여 메일 송부하였습니다."
@@ -362,26 +400,7 @@ with meta_c0:
                         key=f"detail_status_change_{_ns.value}",
                         width="stretch",
                     ):
-                        # 검토 단계 전환과 확인대기↔담당자확인요청 토글은
-                        # 코멘트 없이도 허용 (2·3번).
-                        _comment_optional = (
-                            (
-                                issue.status == Status.assignee_request
-                                and _ns == Status.assignee_reviewing
-                            )
-                            or (
-                                issue.status == Status.assignee_reviewing
-                                and _ns == Status.assignee_reviewed
-                            )
-                            or (
-                                issue.status == Status.pending_check
-                                and _ns == Status.assignee_request
-                            )
-                            or (
-                                issue.status == Status.assignee_request
-                                and _ns == Status.pending_check
-                            )
-                        )
+                        _comment_optional = _is_comment_optional(issue.status, _ns)
                         _c = _chg_comment.strip()
                         if not _c and not _comment_optional:
                             st.error("상태 변경 시 코멘트(사유)는 필수입니다.")
@@ -700,7 +719,9 @@ def _render_image(idx: int, img_ref) -> None:
             )
         else:
             st.caption("(파일 없음)")
-        with st.popover("🗑 삭제", width="stretch"):
+        with st.popover(
+            "🗑 삭제", width="stretch", key=f"del_pdf_pop_{img_ref.file}"
+        ):
             st.warning("이 PDF를 삭제할까요? 되돌릴 수 없습니다.")
             if st.button("삭제 확인", key=f"del_pdf_btn_{idx}", type="primary"):
                 try:
@@ -744,7 +765,11 @@ def _render_image(idx: int, img_ref) -> None:
             _show_image_dialog(img_ref.file, filename)
     with _delc:
         # 잘못 첨부한 사진 삭제 (2단계 확인) — 요청/개발 공통.
-        with st.popover("🗑 삭제", width="stretch"):
+        # 5번: 파일명으로 key 고정 → 삭제 후 인덱스가 밀려도 팝업이 다음 사진으로
+        #      옮겨붙지 않고 함께 닫힘.
+        with st.popover(
+            "🗑 삭제", width="stretch", key=f"del_img_pop_{img_ref.file}"
+        ):
             st.warning("이 사진을 삭제할까요? 되돌릴 수 없습니다.")
             if st.button(
                 "삭제 확인", key=f"del_img_btn_{idx}", type="primary"
@@ -984,7 +1009,9 @@ with body_col:
                         )
                     with _ce:
                         # 코멘트 수정 (4번) — 본문을 고치면 '수정됨'으로 표시.
-                        with st.popover("✏", help="코멘트 수정"):
+                        with st.popover(
+                            "✏", help="코멘트 수정", key=f"edit_cmt_pop_{comment.id}"
+                        ):
                             _new_body = st.text_area(
                                 "내용 수정",
                                 value=comment.body,
@@ -1006,7 +1033,11 @@ with body_col:
                                     st.error(f"수정 실패: {exc}")
                     with _cd:
                         # 코멘트 삭제 — 누구나, 2단계 확인 (audit 로그 기록).
-                        with st.popover("🗑", help="코멘트 삭제"):
+                        # 5번: key 를 코멘트별로 고정 → 삭제 후 팝업이 다음 코멘트로
+                        #      옮겨붙어 계속 떠 있는 현상 방지 (삭제와 함께 닫힘).
+                        with st.popover(
+                            "🗑", help="코멘트 삭제", key=f"del_cmt_pop_{comment.id}"
+                        ):
                             st.warning("이 코멘트를 삭제할까요?")
                             if st.button(
                                 "삭제 확인",

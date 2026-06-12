@@ -60,6 +60,9 @@ items = repository.list_issues(
 )
 st.subheader(f"확인요청 ({len(items)})")
 
+# 6번: 상세보기 [다음 →] 용 — 이 목록 순서대로 이동.
+st.session_state["_detail_nav_ids"] = [e.id for e in items]
+
 if not items:
     st.caption("확인요청 항목이 없습니다. '확인 요청' 메뉴에서 등록하세요.")
 else:

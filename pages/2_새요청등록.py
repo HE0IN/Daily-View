@@ -55,18 +55,34 @@ name: str = user["name"]
 # 사이드바에서만 변경되며, 새 등록 시 자동으로 그 프로젝트가 적용된다.
 current_project: str | None = st.session_state.get("_current_project")
 
+# R2: 승격(개발 요청) 진입이면 원본(확인요청) 항목의 프로젝트를 등록 컨텍스트로
+#     사용한다. 사이드바가 (전체)여도 승격이 막히지 않고, 카테고리 옵션도 원본
+#     프로젝트 기준으로 노출되어 제목/설명/카테고리가 빠짐없이 들어간다.
+_promote_id_peek = st.session_state.get("promote_id")
+_promote_project: str | None = None
+if _promote_id_peek:
+    try:
+        _promote_project = repository.get_issue(_promote_id_peek).project
+    except Exception:  # noqa: BLE001
+        _promote_project = None
+_effective_project: str | None = (
+    _promote_project if _promote_id_peek else current_project
+)
+
 st.title("새 요청 등록")
 
-# 프로젝트 미선택 시 새 등록 차단. 사용자가 사이드바에서 프로젝트를 먼저
-# 선택/추가해야 한다 — "이미 프로젝트가 정해져 있다" 는 전제 강제.
-if not current_project:
+# 프로젝트 미선택 시 새 등록 차단 — 단, 승격은 원본 프로젝트를 따르므로 예외.
+if not current_project and not _promote_id_peek:
     st.warning(
         "먼저 좌측 사이드바에서 **프로젝트** 를 선택하거나 추가해주세요. "
         "새 요청은 현재 선택된 프로젝트에 등록됩니다."
     )
     st.stop()
 
-st.caption(f"프로젝트 **{current_project}** 에 등록됩니다.")
+if _effective_project:
+    st.caption(f"프로젝트 **{_effective_project}** 에 등록됩니다.")
+else:
+    st.caption("프로젝트 미지정 상태로 등록됩니다.")
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +191,29 @@ with left:
     st.markdown("##### 스크린샷")
     st.caption(f"최대 {MAX_IMAGES_PER_ITEM}장 · 1장 {MAX_FILE_MB}MB")
 
+    # R2: 승격(개발 요청)이면 원본 항목의 기존 첨부는 그대로 따라온다 — 다시 올릴
+    #     필요 없음. 아래는 '추가로' 올릴 사진만 받는다.
+    if _promote_id_peek:
+        try:
+            _src_imgs = list(repository.get_issue(_promote_id_peek).images or [])
+        except Exception:  # noqa: BLE001
+            _src_imgs = []
+        if _src_imgs:
+            st.caption(f"📎 기존 첨부 {len(_src_imgs)}장 — 그대로 유지됩니다")
+            _ecols = st.columns(min(len(_src_imgs), 4))
+            for _ei, _ref in enumerate(_src_imgs):
+                with _ecols[_ei % len(_ecols)]:
+                    if str(_ref.file).lower().endswith(".pdf"):
+                        st.caption(f"📄 {_ref.file}")
+                    else:
+                        _ep = paths.item_dir(_promote_id_peek) / _ref.file
+                        if _ep.exists():
+                            try:
+                                st.image(str(_ep), width="stretch")
+                            except Exception:  # noqa: BLE001
+                                st.caption("⚠ 미리보기 실패")
+            st.divider()
+
     # 3번: 파일/클립보드를 한 줄(가로)로 — 칸이 작아도 클릭만 하면 되므로.
     _fc, _pc = st.columns(2)
     with _fc:
@@ -273,8 +312,8 @@ with right:
 
     # 프로젝트별 카테고리 풀: 사이드바 [⚙ 설정] 에서 명시 등록된 항목만 노출.
     # 직접 입력은 그대로 허용 — 단, 자동 등록되지는 않음.
-    if current_project:
-        _cats = ps_mod.list_project_categories(current_project)
+    if _effective_project:
+        _cats = ps_mod.list_project_categories(_effective_project)
         _all_l1 = _cats.get("l1", [])
         _all_l2 = _cats.get("l2", [])
         _all_l3 = _cats.get("l3", [])

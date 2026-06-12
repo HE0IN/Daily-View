@@ -301,6 +301,9 @@ if archive_view == "삭제만":
     items = [i for i in items if i.get("archived")]
 total = len(items)
 
+# 6번: 상세보기 [다음 →] 이 이 목록 순서대로 이동하도록 ID 순서를 넘긴다.
+st.session_state["_detail_nav_ids"] = [i.get("id") for i in items]
+
 
 # ---------------------------------------------------------------------------
 # 결과 카운트 + 본문 (페이지네이션 없이 전체 표시)

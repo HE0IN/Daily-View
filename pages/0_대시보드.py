@@ -52,6 +52,10 @@ def _grid(items: list[dict], *, key_prefix: str, cols: int = 4) -> None:
                     _iid = item.get("id", "")
                     st.session_state["_detail_item_id"] = _iid
                     st.session_state["_detail_origin"] = "pages/0_대시보드.py"
+                    # 6번: 클릭한 섹션의 순서대로 상세보기 [다음 →] 이동.
+                    st.session_state["_detail_nav_ids"] = [
+                        it.get("id") for it in items
+                    ]
                     st.query_params["id"] = _iid
                     st.switch_page("pages/3_상세보기.py")
 
