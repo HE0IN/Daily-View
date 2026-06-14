@@ -76,6 +76,8 @@ def _render_my(items: list, prefix: str) -> None:
                 ):
                     st.session_state["_detail_item_id"] = entry.id
                     st.session_state["_detail_origin"] = "pages/0b_내작업.py"
+                    # 3번: 상세보기 [다음]이 '내 작업'의 이 목록 순서대로 이동하도록.
+                    st.session_state["_detail_nav_ids"] = [e.id for e in items]
                     st.query_params["id"] = entry.id
                     st.switch_page("pages/3_상세보기.py")
 

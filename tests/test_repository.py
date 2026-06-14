@@ -970,6 +970,19 @@ def test_send_pending_to_dev_rejects_non_unimplemented(
         repository.send_pending_to_dev(issue.id, actor="등록자")
 
 
+def test_send_pending_to_dev_sets_assignee(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """assignee 를 주면 담당자로 지정된다 (5번 — 상세보기에서 담당자 필수)."""
+    kw = dict(sample_issue_kwargs)
+    kw["kind"] = "unimplemented"
+    issue = repository.create_issue(**kw)
+    moved = repository.send_pending_to_dev(issue.id, actor="등록자", assignee="담당이")
+    assert moved.kind == "dev"
+    assert moved.status == Status.assignee_request
+    assert moved.assignee == "담당이"
+
+
 def test_send_dev_to_pending_roundtrip(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:

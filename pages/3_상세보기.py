@@ -151,42 +151,69 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 1행: 목록으로 / 다음 / ID ---------------------------------------------
-# 6번: 들어온 목록의 순서를 session_state(_detail_nav_ids)로 받아, 목록으로
-#      돌아갔다 다시 들어오지 않고 [다음 →] 으로 바로 다음 처리 항목으로 이동.
-top_left, top_right = st.columns([4, 1])
-with top_left:
-    # 뒤로 — 들어온 화면(대시보드/목록)으로 복귀. 출처가 없으면 목록으로.
-    _back_target = st.session_state.get("_detail_origin", "pages/1_요청목록.py")
-    _back_label = (
-        "← 뒤로 (대시보드)" if "대시보드" in _back_target else "← 뒤로 (목록)"
-    )
-    _nav_ids = [i for i in (st.session_state.get("_detail_nav_ids") or []) if i]
-    _cur_idx = _nav_ids.index(item_id) if item_id in _nav_ids else -1
-    _has_next = 0 <= _cur_idx < len(_nav_ids) - 1
-    _bcol, _ncol = st.columns([2, 1])
-    with _bcol:
-        if st.button(_back_label, key="detail_back_btn", width="stretch"):
-            st.switch_page(_back_target)
-    with _ncol:
-        if st.button(
-            "다음 →",
-            key="detail_next_btn",
-            width="stretch",
-            disabled=not _has_next,
-            help="목록의 다음 항목으로 (목록으로 돌아가지 않고 이어서 처리)",
-        ):
-            _nid = _nav_ids[_cur_idx + 1]
-            st.session_state["_detail_item_id"] = _nid
-            st.query_params["id"] = _nid
-            st.rerun()
-with top_right:
-    _pos = f" · {_cur_idx + 1}/{len(_nav_ids)}" if _cur_idx >= 0 else ""
+# --- 1행: 목록 / 뒤로(이전) / 다음 + ID -------------------------------------
+# 7번: [목록]=목록으로, [뒤로]=이전 항목, [다음]=다음 항목. 같은 너비로 왼쪽 정렬,
+#      텍스트보다 약간 큰 정도. 목록 순서는 들어온 화면이 _detail_nav_ids 로 넘겨준다.
+_back_target = st.session_state.get("_detail_origin", "pages/1_요청목록.py")
+_nav_ids = [i for i in (st.session_state.get("_detail_nav_ids") or []) if i]
+_cur_idx = _nav_ids.index(item_id) if item_id in _nav_ids else -1
+_has_prev = _cur_idx > 0
+_has_next = 0 <= _cur_idx < len(_nav_ids) - 1
+
+
+def _go_to(_target_id: str) -> None:
+    st.session_state["_detail_item_id"] = _target_id
+    st.query_params["id"] = _target_id
+    st.rerun()
+
+
+# 텍스트보다 약간 큰 고정 너비(px)로 3개 동일하게 — 왼쪽 정렬.
+_BTN_W = 84
+_c_list, _c_prev, _c_next, _c_sp = st.columns([1, 1, 1, 9])
+with _c_list:
+    if st.button("목록", key="detail_list_btn", width=_BTN_W, help="목록으로 돌아가기"):
+        st.switch_page(_back_target)
+with _c_prev:
+    if st.button(
+        "뒤로", key="detail_prev_btn", width=_BTN_W,
+        disabled=not _has_prev, help="목록의 이전 항목",
+    ):
+        _go_to(_nav_ids[_cur_idx - 1])
+with _c_next:
+    if st.button(
+        "다음", key="detail_next_btn", width=_BTN_W,
+        disabled=not _has_next, help="목록의 다음 항목",
+    ):
+        _go_to(_nav_ids[_cur_idx + 1])
+with _c_sp:
+    _pos = f"{_cur_idx + 1}/{len(_nav_ids)} · " if _cur_idx >= 0 else ""
     st.markdown(
-        f'<div style="text-align:right;color:#6B7280;font-size:0.85em;">'
-        f"#{item_id}{_pos}</div>",
+        f'<div style="text-align:right;color:#6B7280;font-size:0.85em;'
+        f'line-height:2.4;">{_pos}#{item_id}</div>',
         unsafe_allow_html=True,
     )
+
+# --- 1.5행: 확인요청(확인대기) 항목 — 개발 요청 / Temp로 (확인요청목록과 동일, 6번) ---
+if issue.kind == "unimplemented":
+    _pr1, _pr2, _pr_sp = st.columns([1.4, 1.4, 5])
+    with _pr1:
+        if st.button(
+            "개발 요청", key="detail_promote_dev", type="primary", width="stretch",
+            help="담당자·긴급도를 지정해 개발목록으로 승격",
+        ):
+            st.session_state["promote_id"] = item_id
+            st.switch_page("pages/2_새요청등록.py")
+    with _pr2:
+        if st.button(
+            "Temp로", key="detail_promote_temp", width="stretch",
+            help="확정 보류 — Temp 목록으로 이동",
+        ):
+            try:
+                repository.promote_to_criteria(item_id, user["name"])
+                st.toast("Temp 로 이동했습니다", icon="✅")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"이동 실패: {exc}")
 
 # --- 2행: 제목(또는 편집 입력) + 편집/삭제/완전삭제 버튼 ------------------
 # 편집 모드 토글 — True 면 제목/설명이 입력칸으로 바뀌고 버튼이 [완료] 가 된다.
@@ -341,6 +368,14 @@ with meta_c0:
                     # (확인요청/개발/Temp 어느 kind 든 담당자확인요청 ↔ 확인대기 가능 —
                     #  kind 는 전환 시 함께 바뀌어 목록 사이를 이동한다, 1·3번.)
                     _options.append((_ns, Role.reviewer))
+            # R1/R2: 확인대기 ↔ Temp 도 상태변경에서 가능 (확인요청목록의 [Temp로],
+            #   Temp 목록의 [확인대기로] 카드 버튼과 동일 동작). 담당자 없는 행정 이동.
+            if issue.kind == "unimplemented" and issue.status == Status.pending_check:
+                if not any(_t == Status.temp for (_t, _r) in _options):
+                    _options.append((Status.temp, Role.reviewer))
+            elif issue.kind == "criteria" and issue.status == Status.temp:
+                if not any(_t == Status.pending_check for (_t, _r) in _options):
+                    _options.append((Status.pending_check, Role.reviewer))
             if not _options:
                 # 2번: 이 단계를 '실제로' 바꿀 수 있는 역할+사람만 정확히 안내.
                 _who = []
@@ -368,11 +403,14 @@ with meta_c0:
                 def _is_comment_optional(cur: Status, nxt: Status) -> bool:
                     if nxt in _REVIEW_TARGETS:
                         return True
-                    if cur == Status.pending_check and nxt == Status.assignee_request:
-                        return True
-                    if cur == Status.assignee_request and nxt == Status.pending_check:
-                        return True
-                    return False
+                    # 확인대기 ↔ 담당자확인요청 / 확인대기 ↔ Temp 토글은 생략 가능.
+                    _toggles = {
+                        (Status.pending_check, Status.assignee_request),
+                        (Status.assignee_request, Status.pending_check),
+                        (Status.pending_check, Status.temp),
+                        (Status.temp, Status.pending_check),
+                    }
+                    return (cur, nxt) in _toggles
 
                 # 라벨 힌트 — 가능한 전이 전부 생략 가능이면 (생략 가능),
                 # 일부만이면 (검토중·검토완료 전환은 생략 가능), 전무면 (필수).
@@ -393,6 +431,21 @@ with meta_c0:
                     ),
                     height=80,
                 )
+
+                # R5: 확인대기 → 담당자확인요청 은 담당자 지정이 필수 → 입력칸 노출.
+                _pending_to_dev_avail = (
+                    issue.kind == "unimplemented"
+                    and issue.status == Status.pending_check
+                    and any(_t == Status.assignee_request for (_t, _r) in _options)
+                )
+                if _pending_to_dev_avail:
+                    st.text_input(
+                        "담당자 (담당자확인요청 시 필수)",
+                        value=issue.assignee or "",
+                        placeholder="담당자 이름",
+                        key=f"pending_dev_assignee_{item_id}",
+                    )
+
                 for _ns, _role in _options:
                     _nl = STATUS_LABELS_KO.get(_ns, _ns.value)
                     if st.button(
@@ -402,22 +455,45 @@ with meta_c0:
                     ):
                         _comment_optional = _is_comment_optional(issue.status, _ns)
                         _c = _chg_comment.strip()
+                        # 확인대기 → 담당자확인요청: 담당자 필수 (5번).
+                        _to_dev = (
+                            _ns == Status.assignee_request
+                            and issue.status == Status.pending_check
+                            and issue.kind == "unimplemented"
+                        )
+                        _dev_assignee = (
+                            (
+                                st.session_state.get(
+                                    f"pending_dev_assignee_{item_id}"
+                                )
+                                or ""
+                            ).strip()
+                            if _to_dev
+                            else None
+                        )
                         if not _c and not _comment_optional:
                             st.error("상태 변경 시 코멘트(사유)는 필수입니다.")
+                        elif _to_dev and not _dev_assignee:
+                            st.error(
+                                "담당자확인요청으로 보내려면 담당자를 지정해야 합니다."
+                            )
                         else:
                             try:
                                 if _c:
                                     repository.add_comment(
                                         item_id, _user_name, _role, _c
                                     )
-                                # 확인대기 ↔ 담당자확인요청 은 kind 도 함께 바꿔
-                                # 확인요청목록 ↔ 개발목록 사이를 이동시킨다 (1·3번).
-                                if (
-                                    _ns == Status.assignee_request
-                                    and issue.status == Status.pending_check
+                                # 확인대기↔담당자확인요청 / 확인대기↔Temp 는 kind 도
+                                # 함께 바꿔 목록 사이를 이동시킨다 (1·3·5번).
+                                if _to_dev:
+                                    repository.send_pending_to_dev(
+                                        item_id, _user_name, assignee=_dev_assignee
+                                    )
+                                elif (
+                                    _ns == Status.temp
                                     and issue.kind == "unimplemented"
                                 ):
-                                    repository.send_pending_to_dev(
+                                    repository.promote_to_criteria(
                                         item_id, _user_name
                                     )
                                 elif (
@@ -431,8 +507,6 @@ with meta_c0:
                                     _ns == Status.pending_check
                                     and issue.kind == "criteria"
                                 ):
-                                    # Temp(criteria) → 확인대기 안전망
-                                    # (보통 temp 상태라 미도달).
                                     repository.revert_criteria_to_request(
                                         item_id, _user_name
                                     )

@@ -733,12 +733,16 @@ def revert_criteria_to_request(item_id: str, actor: str) -> Issue:
     return _read_meta(item_id)
 
 
-def send_pending_to_dev(item_id: str, actor: str) -> Issue:
+def send_pending_to_dev(
+    item_id: str, actor: str, assignee: str | None = None
+) -> Issue:
     """확인요청(확인대기) 항목을 담당자확인요청(개발목록)으로 보낸다 (1·3번).
 
     kind 를 unimplemented→dev, 상태를 확인대기(pending_check)→담당자확인요청
     (assignee_request)으로 바꾼다. 확인요청목록에서 빠지고 개발목록에 나타난다.
-    담당자는 비어 있을 수 있으며(확인대기는 담당자 없음), 이후 상세보기에서 배정한다.
+    ``assignee`` 를 주면 담당자로 지정한다 — 상세보기에서 확인대기→담당자확인요청
+    으로 보낼 때는 담당자 지정이 필수다 (5번). 옛 데이터 일괄 정규화 등에서는
+    생략(None) 가능.
     """
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
@@ -747,15 +751,21 @@ def send_pending_to_dev(item_id: str, actor: str) -> Issue:
         timestamp = now()
         issue.kind = "dev"
         issue.status = Status.assignee_request
+        if assignee and assignee.strip():
+            issue.assignee = assignee.strip()
         issue.updated_at = timestamp
         issue.status_history.append(
             StatusEvent(status=Status.assignee_request, at=timestamp, by=actor)
         )
         _write_meta_unlocked(issue)
 
-    _add_system_comment(
-        item_id, "담당자확인요청으로 보냈습니다 (확인요청목록 → 개발목록)."
-    )
+    _moved_msg = "담당자확인요청으로 보냈습니다 (확인요청목록 → 개발목록)."
+    if assignee and assignee.strip():
+        _moved_msg = (
+            f"담당자확인요청으로 보냈습니다 (담당자: {assignee.strip()} · "
+            f"확인요청목록 → 개발목록)."
+        )
+    _add_system_comment(item_id, _moved_msg)
     audit.audit_log(
         actor=actor,
         action=audit.UPDATE_STATUS,

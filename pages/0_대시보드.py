@@ -99,13 +99,13 @@ st.divider()
 # 상태별 섹션
 # ---------------------------------------------------------------------------
 
-# 1) 전체 개발 목록 — 완료·삭제 제외 모든 진행 항목
+# 1) 전체 개발 목록 — 완료까지 포함한 전체 개발 항목 (삭제(보관)만 제외, 4번)
 all_active_entries = repository.list_issues(
-    include_archived=False, include_closed=False, project=current_project
+    include_archived=False, include_closed=True, project=current_project
 )
 all_active = _to_dicts(all_active_entries)
 st.subheader(f"전체 개발 목록 ({len(all_active)})")
-st.caption("완료·삭제를 제외한 모든 진행 항목")
+st.caption("완료 포함 전체 개발 항목 (삭제(보관)만 제외)")
 _grid(all_active, key_prefix="dash_all")
 
 st.divider()
