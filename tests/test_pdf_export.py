@@ -44,6 +44,22 @@ def test_build_issues_pdf_landscape_with_comment_and_images(
     assert len(data) > 1000
 
 
+def test_build_issues_pdf_single_image_enlarged(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """이미지가 1장이면 단일 이미지 경로(업스케일 배치)로도 PDF 가 만들어진다 (2번)."""
+    kw = dict(sample_issue_kwargs)
+    kw["title"] = "한 장짜리"
+    issue = repository.create_issue(**kw)
+    # 작은 이미지 1장 → 가용 영역에 맞게 키워야 함.
+    repository.add_image_from_bytes(
+        issue.id, _png_bytes(24, 18), "only.png", "담당이", kind="request"
+    )
+    data = pdf_export.build_issues_pdf([repository.get_issue(issue.id)])
+    assert data[:4] == b"%PDF"
+    assert len(data) > 1000
+
+
 def test_build_issues_pdf_empty_and_no_attachments(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:

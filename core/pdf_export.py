@@ -30,10 +30,17 @@ _FONT_CANDIDATES = [
     r"C:\Windows\Fonts\gulim.ttc",
     r"C:\Windows\Fonts\batang.ttc",
 ]
+# 제목용 볼드 — 맑은 고딕 Bold 우선.
+_BOLD_FONT_CANDIDATES = [
+    r"C:\Windows\Fonts\malgunbd.ttf",
+    r"C:\Windows\Fonts\malgun.ttf",
+    r"C:\Windows\Fonts\gulim.ttc",
+    r"C:\Windows\Fonts\batang.ttc",
+]
 
 
-def _load_font(size: int) -> ImageFont.ImageFont:
-    for fp in _FONT_CANDIDATES:
+def _load_font(size: int, *, bold: bool = False) -> ImageFont.ImageFont:
+    for fp in (_BOLD_FONT_CANDIDATES if bold else _FONT_CANDIDATES):
         try:
             return ImageFont.truetype(fp, size)
         except Exception:  # noqa: BLE001
@@ -82,52 +89,50 @@ def _latest_comment(issue) -> Comment | None:
 def _draw_text_block(
     page: Image.Image, draw: ImageDraw.ImageDraw, issue
 ) -> int:
-    """제목 + 설명 + 최근 코멘트를 그리고, 이미지 영역 시작 y 를 반환."""
-    title_font = _load_font(46)
-    label_font = _load_font(24)
-    body_font = _load_font(30)
+    """제목+설명(한 구역) + 코멘트(구분선 아래 별도 구역)를 그리고 이미지 시작 y 반환.
+
+    2번: 제목은 같은 크기로 더 굵게(볼드), 설명·코멘트는 더 작게, 코멘트 라벨/작성자는
+    표시하지 않으며, 제목+설명 구역과 코멘트 구역을 구분선으로 나눈다.
+    """
+    title_font = _load_font(46, bold=True)  # 제목: 같은 크기 · 볼드
+    desc_font = _load_font(25)              # 설명: 더 작게
+    comment_font = _load_font(23)           # 코멘트: 더 작게
     content_w = PAGE_W - 2 * MARGIN
     y = MARGIN
 
-    # 제목
+    # --- 구역 A: 제목 + 설명 ---
     for line in _wrap(draw, issue.title, title_font, content_w):
         draw.text((MARGIN, y), line, font=title_font, fill=(17, 24, 39))
         y += 58
-    y += 6
-    draw.line([(MARGIN, y), (PAGE_W - MARGIN, y)], fill=(209, 213, 219), width=2)
-    y += 20
+    y += 10
 
-    # 설명 — 상단 35% 까지만 (이미지 공간 확보), 넘치면 '…'.
-    desc_limit_y = int(PAGE_H * 0.35)
-    for line in _wrap(draw, issue.description or "", body_font, content_w):
+    desc_limit_y = int(PAGE_H * 0.33)
+    for line in _wrap(draw, issue.description or "", desc_font, content_w):
         if y > desc_limit_y:
-            draw.text((MARGIN, y), "…", font=body_font, fill=(30, 30, 30))
-            y += 40
+            draw.text((MARGIN, y), "…", font=desc_font, fill=(30, 30, 30))
+            y += 34
             break
-        draw.text((MARGIN, y), line, font=body_font, fill=(31, 41, 55))
-        y += 42
+        draw.text((MARGIN, y), line, font=desc_font, fill=(31, 41, 55))
+        y += 36
 
-    # 마지막 타임라인 코멘트 (있으면) — 라벨 + 작성자 + 본문 몇 줄.
+    # --- 구역 B: 코멘트 (있으면) — 구분선으로 위 구역과 분리, 라벨/작성자 없음 ---
     last = _latest_comment(issue)
-    if last is not None:
-        y += 10
-        draw.text(
-            (MARGIN, y),
-            f"💬 최근 코멘트 · {last.author}",
-            font=label_font,
-            fill=(107, 114, 128),
+    if last is not None and (last.body or "").strip():
+        y += 14
+        draw.line(
+            [(MARGIN, y), (PAGE_W - MARGIN, y)], fill=(209, 213, 219), width=2
         )
-        y += 34
-        cmt_limit_y = int(PAGE_H * 0.46)
-        for line in _wrap(draw, last.body or "", body_font, content_w):
+        y += 16
+        cmt_limit_y = int(PAGE_H * 0.44)
+        for line in _wrap(draw, last.body, comment_font, content_w):
             if y > cmt_limit_y:
-                draw.text((MARGIN, y), "…", font=body_font, fill=(30, 30, 30))
-                y += 40
+                draw.text((MARGIN, y), "…", font=comment_font, fill=(30, 30, 30))
+                y += 32
                 break
-            draw.text((MARGIN, y), line, font=body_font, fill=(31, 41, 55))
-            y += 40
+            draw.text((MARGIN, y), line, font=comment_font, fill=(55, 65, 81))
+            y += 32
 
-    return y + 16
+    return y + 18
 
 
 def _draw_image_grid(
@@ -195,6 +200,31 @@ def _valid_image_paths(issue) -> list:
     return out
 
 
+def _draw_single_image(
+    page: Image.Image, path, top: int, left: int, width: int, height: int
+) -> None:
+    """이미지 1장 — 텍스트 아래 가용 영역에 비율 유지로 '맞게 키워' 가운데 배치 (2번).
+
+    thumbnail 은 축소만 하지만, 여기선 작은 이미지도 업스케일해 화면을 채운다.
+    """
+    if width < 60 or height < 60:
+        return
+    pad = 8
+    box_w, box_h = width - 2 * pad, height - 2 * pad
+    try:
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            scale = min(box_w / im.width, box_h / im.height)
+            new_w = max(1, int(im.width * scale))
+            new_h = max(1, int(im.height * scale))
+            im = im.resize((new_w, new_h), Image.LANCZOS)
+            ox = left + (width - new_w) // 2
+            oy = top + (height - new_h) // 2
+            page.paste(im, (ox, oy))
+    except Exception:  # noqa: BLE001
+        return
+
+
 def _render_page(issue) -> Image.Image:
     page = Image.new("RGB", (PAGE_W, PAGE_H), "white")
     draw = ImageDraw.Draw(page)
@@ -203,9 +233,12 @@ def _render_page(issue) -> Image.Image:
 
     content_w = PAGE_W - 2 * MARGIN
     img_area_h = PAGE_H - MARGIN - img_top
-    _draw_image_grid(
-        page, draw, _valid_image_paths(issue), img_top, MARGIN, content_w, img_area_h
-    )
+    imgs = _valid_image_paths(issue)
+    if len(imgs) == 1:
+        # 2번: 한 장이면 텍스트를 침범하지 않는 범위에서 화면에 맞게 키운다.
+        _draw_single_image(page, imgs[0], img_top, MARGIN, content_w, img_area_h)
+    else:
+        _draw_image_grid(page, draw, imgs, img_top, MARGIN, content_w, img_area_h)
     return page
 
 
