@@ -821,6 +821,36 @@ def _render_image(idx: int, img_ref) -> None:
             shown = False
     if not shown:
         st.caption("⚠ 이미지를 표시할 수 없습니다 (DRM 보호 등). 내려받아 확인하세요.")
+    # 사진 설명(캡션) + 인라인 편집(✏). 있으면 본문처럼, 없으면 흐리게.
+    _cap = (getattr(img_ref, "caption", "") or "").strip()
+    _capl, _capr = st.columns([5, 1], vertical_alignment="center")
+    with _capl:
+        if _cap:
+            st.markdown(
+                f'<div style="font-size:0.9em;color:#1F2937;font-weight:500;'
+                f'white-space:pre-wrap;line-height:1.4;">{html.escape(_cap)}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("(설명 없음)")
+    with _capr:
+        with st.popover("✏", help="사진 설명", key=f"cap_pop_{img_ref.file}"):
+            _newcap = st.text_area(
+                "사진 설명",
+                value=_cap,
+                key=f"cap_in_{img_ref.file}",
+                placeholder="예: 로그인 화면 / 에러 메시지",
+                height=80,
+            )
+            if st.button("저장", key=f"cap_save_{idx}", type="primary"):
+                try:
+                    repository.set_image_caption(
+                        item_id, idx, _newcap, user["name"]
+                    )
+                    st.toast("설명이 저장되었습니다", icon="✏")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"저장 실패: {exc}")
     st.caption(filename)
     # 1번: 다운로드 / 원본 보기 / 삭제 를 한 행에 배치.
     _dlc, _viewc, _delc = st.columns(3)

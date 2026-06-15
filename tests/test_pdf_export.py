@@ -51,9 +51,10 @@ def test_build_issues_pdf_single_image_enlarged(
     kw = dict(sample_issue_kwargs)
     kw["title"] = "한 장짜리"
     issue = repository.create_issue(**kw)
-    # 작은 이미지 1장 → 가용 영역에 맞게 키워야 함.
+    # 작은 이미지 1장(+캡션) → 가용 영역에 맞게 키우고 사진 밑에 캡션 표시.
     repository.add_image_from_bytes(
-        issue.id, _png_bytes(24, 18), "only.png", "담당이", kind="request"
+        issue.id, _png_bytes(24, 18), "only.png", "담당이",
+        kind="request", caption="로그인 화면",
     )
     data = pdf_export.build_issues_pdf([repository.get_issue(issue.id)])
     assert data[:4] == b"%PDF"

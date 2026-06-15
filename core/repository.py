@@ -1205,22 +1205,48 @@ def delete_image(item_id: str, image_index: int, actor: str) -> Issue:
     return _read_meta(item_id)
 
 
+def set_image_caption(
+    item_id: str, image_index: int, caption: str, actor: str
+) -> Issue:
+    """이미지 한 장의 설명(캡션)을 설정/수정한다. image_index 는 issue.images 인덱스."""
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        if not (0 <= image_index < len(issue.images)):
+            raise ValueError("이미지를 찾을 수 없습니다.")
+        issue.images[image_index].caption = (caption or "").strip()
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CONTENT,
+        item_id=item_id,
+        detail={"caption_image": image_index},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+    return _read_meta(item_id)
+
+
 def add_image_from_bytes(
     item_id: str,
     data: bytes,
     original_filename: str,
     actor: str,
     kind: str | None = None,
+    caption: str = "",
 ) -> ImageRef:
     """원본 바이트를 받아 이미지 추가. 한도 초과 시 ValueError.
 
     kind: "request"(요청/AS-IS) / "dev"(개발/TO-BE) / None(구분 없음).
+    caption: 사진별 설명(선택).
     """
     _check_image_quota(item_id)
     seq = _next_image_seq(item_id)
     dest = paths.item_images_dir(item_id)
 
     ref = save_image_bytes(data, original_filename, dest, seq, kind=kind)
+    ref.caption = (caption or "").strip()
 
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
@@ -1250,16 +1276,19 @@ def add_image_from_pil(
     original_filename: str,
     actor: str,
     kind: str | None = None,
+    caption: str = "",
 ) -> ImageRef:
     """PIL.Image 를 받아 이미지 추가 (paste-button 등에서 사용).
 
     kind: "request"(요청/AS-IS) / "dev"(개발/TO-BE) / None(구분 없음).
+    caption: 사진별 설명(선택).
     """
     _check_image_quota(item_id)
     seq = _next_image_seq(item_id)
     dest = paths.item_images_dir(item_id)
 
     ref = save_pil_image(img, original_filename, dest, seq, kind=kind)
+    ref.caption = (caption or "").strip()
 
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)

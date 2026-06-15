@@ -120,14 +120,25 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
                 for _k, _pi in enumerate(u_paste_imgs, start=1):
                     try:
                         repository.add_image_from_pil(
-                            iss.id, _pi, f"pasted_{_k}.png", name, kind="request"
+                            iss.id, _pi, f"pasted_{_k}.png", name, kind="request",
+                            caption=st.session_state.get(
+                                f"unimpl_cap_paste_{nonce}_{_k}", ""
+                            ),
                         )
                     except Exception:  # noqa: BLE001
                         pass
-                for _f in _prev:
+                for _fi, _f in enumerate(_prev):
                     try:
+                        _fcap = (
+                            ""
+                            if _f.name.lower().endswith(".pdf")
+                            else st.session_state.get(
+                                f"unimpl_cap_file_{nonce}_{_fi}", ""
+                            )
+                        )
                         repository.add_image_from_bytes(
-                            iss.id, _f.getvalue(), _f.name, name, kind="request"
+                            iss.id, _f.getvalue(), _f.name, name,
+                            kind="request", caption=_fcap,
                         )
                     except Exception:  # noqa: BLE001
                         pass
@@ -150,19 +161,31 @@ with st.expander("➕ 미구현 항목 추가", expanded=True):
             # 컴포넌트 리셋 — 같은 dataURL 재반환으로 인한 재추가 방지.
             st.session_state[f"_unimpl_paste_sub_{nonce}"] = _paste_sub + 1
             st.rerun()
-        st.caption(f"첨부 예정 {_total}장")
-        pcols = st.columns(6)
+        st.caption(f"첨부 예정 {_total}장 · 사진 아래 설명(선택)")
+        pcols = st.columns(4)
         _i = 0
         for _k, _pi in enumerate(u_paste_imgs, start=1):
-            with pcols[_i % 6]:
+            with pcols[_i % 4]:
                 st.image(_pi, caption=f"#{_k}", width="stretch")
+                st.text_input(
+                    "사진 설명",
+                    key=f"unimpl_cap_paste_{nonce}_{_k}",
+                    placeholder="설명(선택)",
+                    label_visibility="collapsed",
+                )
             _i += 1
-        for _f in _prev:
-            with pcols[_i % 6]:
+        for _fi, _f in enumerate(_prev):
+            with pcols[_i % 4]:
                 if _f.name.lower().endswith(".pdf"):
                     st.caption(f"📄 {_f.name}")
                 else:
                     st.image(_f, width="stretch")
+                    st.text_input(
+                        "사진 설명",
+                        key=f"unimpl_cap_file_{nonce}_{_fi}",
+                        placeholder="설명(선택)",
+                        label_visibility="collapsed",
+                    )
             _i += 1
 
 

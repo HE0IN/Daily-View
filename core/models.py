@@ -101,6 +101,8 @@ class ImageRef(BaseModel):
     size_bytes: int
     # 이미지 구분: 요청(AS-IS) / 개발(TO-BE). None = 구분 없음(옛 데이터 호환).
     kind: Literal["request", "dev"] | None = None
+    # 사진별 설명(캡션) — 업로드 시 입력 / 상세보기에서 수정. 빈 문자열 = 없음.
+    caption: str = ""
 
 
 class Comment(BaseModel):

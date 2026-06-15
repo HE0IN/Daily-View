@@ -970,6 +970,32 @@ def test_send_pending_to_dev_rejects_non_unimplemented(
         repository.send_pending_to_dev(issue.id, actor="등록자")
 
 
+def test_image_caption_roundtrip(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """사진 캡션 — 업로드 시 지정 + set_image_caption 수정 + 공백 trim + 범위검증."""
+    import io
+
+    from PIL import Image as _PILImage
+
+    issue = repository.create_issue(**sample_issue_kwargs)
+    buf = io.BytesIO()
+    _PILImage.new("RGB", (20, 16), (10, 120, 200)).save(buf, format="PNG")
+
+    ref = repository.add_image_from_bytes(
+        issue.id, buf.getvalue(), "shot.png", "tester",
+        kind="request", caption="  로그인 화면  ",
+    )
+    assert ref.caption == "로그인 화면"  # 저장 시 trim
+    assert repository.get_issue(issue.id).images[0].caption == "로그인 화면"
+
+    repository.set_image_caption(issue.id, 0, "에러 메시지", "tester")
+    assert repository.get_issue(issue.id).images[0].caption == "에러 메시지"
+
+    with pytest.raises(ValueError):
+        repository.set_image_caption(issue.id, 9, "x", "tester")
+
+
 def test_send_pending_to_dev_sets_assignee(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:

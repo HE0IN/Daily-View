@@ -275,23 +275,35 @@ with left:
             st.session_state[f"_paste_sub_{nonce}"] = _paste_sub + 1
             st.rerun()
 
-    # 미리보기
+    # 미리보기 — 각 사진 아래에 설명(캡션, 선택) 입력칸을 둔다.
     preview_files: list = list(uploaded_files or [])
     preview_total = len(preview_files) + len(paste_images)
     if preview_total:
-        st.caption(f"미리보기 — {preview_total}장")
+        st.caption(f"미리보기 — {preview_total}장 · 사진 아래 설명(선택) 입력 가능")
         cols = st.columns(min(preview_total, 4))
         idx = 0
         for i, p_img in enumerate(paste_images, start=1):
             with cols[idx % len(cols)]:
                 st.image(p_img, caption=f"(클립보드 #{i})", width="stretch")
+                st.text_input(
+                    "사진 설명",
+                    key=f"new_cap_paste_{nonce}_{i}",
+                    placeholder="설명(선택)",
+                    label_visibility="collapsed",
+                )
             idx += 1
-        for f in preview_files:
+        for j, f in enumerate(preview_files):
             with cols[idx % len(cols)]:
                 if f.name.lower().endswith(".pdf"):
                     st.caption(f"📄 {f.name}")
                 else:
                     st.image(f, caption=f.name, width="stretch")
+                    st.text_input(
+                        "사진 설명",
+                        key=f"new_cap_file_{nonce}_{j}",
+                        placeholder="설명(선택)",
+                        label_visibility="collapsed",
+                    )
             idx += 1
 
 
@@ -463,16 +475,22 @@ if submit:
     for i, p_img in enumerate(paste_images, start=1):
         try:
             repository.add_image_from_pil(
-                issue.id, p_img, f"pasted_{i}.png", name, kind="request"
+                issue.id, p_img, f"pasted_{i}.png", name, kind="request",
+                caption=st.session_state.get(f"new_cap_paste_{nonce}_{i}", ""),
             )
         except Exception as exc:  # noqa: BLE001
             image_errors.append(f"클립보드 이미지 #{i} 실패: {exc}")
 
-    for f in preview_files:
+    for j, f in enumerate(preview_files):
         try:
             data = bytes(f.getbuffer())
+            _cap = (
+                ""
+                if f.name.lower().endswith(".pdf")
+                else st.session_state.get(f"new_cap_file_{nonce}_{j}", "")
+            )
             repository.add_image_from_bytes(
-                issue.id, data, f.name, name, kind="request"
+                issue.id, data, f.name, name, kind="request", caption=_cap
             )
         except Exception as exc:  # noqa: BLE001
             image_errors.append(f"{f.name} 첨부 실패: {exc}")

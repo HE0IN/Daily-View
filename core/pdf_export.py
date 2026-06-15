@@ -135,21 +135,44 @@ def _draw_text_block(
     return y + 18
 
 
+_CAPTION_SIZE = 20  # 사진 밑 캡션 글자 크기
+
+
+def _draw_caption_centered(
+    draw: ImageDraw.ImageDraw, text: str, cx: int, cy: int, max_w: int, max_lines: int
+) -> int:
+    """사진 밑 캡션을 가운데 정렬로 그린다. 사용한 높이(px)를 반환."""
+    if not text:
+        return 0
+    font = _load_font(_CAPTION_SIZE)
+    wrapped = _wrap(draw, text, font, max_w)
+    lines = wrapped[:max_lines]
+    if len(wrapped) > max_lines and lines:
+        lines[-1] = (lines[-1][:-1] + "…") if lines[-1] else "…"
+    lh = _CAPTION_SIZE + 6
+    y = cy
+    for ln in lines:
+        w = draw.textlength(ln, font=font)
+        draw.text((cx + (max_w - w) / 2, y), ln, font=font, fill=(75, 85, 99))
+        y += lh
+    return y - cy
+
+
 def _draw_image_grid(
     page: Image.Image,
     draw: ImageDraw.ImageDraw,
-    img_paths: list,
+    imgs: list,
     top: int,
     left: int,
     width: int,
     height: int,
 ) -> None:
-    """크기 제각각인 이미지들을 균일한 셀(grid)에 비율 유지로 맞춰 가운데 배치.
+    """크기 제각각인 (경로, 캡션) 목록을 균일한 셀(grid)에 비율 유지로 배치.
 
-    장수에 따라 1·2·3 열로 나누고, 각 이미지는 셀 안에 thumbnail 로 축소되어
-    한 장이 과도하게 크거나 작지 않게 보인다.
+    장수에 따라 1·2·3 열로 나누고, 각 이미지는 셀 안에 thumbnail 로 축소된다.
+    캡션이 있으면 셀 하단에 한 줄로 가운데 표시한다.
     """
-    n = len(img_paths)
+    n = len(imgs)
     if n == 0 or height < 140:
         return
     cols = 1 if n == 1 else (2 if n <= 4 else 3)
@@ -157,38 +180,43 @@ def _draw_image_grid(
     cell_w = width // cols
     cell_h = max(180, height // rows)
     pad = 14
-    caption_font = _load_font(22)
 
     drawn = 0
-    for i, p in enumerate(img_paths):
+    for i, (p, caption) in enumerate(imgs):
         r, c = divmod(i, cols)
         cx = left + c * cell_w
         cy = top + r * cell_h
         # 페이지(이미지 영역) 아래로 넘치면 남는 이미지는 생략하고 안내.
         if cy + 140 > top + height:
             break
+        cap_h = (_CAPTION_SIZE + 8) if caption else 0
+        img_box_h = cell_h - 2 * pad - cap_h
         try:
             with Image.open(p) as im:
                 im = im.convert("RGB")
-                im.thumbnail((cell_w - 2 * pad, cell_h - 2 * pad))
+                im.thumbnail((cell_w - 2 * pad, max(20, img_box_h)))
                 ox = cx + (cell_w - im.width) // 2
-                oy = cy + (cell_h - im.height) // 2
+                oy = cy + pad + (img_box_h - im.height) // 2
                 page.paste(im, (ox, oy))
                 drawn += 1
         except Exception:  # noqa: BLE001
             continue
+        if caption:
+            _draw_caption_centered(
+                draw, caption, cx + pad, cy + cell_h - cap_h, cell_w - 2 * pad, 1
+            )
 
     if drawn < n:
         draw.text(
             (left, top + height - 30),
             f"(+{n - drawn}장은 지면 관계로 생략)",
-            font=caption_font,
+            font=_load_font(22),
             fill=(107, 114, 128),
         )
 
 
-def _valid_image_paths(issue) -> list:
-    """항목의 첨부 중 표시 가능한 이미지 경로만 (PDF/누락 제외)."""
+def _valid_images(issue) -> list:
+    """항목의 첨부 중 표시 가능한 (경로, 캡션) 목록 (PDF/누락 제외)."""
     item_dir = paths.item_dir(issue.id)
     out = []
     for img_ref in issue.images:
@@ -196,21 +224,35 @@ def _valid_image_paths(issue) -> list:
             continue
         p = item_dir / img_ref.file
         if p.exists():
-            out.append(p)
+            out.append((p, (getattr(img_ref, "caption", "") or "").strip()))
     return out
 
 
 def _draw_single_image(
-    page: Image.Image, path, top: int, left: int, width: int, height: int
+    page: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    path,
+    caption: str,
+    top: int,
+    left: int,
+    width: int,
+    height: int,
 ) -> None:
     """이미지 1장 — 텍스트 아래 가용 영역에 비율 유지로 '맞게 키워' 가운데 배치 (2번).
 
     thumbnail 은 축소만 하지만, 여기선 작은 이미지도 업스케일해 화면을 채운다.
+    캡션이 있으면 사진 아래(최대 2줄, 가운데)에 표시하고 그만큼 사진 공간을 줄인다.
     """
     if width < 60 or height < 60:
         return
+    cap_font = _load_font(_CAPTION_SIZE)
+    cap_lines = _wrap(draw, caption, cap_font, width - 16)[:2] if caption else []
+    cap_h = (len(cap_lines) * (_CAPTION_SIZE + 6) + 8) if cap_lines else 0
+    img_h = height - cap_h
     pad = 8
-    box_w, box_h = width - 2 * pad, height - 2 * pad
+    box_w, box_h = width - 2 * pad, img_h - 2 * pad
+    if box_w < 20 or box_h < 20:
+        return
     try:
         with Image.open(path) as im:
             im = im.convert("RGB")
@@ -219,10 +261,12 @@ def _draw_single_image(
             new_h = max(1, int(im.height * scale))
             im = im.resize((new_w, new_h), Image.LANCZOS)
             ox = left + (width - new_w) // 2
-            oy = top + (height - new_h) // 2
+            oy = top + (img_h - new_h) // 2
             page.paste(im, (ox, oy))
     except Exception:  # noqa: BLE001
         return
+    if cap_lines:
+        _draw_caption_centered(draw, caption, left, top + img_h + 4, width, 2)
 
 
 def _render_page(issue) -> Image.Image:
@@ -233,10 +277,13 @@ def _render_page(issue) -> Image.Image:
 
     content_w = PAGE_W - 2 * MARGIN
     img_area_h = PAGE_H - MARGIN - img_top
-    imgs = _valid_image_paths(issue)
+    imgs = _valid_images(issue)
     if len(imgs) == 1:
         # 2번: 한 장이면 텍스트를 침범하지 않는 범위에서 화면에 맞게 키운다.
-        _draw_single_image(page, imgs[0], img_top, MARGIN, content_w, img_area_h)
+        _path, _cap = imgs[0]
+        _draw_single_image(
+            page, draw, _path, _cap, img_top, MARGIN, content_w, img_area_h
+        )
     else:
         _draw_image_grid(page, draw, imgs, img_top, MARGIN, content_w, img_area_h)
     return page
