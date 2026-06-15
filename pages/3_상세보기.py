@@ -151,9 +151,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- 1행: 목록 / 뒤로(이전) / 다음 + ID -------------------------------------
-# 7번: [목록]=목록으로, [뒤로]=이전 항목, [다음]=다음 항목. 같은 너비로 왼쪽 정렬,
-#      텍스트보다 약간 큰 정도. 목록 순서는 들어온 화면이 _detail_nav_ids 로 넘겨준다.
+# --- 1행: [목록 뒤로 다음](왼쪽 끝) ‥‥ [개발 요청 Temp로](오른쪽 끝) — 한 행 양 끝 -
 _back_target = st.session_state.get("_detail_origin", "pages/1_요청목록.py")
 _nav_ids = [i for i in (st.session_state.get("_detail_nav_ids") or []) if i]
 _cur_idx = _nav_ids.index(item_id) if item_id in _nav_ids else -1
@@ -167,53 +165,53 @@ def _go_to(_target_id: str) -> None:
     st.rerun()
 
 
-# 텍스트보다 약간 큰 고정 너비(px)로 3개 동일하게 — 왼쪽 정렬.
-_BTN_W = 84
-_c_list, _c_prev, _c_next, _c_sp = st.columns([1, 1, 1, 9])
-with _c_list:
-    if st.button("목록", key="detail_list_btn", width=_BTN_W, help="목록으로 돌아가기"):
-        st.switch_page(_back_target)
-with _c_prev:
-    if st.button(
-        "뒤로", key="detail_prev_btn", width=_BTN_W,
-        disabled=not _has_prev, help="목록의 이전 항목",
-    ):
-        _go_to(_nav_ids[_cur_idx - 1])
-with _c_next:
-    if st.button(
-        "다음", key="detail_next_btn", width=_BTN_W,
-        disabled=not _has_next, help="목록의 다음 항목",
-    ):
-        _go_to(_nav_ids[_cur_idx + 1])
-with _c_sp:
-    _pos = f"{_cur_idx + 1}/{len(_nav_ids)} · " if _cur_idx >= 0 else ""
-    st.markdown(
-        f'<div style="text-align:right;color:#6B7280;font-size:0.85em;'
-        f'line-height:2.4;">{_pos}#{item_id}</div>',
-        unsafe_allow_html=True,
-    )
+_NAV_W = 76     # 목록/뒤로/다음 — 텍스트보다 살짝 크게 (사이 여백은 packed 라 좁음)
+_PROMO_W = 96   # 개발 요청/Temp로 — 기존 대비 약 절반 폭
+_nav_area, _right_area = st.columns([1, 1], vertical_alignment="center")
+with _nav_area:
+    # horizontal 컨테이너로 고정폭 버튼을 바짝 붙여 사이 여백을 1/3 수준으로 축소.
+    with st.container(horizontal=True, gap="small"):
+        if st.button("목록", key="detail_list_btn", width=_NAV_W, help="목록으로 돌아가기"):
+            st.switch_page(_back_target)
+        if st.button(
+            "뒤로", key="detail_prev_btn", width=_NAV_W,
+            disabled=not _has_prev, help="목록의 이전 항목",
+        ):
+            _go_to(_nav_ids[_cur_idx - 1])
+        if st.button(
+            "다음", key="detail_next_btn", width=_NAV_W,
+            disabled=not _has_next, help="목록의 다음 항목",
+        ):
+            _go_to(_nav_ids[_cur_idx + 1])
+with _right_area:
+    if issue.kind == "unimplemented":
+        with st.container(
+            horizontal=True, horizontal_alignment="right", gap="small"
+        ):
+            if st.button(
+                "개발 요청", key="detail_promote_dev", type="primary",
+                width=_PROMO_W, help="담당자·긴급도를 지정해 개발목록으로 승격",
+            ):
+                st.session_state["promote_id"] = item_id
+                st.switch_page("pages/2_새요청등록.py")
+            if st.button(
+                "Temp로", key="detail_promote_temp", width=_PROMO_W,
+                help="확정 보류 — Temp 목록으로 이동",
+            ):
+                try:
+                    repository.promote_to_criteria(item_id, user["name"])
+                    st.toast("Temp 로 이동했습니다", icon="✅")
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"이동 실패: {exc}")
 
-# --- 1.5행: 확인요청(확인대기) 항목 — 개발 요청 / Temp로 (확인요청목록과 동일, 6번) ---
-if issue.kind == "unimplemented":
-    _pr1, _pr2, _pr_sp = st.columns([1.4, 1.4, 5])
-    with _pr1:
-        if st.button(
-            "개발 요청", key="detail_promote_dev", type="primary", width="stretch",
-            help="담당자·긴급도를 지정해 개발목록으로 승격",
-        ):
-            st.session_state["promote_id"] = item_id
-            st.switch_page("pages/2_새요청등록.py")
-    with _pr2:
-        if st.button(
-            "Temp로", key="detail_promote_temp", width="stretch",
-            help="확정 보류 — Temp 목록으로 이동",
-        ):
-            try:
-                repository.promote_to_criteria(item_id, user["name"])
-                st.toast("Temp 로 이동했습니다", icon="✅")
-                st.rerun()
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"이동 실패: {exc}")
+# 위치/#id — 작은 회색 캡션 (오른쪽).
+_pos = f"{_cur_idx + 1}/{len(_nav_ids)} · " if _cur_idx >= 0 else ""
+st.markdown(
+    f'<div style="text-align:right;color:#9CA3AF;font-size:0.78em;">'
+    f"{_pos}#{item_id}</div>",
+    unsafe_allow_html=True,
+)
 
 # --- 2행: 제목(또는 편집 입력) + 편집/삭제/완전삭제 버튼 ------------------
 # 편집 모드 토글 — True 면 제목/설명이 입력칸으로 바뀌고 버튼이 [완료] 가 된다.
@@ -224,9 +222,7 @@ if _edit_mode:
         "변경 내용이 저장되지 않고 취소됩니다."
     )
 
-title_col, title_edit_col, title_del_col, title_purge_col = st.columns(
-    [7, 1, 0.7, 0.8]
-)
+title_col, title_btns_col = st.columns([7, 2.2], vertical_alignment="center")
 with title_col:
     if _edit_mode:
         st.text_input(
@@ -245,56 +241,61 @@ with title_col:
             f"</div>",
             unsafe_allow_html=True,
         )
-with title_edit_col:
-    # 인라인 편집 토글 — 편집모드면 [완료](저장), 아니면 [편집]. 누구나 가능.
-    if _edit_mode:
-        if st.button("완료", type="primary", key="edit_done_btn", width="stretch"):
-            try:
-                repository.update_issue_content(
-                    item_id,
-                    st.session_state.get(f"edit_title_{item_id}", issue.title),
-                    st.session_state.get(f"edit_desc_{item_id}", issue.description),
-                    user["name"],
-                )
-                st.session_state[f"_edit_mode_{item_id}"] = False
-                st.toast("수정되었습니다", icon="✅")
-                st.rerun()
-            except ValueError as exc:
-                st.error(str(exc))
-            except Exception as exc:  # pragma: no cover
-                st.error(f"수정 실패: {exc}")
-    elif not issue.archived:
-        if st.button("편집", key="edit_start_btn", width="stretch"):
-            st.session_state[f"_edit_mode_{item_id}"] = True
-            st.rerun()
-with title_del_col:
-    if issue.archived:
-        st.caption("🗑")
-    else:
-        with st.popover("🗑", width="stretch", help="삭제(보관)"):
-            st.warning("이 요청을 삭제(보관)하시겠습니까?")
-            if st.button("삭제 확인", type="primary", key="del_confirm_title"):
+with title_btns_col:
+    # 편집/삭제/완전삭제 — 너비 통일(텍스트보다 살짝 크게), 오른쪽 정렬 한 줄.
+    _ACT_W = 64
+    with st.container(horizontal=True, horizontal_alignment="right", gap="small"):
+        # 인라인 편집 토글 — 편집모드면 [완료](저장), 아니면 [편집]. 누구나 가능.
+        if _edit_mode:
+            if st.button("완료", type="primary", key="edit_done_btn", width=_ACT_W):
                 try:
-                    repository.archive_issue(item_id, user["name"])
-                    st.toast("삭제(보관)되었습니다", icon="🗑")
+                    repository.update_issue_content(
+                        item_id,
+                        st.session_state.get(f"edit_title_{item_id}", issue.title),
+                        st.session_state.get(
+                            f"edit_desc_{item_id}", issue.description
+                        ),
+                        user["name"],
+                    )
+                    st.session_state[f"_edit_mode_{item_id}"] = False
+                    st.toast("수정되었습니다", icon="✅")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"수정 실패: {exc}")
+        elif not issue.archived:
+            if st.button("편집", key="edit_start_btn", width=_ACT_W):
+                st.session_state[f"_edit_mode_{item_id}"] = True
+                st.rerun()
+        # 삭제(보관)
+        if issue.archived:
+            st.caption("🗑")
+        else:
+            with st.popover("🗑", width=_ACT_W, help="삭제(보관)"):
+                st.warning("이 요청을 삭제(보관)하시겠습니까?")
+                if st.button("삭제 확인", type="primary", key="del_confirm_title"):
+                    try:
+                        repository.archive_issue(item_id, user["name"])
+                        st.toast("삭제(보관)되었습니다", icon="🗑")
+                        st.switch_page("pages/1_요청목록.py")
+                    except Exception as exc:  # pragma: no cover
+                        st.error(f"삭제 실패: {exc}")
+        # 완전삭제
+        with st.popover("🔥", width=_ACT_W, help="완전삭제 (복구 불가)"):
+            st.error(
+                "⚠ 이 항목의 폴더(이미지·코멘트·메타 전체)를 디스크에서 완전히 "
+                "삭제합니다. 되돌릴 수 없습니다."
+            )
+            if st.button(
+                "완전삭제 확인", type="primary", key="purge_confirm_title"
+            ):
+                try:
+                    repository.delete_issue_permanently(item_id, user["name"])
+                    st.toast("완전히 삭제되었습니다", icon="🔥")
                     st.switch_page("pages/1_요청목록.py")
                 except Exception as exc:  # pragma: no cover
-                    st.error(f"삭제 실패: {exc}")
-with title_purge_col:
-    with st.popover("🔥", width="stretch", help="완전삭제 (복구 불가)"):
-        st.error(
-            "⚠ 이 항목의 폴더(이미지·코멘트·메타 전체)를 디스크에서 완전히 "
-            "삭제합니다. 되돌릴 수 없습니다."
-        )
-        if st.button(
-            "완전삭제 확인", type="primary", key="purge_confirm_title"
-        ):
-            try:
-                repository.delete_issue_permanently(item_id, user["name"])
-                st.toast("완전히 삭제되었습니다", icon="🔥")
-                st.switch_page("pages/1_요청목록.py")
-            except Exception as exc:  # pragma: no cover
-                st.error(f"완전삭제 실패: {exc}")
+                    st.error(f"완전삭제 실패: {exc}")
 
 # --- 3행: 메타 정보 (등록 / 담당 / 카테고리) 가로 배치 ---------------------
 created_human = humanize_dt(issue.created_at)
