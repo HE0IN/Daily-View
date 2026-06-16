@@ -34,8 +34,12 @@ class WorkflowError(Exception):
 # 호환을 위해 전이를 남겨, 검토자/개발자가 새 상태로 정리할 수 있게 한다.
 #   Role.developer = '담당자'(assignee) 권한, Role.reviewer = '등록자'(author) 권한.
 TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
-    # 담당자확인요청 → 담당자검토중 (담당자)
-    (Status.assignee_request, Role.developer): [Status.assignee_reviewing],
+    # 담당자확인요청 → 담당자검토중 / 확인대기(되돌리기) (담당자)
+    #   담당자도 확인대기로 보낼 수 있다 (등록자와 동일하게 확인요청목록으로 되돌림).
+    (Status.assignee_request, Role.developer): [
+        Status.assignee_reviewing,
+        Status.pending_check,
+    ],
     # 담당자검토중 → 검토완료 / (되돌리기)확인요청 (담당자)
     (Status.assignee_reviewing, Role.developer): [
         Status.assignee_reviewed,
@@ -88,10 +92,10 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
     ],
     # 완료 → 등록자검토중 (등록자; 재개발이 필요해 다시 검토 단계로 되돌림)
     (Status.closed, Role.reviewer): [Status.author_reviewing],
-    # 확인대기 — 확인요청(unimplemented) 항목 전용. 등록자(author)만 전이 가능.
-    # 담당자확인요청 ↔ 확인대기 (기존 데이터 이동/되돌리기용). 확인대기에서
-    # 개발/확인목록으로 빠져나가는 것은 확인요청목록 버튼이 kind 변경으로 처리한다.
-    # (dev 항목에 노출되지 않도록 상세보기에서 kind 로 한 번 더 필터링한다.)
+    # 확인대기 ↔ 담당자확인요청. 담당자확인요청 → 확인대기 는 담당자/등록자 모두 가능
+    # (위 developer 전이 + 아래 reviewer 전이). 확인대기 → 담당자확인요청 은 등록자가
+    # 담당자 지정과 함께 보낸다(상세보기). 확인대기에서 개발/Temp 로 빠져나가는 것은
+    # 확인요청목록·Temp 의 버튼이 kind 변경으로 처리한다.
     (Status.assignee_request, Role.reviewer): [Status.pending_check],
     (Status.pending_check, Role.reviewer): [Status.assignee_request],
 }

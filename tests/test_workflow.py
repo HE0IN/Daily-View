@@ -24,7 +24,10 @@ from core.workflow import (
 #   developer=담당자, reviewer=등록자.
 # ---------------------------------------------------------------------------
 EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
-    (Status.assignee_request, Role.developer): {Status.assignee_reviewing},
+    (Status.assignee_request, Role.developer): {
+        Status.assignee_reviewing,
+        Status.pending_check,
+    },
     (Status.assignee_request, Role.reviewer): {Status.pending_check},
     (Status.assignee_reviewing, Role.developer): {
         Status.assignee_reviewed,
@@ -149,8 +152,9 @@ def test_closed_can_reopen_to_review() -> None:
         (Status.author_reviewing, Role.reviewer, Status.author_request, True),
         # --- 완료 → 등록자검토중 (재개발) ---
         (Status.closed, Role.reviewer, Status.author_reviewing, True),
-        # --- 확인대기 (확인요청 항목 전용, 등록자) ---
+        # --- 확인대기 — 담당자확인요청 → 확인대기 는 담당자/등록자 모두 가능 ---
         (Status.assignee_request, Role.reviewer, Status.pending_check, True),
+        (Status.assignee_request, Role.developer, Status.pending_check, True),
         (Status.pending_check, Role.reviewer, Status.assignee_request, True),
         (Status.pending_check, Role.developer, Status.assignee_request, False),
         # --- terminal/위반 ---

@@ -365,9 +365,10 @@ with meta_c0:
                     _options.append((_ns, Role.developer))
             if is_author:
                 for _ns in allowed_transitions(issue.status, Role.reviewer):
-                    # 확인대기는 등록자(author)만, 담당자확인요청 단계에서 노출.
-                    # (확인요청/개발/Temp 어느 kind 든 담당자확인요청 ↔ 확인대기 가능 —
-                    #  kind 는 전환 시 함께 바뀌어 목록 사이를 이동한다, 1·3번.)
+                    # 같은 목표 상태가 이미 있으면 건너뜀 — 등록자=담당자 겸직 시
+                    # 확인대기 버튼이 두 번(중복 key) 그려지는 것을 방지.
+                    if any(_t == _ns for (_t, _r) in _options):
+                        continue
                     _options.append((_ns, Role.reviewer))
             # R1/R2: 확인대기 ↔ Temp 도 상태변경에서 가능 (확인요청목록의 [Temp로],
             #   Temp 목록의 [확인대기로] 카드 버튼과 동일 동작). 담당자 없는 행정 이동.
