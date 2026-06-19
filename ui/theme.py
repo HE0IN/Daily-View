@@ -37,6 +37,9 @@ STATUS_COLORS: dict[str, str] = {
     "vendor_wait": "#67E8F9",           # 연청록 (개발사요청대기)
     "vendor_request": "#06B6D4",        # 청록 (개발사확인중)
     "vendor_reply": "#0891B2",          # 진청록 (개발사회신확인중)
+    "team_wait": "#6EE7B7",             # 연에메랄드 (담당팀요청대기)
+    "team_request": "#34D399",          # 에메랄드 (담당팀확인중)
+    "team_reply": "#059669",            # 진에메랄드 (담당팀회신확인중)
     "author_request": "#F59E0B",        # 주황 (등록자확인요청)
     "author_reviewing": "#F97316",      # 진주황 (등록자검토중)
     "closed": "#6B7280",                # 회색 (완료)
@@ -53,6 +56,9 @@ STATUS_LABELS: dict[str, str] = {
     "vendor_wait": "개발사요청대기",
     "vendor_request": "개발사확인중",
     "vendor_reply": "개발사회신확인중",
+    "team_wait": "담당팀요청대기",
+    "team_request": "담당팀확인중",
+    "team_reply": "담당팀회신확인중",
     "author_request": "등록자확인요청",
     "author_reviewing": "등록자검토중",
     "closed": "완료",

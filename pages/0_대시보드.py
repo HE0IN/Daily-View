@@ -136,6 +136,16 @@ _grid(vendor_items, key_prefix="dash_vendor")
 
 st.divider()
 
+# 3-2) 담당팀 (개발사와 동일 구조의 병렬 단계)
+team_items = _by_status(
+    [Status.team_wait, Status.team_request, Status.team_reply]
+)
+st.subheader(f"담당팀 ({len(team_items)})")
+st.caption("담당팀요청대기 · 담당팀확인중 · 담당팀회신확인중")
+_grid(team_items, key_prefix="dash_team")
+
+st.divider()
+
 # 4) 등록자 확인
 author_items = _by_status([Status.author_request, Status.author_reviewing])
 st.subheader(f"등록자 확인 ({len(author_items)})")
@@ -152,13 +162,13 @@ _grid(done, key_prefix="dash_done")
 
 st.divider()
 
-# 6) 삭제 — archived 항목 (상태 무관)
+# 6) 삭제 — archived 항목 (상태·종류 무관). kind=None 으로 확인요청·Temp 보관 항목도 포함.
 _archived_entries = repository.list_issues(
-    include_archived=True, include_closed=True, project=current_project
+    include_archived=True, include_closed=True, project=current_project, kind=None
 )
 archived = _to_dicts([e for e in _archived_entries if e.archived])
 st.subheader(f"삭제 ({len(archived)})")
-st.caption("삭제(보관) 처리된 항목")
+st.caption("삭제(보관) 처리된 항목 (개발·확인요청·Temp 모두)")
 _grid(archived, key_prefix="dash_arch")
 
 
@@ -175,6 +185,9 @@ STATUS_NAV_KEYS = [
     "vendor_wait",
     "vendor_request",
     "vendor_reply",
+    "team_wait",
+    "team_request",
+    "team_reply",
     "author_request",
     "author_reviewing",
 ]

@@ -45,11 +45,12 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
         Status.assignee_reviewed,
         Status.assignee_request,  # 직전 단계로
     ],
-    # 검토완료 → 신규개발 / 코드수정 / 개발사확인 / (되돌리기)검토중 (담당자)
+    # 검토완료 → 신규개발 / 코드수정 / 개발사요청 / 담당팀요청 / (되돌리기)검토중 (담당자)
     (Status.assignee_reviewed, Role.developer): [
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_wait,
+        Status.team_wait,
         Status.author_request,  # 개발 불필요 시 바로 등록자확인요청
         Status.assignee_reviewing,  # 직전 단계로
     ],
@@ -70,11 +71,30 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
         Status.assignee_fixing,
         Status.vendor_request,  # 직전 단계로
     ],
-    # 신규개발 → 등록자확인요청 / 개발사요청대기 / (되돌리기)검토완료 (담당자)
-    #   개발 중 개발사 요청이 필요한 상황이 생기면 개발사요청대기로 보낼 수 있다.
+    # --- 담당팀 단계 — 개발사 단계와 동일 구조의 병렬 트랙 (검토완료/신규개발에서 분기) ---
+    # 담당팀요청대기 → 담당팀확인중(요청 송부) / (되돌리기)검토완료 (담당자)
+    (Status.team_wait, Role.developer): [
+        Status.team_request,
+        Status.assignee_reviewed,  # 직전 단계로
+    ],
+    # 담당팀확인중 → 담당팀회신확인중 / (되돌리기)담당팀요청대기 (담당자)
+    (Status.team_request, Role.developer): [
+        Status.team_reply,
+        Status.team_wait,  # 직전 단계로
+    ],
+    # 담당팀회신확인중 → 등록자확인요청 / 신규개발 / 코드수정 / (되돌리기)담당팀확인중 (담당자)
+    (Status.team_reply, Role.developer): [
+        Status.author_request,
+        Status.assignee_developing,
+        Status.assignee_fixing,
+        Status.team_request,  # 직전 단계로
+    ],
+    # 신규개발 → 등록자확인요청 / 개발사요청대기 / 담당팀요청대기 / (되돌리기)검토완료 (담당자)
+    #   개발 중 개발사·담당팀 요청이 필요하면 각 요청대기로 보낼 수 있다.
     (Status.assignee_developing, Role.developer): [
         Status.author_request,
         Status.vendor_wait,
+        Status.team_wait,
         Status.assignee_reviewed,  # 직전 단계로
     ],
     (Status.assignee_fixing, Role.developer): [
@@ -111,6 +131,9 @@ STATUS_LABELS_KO: dict[Status, str] = {
     Status.vendor_wait: "개발사요청대기",
     Status.vendor_request: "개발사확인중",
     Status.vendor_reply: "개발사회신확인중",
+    Status.team_wait: "담당팀요청대기",
+    Status.team_request: "담당팀확인중",
+    Status.team_reply: "담당팀회신확인중",
     Status.author_request: "등록자확인요청",
     Status.author_reviewing: "등록자검토중",
     Status.closed: "완료",

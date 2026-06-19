@@ -58,6 +58,10 @@ class Status(str, Enum):
     vendor_wait = "vendor_wait"                  # 개발사요청대기 (요청 전 모아두기)
     vendor_request = "vendor_request"            # 개발사확인중
     vendor_reply = "vendor_reply"                # 개발사회신확인중
+    # 담당팀 단계 — 개발사 단계와 동일 구조의 병렬 트랙 (검토완료에서 분기).
+    team_wait = "team_wait"                      # 담당팀요청대기 (요청 전 모아두기)
+    team_request = "team_request"                # 담당팀확인중
+    team_reply = "team_reply"                    # 담당팀회신확인중
     author_request = "author_request"            # 등록자확인요청
     author_reviewing = "author_reviewing"        # 등록자검토중
     closed = "closed"                            # 완료

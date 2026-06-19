@@ -832,6 +832,39 @@ def test_update_status_api_check_no_auto_assignee(
     assert not any("자동 변경" in c.body for c in comments)
 
 
+def test_team_stage_full_hop(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """담당팀 단계 전 구간 전이가 동작 (검토완료→대기→확인중→회신→등록자확인요청).
+
+    개발사 단계와 동일 구조 — 담당자는 유지되고 kind 는 dev 그대로다.
+    """
+    kw = dict(sample_issue_kwargs)
+    kw["assignee"] = "담당이"
+    issue = repository.create_issue(**kw)
+    for _s in (
+        Status.assignee_reviewing,
+        Status.assignee_reviewed,
+        Status.team_wait,
+        Status.team_request,
+        Status.team_reply,
+        Status.author_request,
+    ):
+        repository.update_status(
+            issue.id, _s, actor="담당이", actor_role=Role.developer
+        )
+    got = repository.get_issue(issue.id)
+    assert got.status == Status.author_request
+    assert got.assignee == "담당이"  # 담당자 유지
+    assert got.kind == "dev"
+
+    # 검토완료에서 개발사·담당팀 둘 다로 갈 수 있어야 한다 (병렬 분기).
+    from core.workflow import allowed_transitions
+
+    _opts = allowed_transitions(Status.assignee_reviewed, Role.developer)
+    assert Status.vendor_wait in _opts and Status.team_wait in _opts
+
+
 def test_api_check_no_api_assignee(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:

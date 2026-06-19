@@ -38,6 +38,7 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_wait,
+        Status.team_wait,
         Status.author_request,
         Status.assignee_reviewing,
     },
@@ -59,9 +60,28 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
         Status.vendor_request,
     },
     (Status.vendor_reply, Role.reviewer): set(),
+    # 담당팀 단계 — 개발사 단계와 동일 구조의 병렬 트랙
+    (Status.team_wait, Role.developer): {
+        Status.team_request,
+        Status.assignee_reviewed,
+    },
+    (Status.team_wait, Role.reviewer): set(),
+    (Status.team_request, Role.developer): {
+        Status.team_reply,
+        Status.team_wait,
+    },
+    (Status.team_request, Role.reviewer): set(),
+    (Status.team_reply, Role.developer): {
+        Status.author_request,
+        Status.assignee_developing,
+        Status.assignee_fixing,
+        Status.team_request,
+    },
+    (Status.team_reply, Role.reviewer): set(),
     (Status.assignee_developing, Role.developer): {
         Status.author_request,
         Status.vendor_wait,
+        Status.team_wait,
         Status.assignee_reviewed,
     },
     (Status.assignee_developing, Role.reviewer): set(),
@@ -130,6 +150,13 @@ def test_closed_can_reopen_to_review() -> None:
         (Status.vendor_reply, Role.developer, Status.author_request, True),
         (Status.vendor_reply, Role.developer, Status.assignee_developing, True),
         (Status.vendor_reply, Role.developer, Status.assignee_fixing, True),
+        # --- 담당팀 단계 (개발사와 동일 구조) ---
+        (Status.assignee_reviewed, Role.developer, Status.team_wait, True),
+        (Status.team_wait, Role.developer, Status.team_request, True),
+        (Status.team_request, Role.developer, Status.team_reply, True),
+        (Status.team_reply, Role.developer, Status.author_request, True),
+        (Status.team_reply, Role.developer, Status.team_request, True),  # 되돌리기
+        (Status.assignee_developing, Role.developer, Status.team_wait, True),
         (Status.assignee_developing, Role.developer, Status.author_request, True),
         (Status.assignee_fixing, Role.developer, Status.author_request, True),
         # --- 정상 전이 (등록자) ---
@@ -228,6 +255,9 @@ def test_status_labels_ko_specific_values() -> None:
     assert STATUS_LABELS_KO[Status.assignee_fixing] == "담당자코드수정중"
     assert STATUS_LABELS_KO[Status.vendor_request] == "개발사확인중"
     assert STATUS_LABELS_KO[Status.vendor_reply] == "개발사회신확인중"
+    assert STATUS_LABELS_KO[Status.team_wait] == "담당팀요청대기"
+    assert STATUS_LABELS_KO[Status.team_request] == "담당팀확인중"
+    assert STATUS_LABELS_KO[Status.team_reply] == "담당팀회신확인중"
     assert STATUS_LABELS_KO[Status.author_request] == "등록자확인요청"
     assert STATUS_LABELS_KO[Status.author_reviewing] == "등록자검토중"
     assert STATUS_LABELS_KO[Status.closed] == "완료"
@@ -253,6 +283,7 @@ def test_allowed_transitions_returns_independent_list() -> None:
         Status.assignee_developing,
         Status.assignee_fixing,
         Status.vendor_wait,
+        Status.team_wait,
         Status.author_request,
         Status.assignee_reviewing,
     ], "내부 TRANSITIONS 가 외부 변형에 노출됨"

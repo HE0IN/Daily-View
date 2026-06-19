@@ -125,6 +125,9 @@ _my_work = st.Page(
 _vendor_req = st.Page(
     "pages/0c_개발사요청.py", title="개발사 요청", icon=":material/forward_to_inbox:"
 )
+_team_req = st.Page(
+    "pages/0d_담당팀요청.py", title="담당팀 요청", icon=":material/groups:"
+)
 _new = st.Page(
     "pages/2_새요청등록.py", title="새 요청 등록", icon=":material/add_circle:"
 )
@@ -195,14 +198,14 @@ st.markdown(
 # 1구역: 개발 흐름(내 작업·개발목록·새 요청 등록)
 # 2구역: 확인 흐름(확인 요청·확인요청목록·Temp)
 # 3구역: 조회(대시보드·통계·상세보기) — 대시보드/통계는 추후 통합 예정.
-# 4구역: 개발사 요청(별도 구역, 1번)
+# 4구역: 개발사 요청 · 담당팀 요청(외부/내부 단계 모아보기·PDF)
 # 상세보기는 3구역에 포함하되 위 CSS 로 사이드바에서 숨긴다.
 pg = st.navigation(
     {
         " ": [_my_work, _list, _new],
         "  ": [_confirm_req, _confirm_list, _criteria],
         "   ": [_dashboard, _stats, _detail],
-        "    ": [_vendor_req],
+        "    ": [_vendor_req, _team_req],
     }
 )
 pg.run()

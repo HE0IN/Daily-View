@@ -282,9 +282,12 @@ def _fetch_entries() -> list[dict]:
             "vendor_wait": 5,
             "vendor_request": 6,
             "vendor_reply": 7,
-            "author_request": 8,
-            "author_reviewing": 9,
-            "closed": 10,
+            "team_wait": 8,
+            "team_request": 9,
+            "team_reply": 10,
+            "author_request": 11,
+            "author_reviewing": 12,
+            "closed": 13,
         }
         items.sort(
             key=lambda d: (
