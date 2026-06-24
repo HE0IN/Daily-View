@@ -516,6 +516,13 @@ if submit:
     # st.switch_page 가 query_params 를 유실하는 케이스가 있어
     # session_state 로도 함께 전달 (상세보기에서 둘 다 체크).
     st.session_state["_detail_item_id"] = issue.id
-    st.session_state["_detail_origin"] = "pages/1_요청목록.py"
+    # 1번: 승격(개발 요청)이면 사용자가 마지막으로 보던 목록(확인요청목록 등)으로
+    #      상세보기 [목록] 이 돌아가도록 기존 origin 을 보존. 신규 등록은 개발목록.
+    if promote_id:
+        st.session_state["_detail_origin"] = (
+            st.session_state.get("_detail_origin") or "pages/1_요청목록.py"
+        )
+    else:
+        st.session_state["_detail_origin"] = "pages/1_요청목록.py"
     st.query_params["id"] = issue.id
     st.switch_page("pages/3_상세보기.py")

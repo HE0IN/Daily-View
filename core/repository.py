@@ -678,15 +678,17 @@ def promote_unimplemented(
 
 
 def promote_to_criteria(item_id: str, actor: str) -> Issue:
-    """확인요청(unimplemented) 항목을 Temp(kind=criteria, status=temp)로 이동.
+    """어떤 항목이든 Temp(kind=criteria, status=temp)로 이동 (확정 보류).
 
-    상태를 Temp 로 바꾸고 담당자를 비운다 (확인대기·Temp 는 담당자 없음, 5번).
-    확인요청목록에서 빠지고 Temp 목록에 나타난다.
+    상태를 Temp 로 바꾸고 담당자를 비운다 (확인대기·Temp 는 담당자 없음).
+    원래 목록(확인요청목록/개발목록)에서 빠지고 Temp 목록에 나타난다.
+    이미 Temp(criteria)인 항목은 ValueError.
     """
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
-        if issue.kind != "unimplemented":
-            raise ValueError("확인요청 항목만 Temp 로 옮길 수 있습니다.")
+        if issue.kind == "criteria":
+            raise ValueError("이미 Temp 항목입니다.")
+        _old_kind = issue.kind
         issue.kind = "criteria"
         issue.status = Status.temp
         issue.assignee = None
@@ -698,7 +700,7 @@ def promote_to_criteria(item_id: str, actor: str) -> Issue:
         actor=actor,
         action=audit.UPDATE_CONTENT,
         item_id=item_id,
-        detail={"move": "unimplemented->temp"},
+        detail={"move": f"{_old_kind}->temp"},
     )
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)

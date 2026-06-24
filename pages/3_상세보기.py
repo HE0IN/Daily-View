@@ -370,12 +370,13 @@ with meta_c0:
                     if any(_t == _ns for (_t, _r) in _options):
                         continue
                     _options.append((_ns, Role.reviewer))
-            # R1/R2: 확인대기 ↔ Temp 도 상태변경에서 가능 (확인요청목록의 [Temp로],
-            #   Temp 목록의 [확인대기로] 카드 버튼과 동일 동작). 담당자 없는 행정 이동.
-            if issue.kind == "unimplemented" and issue.status == Status.pending_check:
+            # req2: Temp 로 보내기 — 이미 Temp(criteria)가 아니면 어떤 항목/단계든
+            #   상태변경에 항상 노출 (확정 보류). 담당자 없는 행정 이동.
+            if issue.kind != "criteria":
                 if not any(_t == Status.temp for (_t, _r) in _options):
                     _options.append((Status.temp, Role.reviewer))
-            elif issue.kind == "criteria" and issue.status == Status.temp:
+            # Temp(criteria) → 확인대기 (확인요청목록으로 되돌림)
+            if issue.kind == "criteria" and issue.status == Status.temp:
                 if not any(_t == Status.pending_check for (_t, _r) in _options):
                     _options.append((Status.pending_check, Role.reviewer))
             if not _options:
@@ -405,11 +406,13 @@ with meta_c0:
                 def _is_comment_optional(cur: Status, nxt: Status) -> bool:
                     if nxt in _REVIEW_TARGETS:
                         return True
-                    # 확인대기 ↔ 담당자확인요청 / 확인대기 ↔ Temp 토글은 생략 가능.
+                    # Temp 로 보내기는 어떤 단계에서든 코멘트 생략 가능 (req2).
+                    if nxt == Status.temp:
+                        return True
+                    # 확인대기 ↔ 담당자확인요청 / Temp → 확인대기 토글도 생략 가능.
                     _toggles = {
                         (Status.pending_check, Status.assignee_request),
                         (Status.assignee_request, Status.pending_check),
-                        (Status.pending_check, Status.temp),
                         (Status.temp, Status.pending_check),
                     }
                     return (cur, nxt) in _toggles
@@ -422,7 +425,7 @@ with meta_c0:
                 if _opt_flags and all(_opt_flags):
                     _label_hint = " (생략 가능)"
                 elif any(_opt_flags):
-                    _label_hint = " (검토중·검토완료 전환은 생략 가능)"
+                    _label_hint = " (검토중·검토완료·Temp 전환은 생략 가능)"
                 else:
                     _label_hint = " (필수)"
                 _chg_comment = st.text_area(
@@ -491,10 +494,8 @@ with meta_c0:
                                     repository.send_pending_to_dev(
                                         item_id, _user_name, assignee=_dev_assignee
                                     )
-                                elif (
-                                    _ns == Status.temp
-                                    and issue.kind == "unimplemented"
-                                ):
+                                elif _ns == Status.temp:
+                                    # 어떤 항목이든 Temp 로 보낼 수 있다 (req2).
                                     repository.promote_to_criteria(
                                         item_id, _user_name
                                     )

@@ -89,6 +89,9 @@ else:
                     st.switch_page("pages/3_상세보기.py")
                 if _res["actions"].get("dev"):
                     st.session_state["promote_id"] = entry.id
+                    # 1번: 승격 후 상세보기 [목록] 이 이 화면(확인요청목록)으로
+                    #      돌아오도록 origin 을 보존한다.
+                    st.session_state["_detail_origin"] = "pages/6_확인요청목록.py"
                     st.switch_page("pages/2_새요청등록.py")
                 if _res["actions"].get("temp"):
                     try:

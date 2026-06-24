@@ -865,6 +865,23 @@ def test_team_stage_full_hop(
     assert Status.vendor_wait in _opts and Status.team_wait in _opts
 
 
+def test_promote_to_criteria_from_any_kind(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """Temp 로 보내기는 dev 항목 등 어떤 kind 에서도 가능, 이미 Temp 면 거부 (req2)."""
+    kw = dict(sample_issue_kwargs)
+    kw["assignee"] = "담당이"
+    issue = repository.create_issue(**kw)  # kind=dev, status=assignee_request
+    moved = repository.promote_to_criteria(issue.id, actor="등록")
+    assert moved.kind == "criteria"
+    assert moved.status == Status.temp
+    assert moved.assignee is None  # 담당자 해제
+
+    # 이미 Temp(criteria) 면 ValueError
+    with pytest.raises(ValueError):
+        repository.promote_to_criteria(issue.id, actor="등록")
+
+
 def test_api_check_no_api_assignee(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
