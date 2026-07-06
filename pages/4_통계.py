@@ -114,7 +114,14 @@ def _load_issues(entries: Iterable[IndexEntry]) -> list[Issue]:
 issues: list[Issue] = _load_issues(all_entries)
 
 # DataFrame — 빠른 집계용 (IndexEntry 기반).
-records = [e.model_dump(mode="json") for e in all_entries]
+# KPI(df)와 카테고리표(issues)가 같은 집합을 쓰도록, meta 로드에 성공한 항목만 df 에
+# 남긴다 — index 에는 있으나 meta 가 없는 유령 행이 지표를 어긋나게 하지 않게(문제점 #13).
+# 단, 전부 로드 실패한 파국 상황에선 컬럼 유실/크래시를 피하려 원본을 유지한다.
+_loaded_ids = {i.id for i in issues}
+_src_entries = (
+    [e for e in all_entries if e.id in _loaded_ids] if _loaded_ids else all_entries
+)
+records = [e.model_dump(mode="json") for e in _src_entries]
 df = pd.DataFrame(records)
 df["created_at_dt"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
 df["updated_at_dt"] = pd.to_datetime(df["updated_at"], utc=True, errors="coerce")

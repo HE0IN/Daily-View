@@ -42,6 +42,17 @@ st.session_state["_detail_nav_ids"] = [e.id for e in _team_all]
 # ---------------------------------------------------------------------------
 # PDF 출력 (선택 / 전체) — 담당팀 송부용. A4 페이지당 항목 1개.
 # ---------------------------------------------------------------------------
+def _load_issues_safe(ids: list) -> list:
+    """id 목록으로 Issue 를 로드하되, 삭제/누락된 항목은 건너뛴다 (문제점 #16)."""
+    out = []
+    for _i in ids:
+        try:
+            out.append(repository.get_issue(_i))
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+    return out
+
+
 _sel_ids = [e.id for e in _team_all if st.session_state.get(f"tsel_{e.id}")]
 with st.container(border=True):
     _pc1, _pc2, _pc3 = st.columns([2, 2, 2])
@@ -56,7 +67,7 @@ with st.container(border=True):
         ):
             from core import pdf_export
 
-            _iss = [repository.get_issue(_i) for _i in _sel_ids]
+            _iss = _load_issues_safe(_sel_ids)
             st.session_state["_team_pdf"] = pdf_export.build_issues_pdf(_iss)
             st.toast(f"{len(_iss)}건 PDF 생성 완료", icon="📄")
     with _pc3:
@@ -68,7 +79,7 @@ with st.container(border=True):
         ):
             from core import pdf_export
 
-            _iss = [repository.get_issue(e.id) for e in _team_all]
+            _iss = _load_issues_safe([e.id for e in _team_all])
             st.session_state["_team_pdf"] = pdf_export.build_issues_pdf(_iss)
             st.toast(f"{len(_iss)}건 PDF 생성 완료", icon="📄")
     if st.session_state.get("_team_pdf"):

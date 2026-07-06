@@ -428,9 +428,13 @@ with meta_c0:
                     _label_hint = " (검토중·검토완료·Temp 전환은 생략 가능)"
                 else:
                     _label_hint = " (필수)"
+                # 변경 성공 시 nonce 를 올려 위젯 key 를 회전 → 입력값이 비워진다.
+                _chg_nonce = int(
+                    st.session_state.setdefault(f"_chg_nonce_{item_id}", 0)
+                )
                 _chg_comment = st.text_area(
                     "변경 사유" + _label_hint,
-                    key=f"status_change_comment_{item_id}",
+                    key=f"status_change_comment_{item_id}_{_chg_nonce}",
                     placeholder=(
                         "예: 검토 결과 개발사 확인이 필요하여 메일 송부하였습니다."
                     ),
@@ -448,7 +452,7 @@ with meta_c0:
                         "담당자 (담당자확인요청 시 필수)",
                         value=issue.assignee or "",
                         placeholder="담당자 이름",
-                        key=f"pending_dev_assignee_{item_id}",
+                        key=f"pending_dev_assignee_{item_id}_{_chg_nonce}",
                     )
 
                 for _ns, _role in _options:
@@ -469,7 +473,7 @@ with meta_c0:
                         _dev_assignee = (
                             (
                                 st.session_state.get(
-                                    f"pending_dev_assignee_{item_id}"
+                                    f"pending_dev_assignee_{item_id}_{_chg_nonce}"
                                 )
                                 or ""
                             ).strip()
@@ -484,10 +488,8 @@ with meta_c0:
                             )
                         else:
                             try:
-                                if _c:
-                                    repository.add_comment(
-                                        item_id, _user_name, _role, _c
-                                    )
+                                # 전이를 먼저 시도 — 실패하면(동시 편집 등) 변경사유
+                                # 코멘트가 유령으로 남지 않게 한다 (문제점 #2).
                                 # 확인대기↔담당자확인요청 / 확인대기↔Temp 는 kind 도
                                 # 함께 바꿔 목록 사이를 이동시킨다 (1·3·5번).
                                 if _to_dev:
@@ -517,8 +519,17 @@ with meta_c0:
                                     repository.update_status(
                                         item_id, _ns, _user_name, _role
                                     )
+                                # 전이 성공 후에만 변경사유 코멘트를 남긴다 (#2).
+                                if _c:
+                                    repository.add_comment(
+                                        item_id, _user_name, _role, _c
+                                    )
                                 st.toast(
                                     f"상태가 '{_nl}'로 변경되었습니다", icon="✅"
+                                )
+                                # 변경 성공 → 변경사유/담당자 입력칸 비우기 (key 회전).
+                                st.session_state[f"_chg_nonce_{item_id}"] = (
+                                    _chg_nonce + 1
                                 )
                                 st.rerun()
                             except WorkflowError as exc:

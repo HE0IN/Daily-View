@@ -151,6 +151,9 @@ _criteria = st.Page(
     title="Temp",
     icon=":material/checklist:",
 )
+_ai = st.Page(
+    "pages/8_AI질문.py", title="AI 질문", icon=":material/smart_toy:"
+)
 
 # 메뉴 스타일: 상세보기 항목 숨김 + 새 요청 등록 강조(빨강).
 # Streamlit 의 사이드바 네비 링크는 a[href] 에 페이지 슬러그가 들어간다.
@@ -204,7 +207,7 @@ pg = st.navigation(
     {
         " ": [_my_work, _list, _new],
         "  ": [_confirm_req, _confirm_list, _criteria],
-        "   ": [_dashboard, _stats, _detail],
+        "   ": [_dashboard, _stats, _ai, _detail],
         "    ": [_vendor_req, _team_req],
     }
 )

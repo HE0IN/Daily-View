@@ -35,8 +35,9 @@ def _read_raw_index() -> dict[str, Any]:
     try:
         with open(path, mode="r", encoding="utf-8") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except (OSError, ValueError):
         # 손상이면 빈 구조 반환 — 상위 레이어가 rebuild_index() 호출 결정.
+        # ValueError 는 JSONDecodeError + UnicodeDecodeError(비-UTF-8 손상) 를 함께 포괄.
         return {"schema_version": _SCHEMA_VERSION, "updated_at": None, "items": []}
 
     if not isinstance(data, dict):
@@ -117,15 +118,21 @@ def remove_index_entry(item_id: str) -> None:
 
 
 def _count_comments_lines(item_id: str) -> int:
-    """comments.jsonl 의 비어있지 않은 라인 수."""
+    """comments.jsonl 의 비어있지 않은 라인 수.
+
+    비-UTF-8 손상 바이트가 섞여 있어도 죽지 않도록 errors='replace' 로 읽는다
+    (손상 파일 하나가 인덱스 재구축 전체를 막지 않게 — 문제점 #1)."""
     path = paths.item_comments_path(item_id)
     if not path.exists():
         return 0
     count = 0
-    with open(path, mode="r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                count += 1
+    try:
+        with open(path, mode="r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.strip():
+                    count += 1
+    except OSError:
+        return 0
     return count
 
 
@@ -151,18 +158,21 @@ def rebuild_index() -> int:
             meta_path = entry / "meta.json"
             if not meta_path.exists():
                 continue
+            # 항목 1건의 어떤 실패(meta 손상·카운트 실패 등)도 그 항목만 스킵하고
+            # 재구축은 계속되도록 전체 처리 블록을 감싼다 (문제점 #1).
             try:
                 with open(meta_path, mode="r", encoding="utf-8") as f:
                     meta = json.load(f)
                 issue = Issue.model_validate(meta)
+                comments_count = _count_comments_lines(issue.id)
+                images_count = count_images(issue.id)
+                entry_model = IndexEntry.from_issue(
+                    issue, comments_count, images_count
+                )
+                new_items.append(entry_model.model_dump(mode="json"))
             except Exception:
-                # 손상된 meta 는 스킵 — 운영 중 부분적 손상은 인덱스에서만 빠짐.
+                # 손상된 항목은 스킵 — 운영 중 부분적 손상은 인덱스에서만 빠짐.
                 continue
-
-            comments_count = _count_comments_lines(issue.id)
-            images_count = count_images(issue.id)
-            entry_model = IndexEntry.from_issue(issue, comments_count, images_count)
-            new_items.append(entry_model.model_dump(mode="json"))
 
         _write_index_unlocked(new_items)
         return len(new_items)
@@ -206,7 +216,7 @@ def verify_index() -> tuple[bool, list[str]]:
                 issues.append(
                     f"id 불일치: 폴더명 '{entry.name}' vs meta.id '{meta_id}'"
                 )
-        except (json.JSONDecodeError, OSError) as e:
+        except Exception as e:  # noqa: BLE001 - UnicodeDecodeError 등도 리포트로 흡수
             issues.append(f"meta.json 읽기 실패: {entry.name} ({e})")
 
     return (len(issues) == 0, issues)

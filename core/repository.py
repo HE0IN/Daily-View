@@ -118,16 +118,14 @@ def create_issue(
     project 도 optional — 빈 문자열은 None 으로 정규화.
     """
     item_id = _new_item_id()
-    item_root = paths.item_dir(item_id)
-    item_root.mkdir(parents=True, exist_ok=True)
-    paths.item_images_dir(item_id).mkdir(parents=True, exist_ok=True)
-
     timestamp = now()
     _kind = kind if kind in ("dev", "unimplemented", "criteria") else "dev"
     # 확인요청(unimplemented) 항목은 '확인대기'로 시작한다 (담당자확인요청 아님).
     _initial_status = (
         Status.pending_check if _kind == "unimplemented" else Status.assignee_request
     )
+    # 모델 검증을 mkdir '전에' 수행 — 잘못된 입력(ValidationError/ValueError)이면
+    # 여기서 raise 되어 빈 항목 폴더가 남지 않는다 (문제점 #9).
     issue = Issue(
         id=item_id,
         title=title,
@@ -153,6 +151,11 @@ def create_issue(
         category_l3=(category_l3.strip() or None) if category_l3 else None,
         project=(project.strip() or None) if project else None,
     )
+
+    # 검증을 통과한 뒤에야 디렉토리 생성.
+    item_root = paths.item_dir(item_id)
+    item_root.mkdir(parents=True, exist_ok=True)
+    paths.item_images_dir(item_id).mkdir(parents=True, exist_ok=True)
 
     # meta.json 작성 (생성이라 경합 가능성은 낮지만 일관성 위해 락 사용)
     with file_lock(_meta_lock_path(item_id)):
@@ -652,15 +655,34 @@ def promote_unimplemented(
         )
         issue.assignee = assignee
         issue.status = Status.assignee_request
-        issue.category_l1 = (category_l1.strip() or None) if category_l1 else None
-        issue.category_l2 = (category_l2.strip() or None) if category_l2 else None
-        issue.category_l3 = (category_l3.strip() or None) if category_l3 else None
+        # 카테고리는 명시적으로 값이 주어졌을 때만 덮어쓴다 — None 이면 기존값 보존.
+        # (승격 폼에서 카테고리를 안 건드렸을 때 기존 카테고리가 지워지지 않게, 문제점 #4)
+        if category_l1 is not None:
+            issue.category_l1 = category_l1.strip() or None
+        if category_l2 is not None:
+            issue.category_l2 = category_l2.strip() or None
+        if category_l3 is not None:
+            issue.category_l3 = category_l3.strip() or None
         issue.updated_at = timestamp
         # 상태 이력 초기화 — 담당자확인요청부터 새로 시작.
         issue.status_history = [
             StatusEvent(status=Status.assignee_request, at=timestamp, by=actor)
         ]
         _write_meta_unlocked(issue)
+
+    # 카테고리 풀 자동 누적 (create_issue 와 동일 — 승격 중 직접 입력한 카테고리도
+    # 다음 등록 시 selectbox 옵션에 나오도록, 문제점 #14).
+    if issue.project and (issue.category_l1 or issue.category_l2 or issue.category_l3):
+        try:
+            from . import project_settings as _ps
+            if issue.category_l1:
+                _ps.add_project_category(issue.project, l1=issue.category_l1)
+            if issue.category_l2:
+                _ps.add_project_category(issue.project, l2=issue.category_l2)
+            if issue.category_l3:
+                _ps.add_project_category(issue.project, l3=issue.category_l3)
+        except Exception:  # noqa: BLE001
+            pass
 
     _add_system_comment(
         item_id,
@@ -1182,7 +1204,9 @@ def _next_image_seq(item_id: str) -> int:
     max_seq = 0
     if d.exists():
         for p in d.iterdir():
-            head = p.name[:3]
+            # 파일명은 '{seq}_{slug}...' — 첫 '_' 앞 전체가 번호이므로 4자리(≥1000)
+            # 이상도 정확히 파싱한다 (앞 3글자만 보던 버그 수정, 문제점 #10).
+            head = p.name.split("_", 1)[0]
             if head.isdigit():
                 max_seq = max(max_seq, int(head))
     return max_seq + 1
@@ -1259,14 +1283,14 @@ def add_image_from_bytes(
     kind: "request"(요청/AS-IS) / "dev"(개발/TO-BE) / None(구분 없음).
     caption: 사진별 설명(선택).
     """
-    _check_image_quota(item_id)
-    seq = _next_image_seq(item_id)
     dest = paths.item_images_dir(item_id)
-
-    ref = save_image_bytes(data, original_filename, dest, seq, kind=kind)
-    ref.caption = (caption or "").strip()
-
+    # 한도확인·seq계산·파일저장·meta반영을 모두 락 안에서 — 동시 업로드가 같은
+    # seq/파일명으로 충돌해 중복 ImageRef/카운트 불일치가 생기지 않게 (문제점 #11).
     with file_lock(_meta_lock_path(item_id)):
+        _check_image_quota(item_id)
+        seq = _next_image_seq(item_id)
+        ref = save_image_bytes(data, original_filename, dest, seq, kind=kind)
+        ref.caption = (caption or "").strip()
         issue = _read_meta(item_id)
         issue.images.append(ref)
         issue.updated_at = now()
@@ -1301,14 +1325,13 @@ def add_image_from_pil(
     kind: "request"(요청/AS-IS) / "dev"(개발/TO-BE) / None(구분 없음).
     caption: 사진별 설명(선택).
     """
-    _check_image_quota(item_id)
-    seq = _next_image_seq(item_id)
     dest = paths.item_images_dir(item_id)
-
-    ref = save_pil_image(img, original_filename, dest, seq, kind=kind)
-    ref.caption = (caption or "").strip()
-
+    # 락 안에서 한도확인·seq계산·저장·meta반영 (동시 업로드 충돌 방지, 문제점 #11).
     with file_lock(_meta_lock_path(item_id)):
+        _check_image_quota(item_id)
+        seq = _next_image_seq(item_id)
+        ref = save_pil_image(img, original_filename, dest, seq, kind=kind)
+        ref.caption = (caption or "").strip()
         issue = _read_meta(item_id)
         issue.images.append(ref)
         issue.updated_at = now()

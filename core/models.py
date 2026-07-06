@@ -10,11 +10,25 @@ repository 가 어떤 형태의 직렬화 헬퍼를 별도로 두지 않고 pyda
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# 옛/손편집 데이터의 naive datetime 을 aware 로 볼 때 가정할 표준시(KST).
+_KST = timezone(timedelta(hours=9))
+
+
+def _to_aware(v: object) -> object:
+    """naive datetime 이면 KST 로 간주해 aware 로 만든다.
+
+    정렬/비교 시 naive+aware 혼재로 TypeError 가 나는 것을 막는다 (문제점 #8).
+    None·문자열 등은 그대로 두고 pydantic 이 이어서 처리한다.
+    """
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=_KST)
+    return v
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +106,11 @@ class StatusEvent(BaseModel):
     at: datetime
     by: str  # 사용자 이름
 
+    @field_validator("at", mode="after")
+    @classmethod
+    def _tzify(cls, v):  # noqa: N805
+        return _to_aware(v)
+
 
 class ImageRef(BaseModel):
     """첨부 이미지 메타. docs/02_storage.md 2.3 절."""
@@ -121,6 +140,11 @@ class Comment(BaseModel):
     body: str
     kind: Literal["comment", "system"] = "comment"
     edited: bool = False  # 수정 여부 — 타임라인에서 '(수정됨)' 표시용 (4번)
+
+    @field_validator("at", mode="after")
+    @classmethod
+    def _tzify(cls, v):  # noqa: N805
+        return _to_aware(v)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +186,11 @@ class Issue(BaseModel):
     # 기존 meta.json 호환을 위해 optional — 누락 시 None 으로 처리.
     project: str | None = None
 
+    @field_validator("created_at", "updated_at", "reviewer_confirmed_at", mode="after")
+    @classmethod
+    def _tzify(cls, v):  # noqa: N805
+        return _to_aware(v)
+
 
 class IndexEntry(BaseModel):
     """index.json items[*] 항목. docs/02_storage.md 2.7 절."""
@@ -193,6 +222,11 @@ class IndexEntry(BaseModel):
     first_image_thumb: str | None = None
     # 길면 잘라낸 설명 미리보기 (예: 200자). 카드 노출용.
     description_preview: str = ""
+
+    @field_validator("created_at", "updated_at", mode="after")
+    @classmethod
+    def _tzify(cls, v):  # noqa: N805
+        return _to_aware(v)
 
     @classmethod
     def from_issue(

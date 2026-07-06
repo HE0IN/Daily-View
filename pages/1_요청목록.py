@@ -237,6 +237,11 @@ def _fetch_entries() -> list[dict]:
     elif len(status_choice) > 1:
         status_filter_post = set(status_choice)
 
+    # '완료(closed)' 를 상태로 선택하면 완료 포함을 자동으로 켠다 (문제점 #5) —
+    # 안 그러면 include_closed=False 라 closed 가 상태필터 전에 걸러져 0건이 된다.
+    if "closed" in status_choice:
+        repo_kwargs["include_closed"] = True
+
     entries = repository.list_issues(**repo_kwargs)
 
     # 후처리 필터
@@ -373,7 +378,12 @@ if _bulk_sel_ids:
                     else:
                         _ok, _skip = 0, []
                         for _iid in _bulk_sel_ids:
-                            _iss = repository.get_issue(_iid)
+                            # 렌더~클릭 사이에 삭제/제거된 항목이 있어도 배치 전체가
+                            # 죽지 않게 개별 스킵 (문제점 #15).
+                            try:
+                                _iss = repository.get_issue(_iid)
+                            except (FileNotFoundError, OSError, ValueError):
+                                continue
                             _role = None
                             if _iss.assignee == name and can_transition(
                                 _iss.status, Role.developer, _next_status
