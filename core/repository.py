@@ -1173,7 +1173,19 @@ def _check_image_quota(item_id: str) -> None:
 
 
 def _next_image_seq(item_id: str) -> int:
-    return images_mod.count_images(item_id) + 1
+    """다음 이미지 시퀀스 번호 = 기존 파일들의 최대 seq + 1.
+
+    개수(count) 기반이 아니라 실제 파일명의 접두 번호(``NNN_...``) 최대값 기반이라,
+    중간 이미지를 삭제한 뒤 추가해도 번호가 재사용되지 않는다(파일명 충돌 방지).
+    """
+    d = paths.item_images_dir(item_id)
+    max_seq = 0
+    if d.exists():
+        for p in d.iterdir():
+            head = p.name[:3]
+            if head.isdigit():
+                max_seq = max(max_seq, int(head))
+    return max_seq + 1
 
 
 def delete_image(item_id: str, image_index: int, actor: str) -> Issue:
@@ -1187,8 +1199,12 @@ def delete_image(item_id: str, image_index: int, actor: str) -> Issue:
             raise ValueError("이미지를 찾을 수 없습니다.")
         img = issue.images.pop(image_index)
         item_dir = paths.item_dir(item_id)
+        # 옛 seq 충돌로 같은 파일을 참조하는 항목이 남아 있을 수 있으니, 다른 항목이
+        # 아직 쓰는 파일은 지우지 않는다 (남은 항목이 깨지지 않도록).
+        _still_used = {i.file for i in issue.images}
+        _still_used |= {i.thumb for i in issue.images if i.thumb}
         for _rel in (img.file, img.thumb):
-            if _rel:
+            if _rel and _rel not in _still_used:
                 try:
                     (item_dir / _rel).unlink(missing_ok=True)
                 except OSError:

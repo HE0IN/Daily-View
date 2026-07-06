@@ -1046,6 +1046,35 @@ def test_image_caption_roundtrip(
         repository.set_image_caption(issue.id, 9, "x", "tester")
 
 
+def test_image_seq_no_reuse_after_delete(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """중간 이미지 삭제 후 추가해도 파일명(seq)이 재사용되지 않아 중복이 안 생긴다.
+
+    옛 버그: seq = count+1 이라 가운데를 지우면 다음 추가가 같은 번호를 재사용해
+    파일명이 겹치고 meta 에 중복 file 이 생겼다(상세보기 중복 key 크래시 원인).
+    """
+    import io
+
+    from PIL import Image as _PILImage
+
+    issue = repository.create_issue(**sample_issue_kwargs)
+
+    def _png(color) -> bytes:
+        buf = io.BytesIO()
+        _PILImage.new("RGB", (12, 10), color).save(buf, format="PNG")
+        return buf.getvalue()
+
+    for color in [(200, 0, 0), (0, 200, 0), (0, 0, 200)]:
+        repository.add_image_from_bytes(issue.id, _png(color), "shot.png", "t", kind="request")
+    repository.delete_image(issue.id, 1, "t")  # 가운데(002) 삭제
+    repository.add_image_from_bytes(issue.id, _png((9, 9, 9)), "shot.png", "t", kind="request")
+
+    files = [r.file for r in repository.get_issue(issue.id).images]
+    assert len(files) == 3
+    assert len(files) == len(set(files)), f"파일명 중복 발생: {files}"
+
+
 def test_send_pending_to_dev_sets_assignee(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:

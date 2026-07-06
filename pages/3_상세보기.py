@@ -797,7 +797,7 @@ def _render_image(idx: int, img_ref) -> None:
         else:
             st.caption("(파일 없음)")
         with st.popover(
-            "🗑 삭제", width="stretch", key=f"del_pdf_pop_{img_ref.file}"
+            "🗑 삭제", width="stretch", key=f"del_pdf_pop_{idx}_{img_ref.file}"
         ):
             st.warning("이 PDF를 삭제할까요? 되돌릴 수 없습니다.")
             if st.button("삭제 확인", key=f"del_pdf_btn_{idx}", type="primary"):
@@ -836,11 +836,11 @@ def _render_image(idx: int, img_ref) -> None:
         else:
             st.caption("(설명 없음)")
     with _capr:
-        with st.popover("✏", help="사진 설명", key=f"cap_pop_{img_ref.file}"):
+        with st.popover("✏", help="사진 설명", key=f"cap_pop_{idx}_{img_ref.file}"):
             _newcap = st.text_area(
                 "사진 설명",
                 value=_cap,
-                key=f"cap_in_{img_ref.file}",
+                key=f"cap_in_{idx}_{img_ref.file}",
                 placeholder="예: 로그인 화면 / 에러 메시지",
                 height=80,
             )
@@ -872,10 +872,10 @@ def _render_image(idx: int, img_ref) -> None:
             _show_image_dialog(img_ref.file, filename)
     with _delc:
         # 잘못 첨부한 사진 삭제 (2단계 확인) — 요청/개발 공통.
-        # 5번: 파일명으로 key 고정 → 삭제 후 인덱스가 밀려도 팝업이 다음 사진으로
-        #      옮겨붙지 않고 함께 닫힘.
+        # key 는 (인덱스+파일명) 조합으로 항상 유일하게 — 옛 seq 충돌로 파일명이
+        # 겹치는 항목이 있어도 중복 key 오류가 나지 않도록 한다.
         with st.popover(
-            "🗑 삭제", width="stretch", key=f"del_img_pop_{img_ref.file}"
+            "🗑 삭제", width="stretch", key=f"del_img_pop_{idx}_{img_ref.file}"
         ):
             st.warning("이 사진을 삭제할까요? 되돌릴 수 없습니다.")
             if st.button(
