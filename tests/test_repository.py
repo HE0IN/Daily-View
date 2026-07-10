@@ -1121,3 +1121,34 @@ def test_send_dev_to_pending_requires_assignee_request(
     )
     with pytest.raises(ValueError):
         repository.send_dev_to_pending(issue.id, actor="등록자")
+
+
+def test_set_rule_status_roundtrip_and_index(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """성격 라벨 변경 → meta·인덱스 반영, 시스템 코멘트, 검증/무변경/silent (docs/09)."""
+    it = repository.create_issue(**sample_issue_kwargs)
+    assert repository.get_issue(it.id).rule_status == "unsorted"  # 기본값
+
+    # 잘못된 값 → ValueError
+    with pytest.raises(ValueError):
+        repository.set_rule_status(it.id, "bogus", actor="a")
+
+    # 변경 → meta + 인덱스 반영 + 시스템 코멘트 발생
+    repository.set_rule_status(it.id, "confirmed", actor="a")
+    assert repository.get_issue(it.id).rule_status == "confirmed"
+    entry = next(e for e in repository.list_issues(kind="dev") if e.id == it.id)
+    assert entry.rule_status == "confirmed"
+    n_sys = len([c for c in repository.list_comments(it.id) if c.kind == "system"])
+    assert n_sys >= 1
+
+    # 같은 값 재설정 → 무변경 (시스템 코멘트 증가 없음)
+    repository.set_rule_status(it.id, "confirmed", actor="a")
+    n_sys2 = len([c for c in repository.list_comments(it.id) if c.kind == "system"])
+    assert n_sys2 == n_sys
+
+    # silent=True → 시스템 코멘트 없이 변경
+    repository.set_rule_status(it.id, "needs_check", actor="a", silent=True)
+    assert repository.get_issue(it.id).rule_status == "needs_check"
+    n_sys3 = len([c for c in repository.list_comments(it.id) if c.kind == "system"])
+    assert n_sys3 == n_sys

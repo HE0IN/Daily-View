@@ -31,6 +31,8 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.assignee_request, Role.reviewer): {Status.pending_check},
     (Status.assignee_reviewing, Role.developer): {
         Status.assignee_reviewed,
+        Status.vendor_wait,
+        Status.team_wait,
         Status.assignee_request,
     },
     (Status.assignee_reviewing, Role.reviewer): set(),
@@ -87,6 +89,8 @@ EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
     (Status.assignee_developing, Role.reviewer): set(),
     (Status.assignee_fixing, Role.developer): {
         Status.author_request,
+        Status.vendor_wait,
+        Status.team_wait,
         Status.assignee_reviewed,
     },
     (Status.assignee_fixing, Role.reviewer): set(),
@@ -145,6 +149,11 @@ def test_closed_can_reopen_to_review() -> None:
         (Status.assignee_reviewed, Role.developer, Status.assignee_developing, True),
         (Status.assignee_reviewed, Role.developer, Status.assignee_fixing, True),
         (Status.assignee_reviewed, Role.developer, Status.vendor_wait, True),
+        # 어느 작업 단계(검토중·수정중)에서든 바로 개발사요청대기로 보낼 수 있다.
+        (Status.assignee_reviewing, Role.developer, Status.vendor_wait, True),
+        (Status.assignee_reviewing, Role.developer, Status.team_wait, True),
+        (Status.assignee_fixing, Role.developer, Status.vendor_wait, True),
+        (Status.assignee_fixing, Role.developer, Status.team_wait, True),
         (Status.vendor_wait, Role.developer, Status.vendor_request, True),
         (Status.vendor_request, Role.developer, Status.vendor_reply, True),
         (Status.vendor_reply, Role.developer, Status.author_request, True),

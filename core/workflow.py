@@ -40,9 +40,12 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
         Status.assignee_reviewing,
         Status.pending_check,
     ],
-    # 담당자검토중 → 검토완료 / (되돌리기)확인요청 (담당자)
+    # 담당자검토중 → 검토완료 / 개발사요청 / 담당팀요청 / (되돌리기)확인요청 (담당자)
+    #   검토 중 외부 요청이 필요하다 판단되면 바로 개발사·담당팀 요청대기로 보낼 수 있다.
     (Status.assignee_reviewing, Role.developer): [
         Status.assignee_reviewed,
+        Status.vendor_wait,
+        Status.team_wait,
         Status.assignee_request,  # 직전 단계로
     ],
     # 검토완료 → 신규개발 / 코드수정 / 개발사요청 / 담당팀요청 / (되돌리기)검토중 (담당자)
@@ -97,8 +100,12 @@ TRANSITIONS: dict[tuple[Status, Role], list[Status]] = {
         Status.team_wait,
         Status.assignee_reviewed,  # 직전 단계로
     ],
+    # 코드수정 → 등록자확인요청 / 개발사요청대기 / 담당팀요청대기 / (되돌리기)검토완료 (담당자)
+    #   수정 중 외부 요청이 필요하다 판단되면 바로 개발사·담당팀 요청대기로 보낼 수 있다.
     (Status.assignee_fixing, Role.developer): [
         Status.author_request,
+        Status.vendor_wait,
+        Status.team_wait,
         Status.assignee_reviewed,  # 직전 단계로
     ],
     # 등록자확인요청 → 등록자검토중 (등록자) / (되돌리기)검토완료 (담당자)
@@ -148,6 +155,31 @@ URGENCY_LABELS_KO: dict[str, str] = {
     "low": "하",
 }
 
+# 성격(정리) 라벨 — rule_status (docs/09). Temp/RuleBook UI 표시 전용.
+RULE_STATUS_LABELS_KO: dict[str, str] = {
+    "unsorted": "미분류",
+    "needs_check": "확인필요",
+    "confirmed": "확정규칙",
+}
+RULE_STATUS_ICONS: dict[str, str] = {
+    "unsorted": "⬜",
+    "needs_check": "🔍",
+    "confirmed": "✅",
+}
+RULE_STATUS_COLORS: dict[str, str] = {
+    "unsorted": "#9CA3AF",   # 회색
+    "needs_check": "#D97706",  # 주황
+    "confirmed": "#16A34A",  # 녹색
+}
+
+
+def rule_status_label(rule_status: str, *, icon: bool = True) -> str:
+    """rule_status 를 아이콘+한국어 라벨로. 알 수 없으면 값 그대로."""
+    ko = RULE_STATUS_LABELS_KO.get(rule_status, rule_status)
+    if icon:
+        return f"{RULE_STATUS_ICONS.get(rule_status, '')} {ko}".strip()
+    return ko
+
 
 def allowed_transitions(current: Status, role: Role) -> list[Status]:
     """현재 상태와 역할 조합에서 허용되는 다음 상태들을 반환."""
@@ -178,6 +210,10 @@ __all__ = [
     "TRANSITIONS",
     "STATUS_LABELS_KO",
     "URGENCY_LABELS_KO",
+    "RULE_STATUS_LABELS_KO",
+    "RULE_STATUS_ICONS",
+    "RULE_STATUS_COLORS",
+    "rule_status_label",
     "allowed_transitions",
     "can_transition",
     "assert_transition",

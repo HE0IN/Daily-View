@@ -80,6 +80,42 @@ def test_call_llm_success_and_error(monkeypatch: pytest.MonkeyPatch) -> None:
         llm.call_llm([{"role": "user", "content": "질문"}])
 
 
+def test_call_llm_reasoning_and_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """추론 모델 대응 — <think> 제거, reasoning 폴백, 빈 응답은 명확한 에러."""
+    monkeypatch.setenv("LLM_API_URL", "http://fake/v1/chat/completions")
+    monkeypatch.setenv("LLM_API_KEY", "k")
+
+    # <think>...</think> 블록은 제거하고 최종답만
+    monkeypatch.setattr(
+        llm.requests, "post",
+        lambda *a, **kw: _FakeResp(
+            200, {"choices": [{"message": {"content": "<think>고민중</think>\n최종답"}}]}
+        ),
+    )
+    assert llm.call_llm([{"role": "user", "content": "q"}]) == "최종답"
+
+    # content 가 비면 reasoning_content 로 폴백
+    monkeypatch.setattr(
+        llm.requests, "post",
+        lambda *a, **kw: _FakeResp(
+            200, {"choices": [{"message": {"content": "", "reasoning_content": "이유"}}]}
+        ),
+    )
+    assert llm.call_llm([{"role": "user", "content": "q"}]) == "이유"
+
+    # 완전 빈 응답 + finish_reason=length → 조용한 blank 대신 명확한 LLMError
+    monkeypatch.setattr(
+        llm.requests, "post",
+        lambda *a, **kw: _FakeResp(
+            200, {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+        ),
+    )
+    _dbg: dict = {}
+    with pytest.raises(llm.LLMError, match="max_tokens"):
+        llm.call_llm([{"role": "user", "content": "q"}], debug=_dbg)
+    assert _dbg["finish_reason"] == "length"
+
+
 # ---------------------------------------------------------------------------
 # 다이제스트
 # ---------------------------------------------------------------------------

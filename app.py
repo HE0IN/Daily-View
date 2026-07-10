@@ -151,6 +151,11 @@ _criteria = st.Page(
     title="Temp",
     icon=":material/checklist:",
 )
+_rulebook = st.Page(
+    "pages/9_RuleBook.py",
+    title="RuleBook",
+    icon=":material/menu_book:",
+)
 _ai = st.Page(
     "pages/8_AI질문.py", title="AI 질문", icon=":material/smart_toy:"
 )
@@ -199,16 +204,18 @@ st.markdown(
 
 # dict 형태 → 섹션 사이에 구분 영역이 생겨 '선 긋기' 효과.
 # 1구역: 개발 흐름(내 작업·개발목록·새 요청 등록)
-# 2구역: 확인 흐름(확인 요청·확인요청목록·Temp)
+# 2구역: 확인·규칙 흐름(확인 요청·확인요청목록·Temp·RuleBook)
 # 3구역: 조회(대시보드·통계·상세보기) — 대시보드/통계는 추후 통합 예정.
 # 4구역: 개발사 요청 · 담당팀 요청(외부/내부 단계 모아보기·PDF)
+# 5구역: AI (AI 질문 · [추후] AI 정리)
 # 상세보기는 3구역에 포함하되 위 CSS 로 사이드바에서 숨긴다.
 pg = st.navigation(
     {
         " ": [_my_work, _list, _new],
-        "  ": [_confirm_req, _confirm_list, _criteria],
-        "   ": [_dashboard, _stats, _ai, _detail],
+        "  ": [_confirm_req, _confirm_list, _criteria, _rulebook],
+        "   ": [_dashboard, _stats, _detail],
         "    ": [_vendor_req, _team_req],
+        "     ": [_ai],
     }
 )
 pg.run()

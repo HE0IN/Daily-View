@@ -15,6 +15,7 @@ streamlit 에 의존하지 않는다 (다른 core 모듈과 동일 원칙).
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import requests
@@ -56,14 +57,34 @@ def is_configured() -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _extract_answer(msg: dict) -> str:
+    """message 에서 사람에게 보여줄 최종 답변 텍스트만 추출.
+
+    추론 모델 대응: content 안의 ``<think>...</think>`` 블록을 제거하고, content 가
+    비어 있으면 ``reasoning_content``/``reasoning`` 필드로 폴백한다.
+    """
+    content = str(msg.get("content") or "")
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    if not content:
+        content = str(
+            msg.get("reasoning_content") or msg.get("reasoning") or ""
+        )
+        content = re.sub(r"</?think>", "", content).strip()
+    return content
+
+
 def call_llm(
     messages: list[dict[str, str]],
     *,
     temperature: float = 0.2,
-    max_tokens: int = 1200,
+    max_tokens: int | None = None,
     timeout: int | None = None,
+    debug: dict | None = None,
 ) -> str:
-    """LLM 을 호출해 응답 텍스트를 반환. 실패 시 :class:`LLMError`."""
+    """LLM 을 호출해 응답 텍스트를 반환. 실패 시 :class:`LLMError`.
+
+    debug dict 를 주면 finish_reason/usage/answer_len 등 진단 정보를 채워준다.
+    """
     url, key, model = _config()
     if not (url and key):
         raise LLMError(
@@ -74,6 +95,12 @@ def call_llm(
             timeout = int(os.environ.get("LLM_TIMEOUT", "120"))
         except ValueError:
             timeout = 120
+    if max_tokens is None:
+        # 추론 모델은 '생각'에 토큰을 많이 써서 기본값이 작으면 답이 잘린다 → 넉넉히.
+        try:
+            max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "4096"))
+        except ValueError:
+            max_tokens = 4096
 
     payload: dict[str, Any] = {
         "model": model,
@@ -94,9 +121,36 @@ def call_llm(
         raise LLMError(f"LLM 응답 오류: HTTP {resp.status_code} — {resp.text[:300]}")
     try:
         data = resp.json()
-        return str(data["choices"][0]["message"]["content"]).strip()
+        choice = data["choices"][0]
+        msg = choice["message"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"LLM 응답 파싱 실패: {exc}") from exc
+
+    finish = choice.get("finish_reason")
+    answer = _extract_answer(msg)
+    if debug is not None:
+        debug["model"] = model
+        debug["max_tokens"] = max_tokens
+        debug["finish_reason"] = finish
+        debug["usage"] = data.get("usage")
+        debug["answer_len"] = len(answer)
+        debug["had_reasoning"] = bool(
+            msg.get("reasoning_content") or msg.get("reasoning")
+        )
+
+    if not answer:
+        # 빈 답을 조용히 렌더(빈 말풍선)하지 말고 원인을 알려준다.
+        if finish == "length":
+            raise LLMError(
+                f"응답이 최대 길이(max_tokens={max_tokens})에 걸려 답을 완성하지 "
+                "못했습니다. .env 의 LLM_MAX_TOKENS 를 더 크게(예: 8192) 설정하거나 "
+                "질문을 더 구체적으로 해보세요."
+            )
+        raise LLMError(
+            "LLM 이 빈 응답을 반환했습니다 (모델이 답 텍스트를 생성하지 못함). "
+            f"(finish_reason={finish})"
+        )
+    return answer
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +322,15 @@ def ask(
     *,
     project: str | None,
     history: list[dict[str, str]] | None = None,
+    debug: dict | None = None,
 ) -> str:
-    """현황 다이제스트를 컨텍스트로 질문에 답한다. 실패 시 :class:`LLMError`."""
+    """현황 다이제스트를 컨텍스트로 질문에 답한다. 실패 시 :class:`LLMError`.
+
+    debug dict 를 주면 다이제스트 길이 + LLM 진단정보를 채워준다.
+    """
     digest = build_project_digest(project)
+    if debug is not None:
+        debug["digest_chars"] = len(digest)
     messages: list[dict[str, str]] = [
         {
             "role": "system",
@@ -281,7 +341,7 @@ def ask(
         if m.get("role") in ("user", "assistant") and m.get("content"):
             messages.append({"role": m["role"], "content": str(m["content"])})
     messages.append({"role": "user", "content": question})
-    return call_llm(messages)
+    return call_llm(messages, debug=debug)
 
 
 __all__ = [

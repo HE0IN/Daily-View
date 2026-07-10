@@ -69,14 +69,32 @@ if question:
         st.markdown(question)
     with st.chat_message("assistant"):
         with st.spinner("현황을 읽고 답변을 만드는 중…"):
+            _dbg: dict = {}
             try:
                 answer = llm_mod.ask(
-                    question, project=current_project, history=history[:-1]
+                    question,
+                    project=current_project,
+                    history=history[:-1],
+                    debug=_dbg,
                 )
             except llm_mod.LLMError as exc:
                 st.error(str(exc))
-                # 실패한 질문은 이력에서 제거 — 재시도 시 중복 방지.
+                history.pop()  # 실패한 질문은 이력에서 제거
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"답변 생성 중 오류: {exc}")
                 history.pop()
             else:
                 st.markdown(answer)
                 history.append({"role": "assistant", "content": answer})
+            st.session_state["_ai_last_debug"] = _dbg
+
+# 진단(디버그) — 답이 비거나 이상할 때 원인 파악용 (finish_reason·토큰 사용량 등).
+_last_dbg = st.session_state.get("_ai_last_debug")
+if _last_dbg:
+    with st.expander("🔍 마지막 응답 진단", expanded=False):
+        st.json(_last_dbg)
+        if _last_dbg.get("finish_reason") == "length":
+            st.warning(
+                "응답이 max_tokens 한도에 걸렸습니다. `.env` 의 `LLM_MAX_TOKENS` 를 "
+                "더 크게(예: 8192) 설정하고 앱을 재시작해보세요."
+            )

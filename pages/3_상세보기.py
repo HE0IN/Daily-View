@@ -21,12 +21,21 @@ from core.images import (
     MAX_IMAGES_PER_ITEM,
     decode_image_data_url,
 )
-from core.models import Comment, Issue, Role, Status, Urgency
+from core.models import (
+    RULE_STATUS_VALUES,
+    Comment,
+    Issue,
+    Role,
+    Status,
+    Urgency,
+)
 from core.workflow import (
+    RULE_STATUS_COLORS,
     STATUS_LABELS_KO,
     URGENCY_LABELS_KO,
     WorkflowError,
     allowed_transitions,
+    rule_status_label,
 )
 from ui.auth import get_or_init_user, require_user
 from ui.components import humanize_dt
@@ -755,6 +764,49 @@ with meta_c3:
                     st.error(f"저장 실패: {exc}")
 
 # --- (상태 변경은 위 '상태' 컬럼의 [변경] popover 로 일원화됨) -------------
+
+# --- 성격(정리) 라벨 — Temp(criteria)/확인요청(unimplemented) 항목만 (docs/09) ---
+# dev(개발) 항목에는 의미가 없어 노출하지 않는다.
+if issue.kind in ("criteria", "unimplemented"):
+    _rs_cur = getattr(issue, "rule_status", "unsorted") or "unsorted"
+    _rs_color = RULE_STATUS_COLORS.get(_rs_cur, "#9CA3AF")
+    rs_card = st.container(border=True)
+    with rs_card:
+        rs_l, rs_r = st.columns([4, 1])
+        with rs_l:
+            st.markdown(
+                f'<div style="font-size:0.9em;color:#374151;line-height:1.9;">'
+                f'성격(정리): <span style="display:inline-block;padding:2px 10px;'
+                f"border-radius:6px;background:{_rs_color};color:#fff;"
+                f'font-size:0.9em;font-weight:700;">'
+                f"{html.escape(rule_status_label(_rs_cur))}</span>"
+                f'&nbsp;<span style="color:#9CA3AF;font-size:0.85em;">'
+                f"✅ 확정규칙은 RuleBook 에 노출됩니다.</span></div>",
+                unsafe_allow_html=True,
+            )
+        with rs_r:
+            with st.popover("변경", width="stretch"):
+                _rs_idx = (
+                    RULE_STATUS_VALUES.index(_rs_cur)
+                    if _rs_cur in RULE_STATUS_VALUES
+                    else 0
+                )
+                _rs_new = st.radio(
+                    "성격 라벨",
+                    options=list(RULE_STATUS_VALUES),
+                    index=_rs_idx,
+                    format_func=lambda k: rule_status_label(k),
+                    key=f"rs_edit_{item_id}",
+                )
+                if st.button(
+                    "성격 저장", key=f"rs_save_{item_id}", type="primary"
+                ):
+                    try:
+                        repository.set_rule_status(item_id, _rs_new, user["name"])
+                        st.toast("성격 라벨이 변경되었습니다", icon="🏷️")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"변경 실패: {exc}")
 
 
 # 태그 기능은 제거됨 — 카테고리(3 단계) 가 그 자리를 대체.

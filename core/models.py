@@ -92,6 +92,15 @@ class Role(str, Enum):
     developer = "developer"
 
 
+# 성격(정리) 라벨 — criteria/unimplemented 항목 정리용 (docs/09).
+#   unsorted    = 미분류 (기본값, 아직 판단 전 → AI/사람이 분류)
+#   needs_check = 확인필요 (모여서 논의: 규칙으로 확정? 보류? 바로 개발?)
+#   confirmed   = 확정규칙 (정립됨 → RuleBook 에 노출)
+# dev(개발) 항목에는 의미 없음 — Temp/확인요청 계열에서만 사용한다.
+RuleStatus = Literal["unsorted", "needs_check", "confirmed"]
+RULE_STATUS_VALUES: tuple[RuleStatus, ...] = ("unsorted", "needs_check", "confirmed")
+
+
 # ---------------------------------------------------------------------------
 # 보조 모델
 # ---------------------------------------------------------------------------
@@ -182,6 +191,9 @@ class Issue(BaseModel):
     category_l1: str | None = None
     category_l2: str | None = None
     category_l3: str | None = None
+    # 성격(정리) 라벨 — Temp/확인요청 항목 정리용 (docs/09). 기존 meta.json 호환:
+    # 필드 없으면 "unsorted"(미분류)로 로드된다.
+    rule_status: RuleStatus = "unsorted"
     # 프로젝트 식별자 (자유 문자열). 사이드바에서 현재 프로젝트로 필터링.
     # 기존 meta.json 호환을 위해 optional — 누락 시 None 으로 처리.
     project: str | None = None
@@ -215,6 +227,8 @@ class IndexEntry(BaseModel):
     category_l1: str | None = None
     category_l2: str | None = None
     category_l3: str | None = None
+    # 성격(정리) 라벨 — Temp/RuleBook 필터·배지용. Issue 와 동일 의미.
+    rule_status: RuleStatus = "unsorted"
     # 프로젝트 식별자 — 사이드바 프로젝트 선택용 필터.
     project: str | None = None
     # 첫 첨부 이미지의 thumb 또는 file 상대 경로 (item_dir 기준).
@@ -263,6 +277,7 @@ class IndexEntry(BaseModel):
             category_l1=issue.category_l1,
             category_l2=issue.category_l2,
             category_l3=issue.category_l3,
+            rule_status=issue.rule_status,
             project=issue.project,
             first_image_thumb=first_image_thumb,
             description_preview=description_preview,
@@ -273,6 +288,8 @@ __all__ = [
     "Urgency",
     "Status",
     "Role",
+    "RuleStatus",
+    "RULE_STATUS_VALUES",
     "StatusEvent",
     "ImageRef",
     "Comment",

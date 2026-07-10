@@ -100,6 +100,7 @@ def render_card(
     extra_buttons: list[tuple[str, str]] | None = None,
     checkbox: tuple[str, str] | None = None,
     buttons_inline: bool = False,
+    top_badge_html: str | None = None,
 ) -> bool | dict:
     """요청목록 카드 렌더 (컴팩트).
 
@@ -108,6 +109,8 @@ def render_card(
     옵션:
       - extra_buttons: [(라벨, 액션키), ...] — '열기' 아래 카드 안에 버튼 추가.
       - checkbox: (라벨, 위젯키) — '열기' 옆에 선택 체크박스 추가.
+      - top_badge_html: 헤더줄(긴급도·상태 배지 옆)에 끼울 추가 배지 HTML
+        (예: 성격 라벨 배지). None 이면 없음.
 
     반환:
       - 옵션이 없으면 bool ('열기' 클릭 여부, 기존 호환).
@@ -194,6 +197,7 @@ def render_card(
                 f'<div style="position:absolute;left:0;top:0;bottom:0;width:{stripe_w}px;'
                 f'background:{stripe_color};border-radius:2px;"></div>'
                 f"{urgency_badge_html(urgency)} {status_badge_html(status)} "
+                f"{top_badge_html or ''} "
                 f'<span style="color:#9CA3AF;font-size:0.75em;float:right;">'
                 f"{humanize_dt(created_at) if created_at else ''}"
                 f"</span>"

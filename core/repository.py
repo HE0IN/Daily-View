@@ -30,6 +30,7 @@ from .clock import from_iso, now, to_iso
 from .images import MAX_IMAGES_PER_ITEM, save_image_bytes, save_pil_image
 from .locking import _write_json_unlocked, atomic_append_jsonl, file_lock
 from .models import (
+    RULE_STATUS_VALUES,
     Comment,
     ImageRef,
     IndexEntry,
@@ -39,7 +40,11 @@ from .models import (
     StatusEvent,
     Urgency,
 )
-from .workflow import STATUS_LABELS_KO, assert_transition
+from .workflow import (
+    RULE_STATUS_LABELS_KO,
+    STATUS_LABELS_KO,
+    assert_transition,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -751,6 +756,45 @@ def revert_criteria_to_request(item_id: str, actor: str) -> Issue:
         action=audit.UPDATE_CONTENT,
         item_id=item_id,
         detail={"move": "criteria->unimplemented"},
+    )
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
+    return _read_meta(item_id)
+
+
+def set_rule_status(
+    item_id: str, rule_status: str, actor: str, *, silent: bool = False
+) -> Issue:
+    """항목의 성격(정리) 라벨을 변경한다 (docs/09).
+
+    rule_status: "unsorted" | "needs_check" | "confirmed".
+    변경 시 시스템 코멘트 + audit 기록. 값이 같으면 아무 것도 하지 않는다.
+    ``silent=True`` 면 시스템 코멘트를 남기지 않는다 (AI 일괄 적용 등 대량 처리용).
+    """
+    if rule_status not in RULE_STATUS_VALUES:
+        raise ValueError(
+            f"알 수 없는 성격 라벨: {rule_status!r} "
+            f"(가능: {', '.join(RULE_STATUS_VALUES)})"
+        )
+
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        old = issue.rule_status
+        if old == rule_status:
+            return issue  # 변경 없음
+        issue.rule_status = rule_status  # type: ignore[assignment]
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    if not silent:
+        _old_ko = RULE_STATUS_LABELS_KO.get(old, old)
+        _new_ko = RULE_STATUS_LABELS_KO.get(rule_status, rule_status)
+        _add_system_comment(item_id, f"성격 라벨 변경: {_old_ko} → {_new_ko}")
+    audit.audit_log(
+        actor=actor,
+        action=audit.UPDATE_CONTENT,
+        item_id=item_id,
+        detail={"rule_status": f"{old}->{rule_status}"},
     )
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(_read_meta(item_id), comments_count, images_count)
