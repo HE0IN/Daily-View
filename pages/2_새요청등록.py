@@ -23,6 +23,7 @@ from core.images import (
     decode_image_data_url,
 )
 from core.models import Role, Urgency
+from ui import promote_state
 from ui.auth import get_or_init_user, render_project_selector, require_user
 
 # 페이지 내 호출 호환 — 기존 변수명 유지
@@ -48,6 +49,42 @@ name: str = user["name"]
 
 
 # ---------------------------------------------------------------------------
+# 폼 nonce — 제출 후 위젯 초기화용
+# ---------------------------------------------------------------------------
+
+st.session_state.setdefault("new_form_nonce", 0)
+nonce: int = int(st.session_state["new_form_nonce"])
+
+_title_key = f"new_title_{nonce}"
+_desc_key = f"new_desc_{nonce}"
+
+
+# ---------------------------------------------------------------------------
+# 승격([개발 요청]) 컨텍스트 + prefill — #1
+# ---------------------------------------------------------------------------
+
+# 제목 위젯 키가 session_state 에 있으면 직전 run 에도 이 폼이 떠 있었다는 뜻이다.
+# 페이지를 벗어나면 Streamlit 이 위젯 키를 회수하므로, 이 키가 없다 = 폼이 새로
+# 마운트됐다. 승격 컨텍스트 갱신과 prefill 을 이 신호 하나로 판단한다
+# (수명주기 배경은 ui/promote_state.py 모듈 docstring).
+_form_mounted = _title_key in st.session_state
+promote_id = promote_state.sync_promote_context(
+    st.session_state, form_mounted=_form_mounted
+)
+
+# 승격 폼이 새로 마운트됐으면 원본의 제목/설명을 채운다. 이미 떠 있는 폼은 사용자가
+# 편집 중일 수 있으므로 건드리지 않는다 — 직접 지운 값을 되살리지 않기 위해.
+if promote_id and not _form_mounted:
+    try:
+        _pf = repository.get_issue(promote_id)
+        st.session_state[_title_key] = _pf.title
+        st.session_state[_desc_key] = _pf.description or ""
+    except Exception:  # noqa: BLE001
+        promote_state.clear_promote(st.session_state)
+        promote_id = None
+
+
+# ---------------------------------------------------------------------------
 # 헤더 + 안내
 # ---------------------------------------------------------------------------
 
@@ -58,21 +95,18 @@ current_project: str | None = st.session_state.get("_current_project")
 # R2: 승격(개발 요청) 진입이면 원본(확인요청) 항목의 프로젝트를 등록 컨텍스트로
 #     사용한다. 사이드바가 (전체)여도 승격이 막히지 않고, 카테고리 옵션도 원본
 #     프로젝트 기준으로 노출되어 제목/설명/카테고리가 빠짐없이 들어간다.
-_promote_id_peek = st.session_state.get("promote_id")
 _promote_project: str | None = None
-if _promote_id_peek:
+if promote_id:
     try:
-        _promote_project = repository.get_issue(_promote_id_peek).project
+        _promote_project = repository.get_issue(promote_id).project
     except Exception:  # noqa: BLE001
         _promote_project = None
-_effective_project: str | None = (
-    _promote_project if _promote_id_peek else current_project
-)
+_effective_project: str | None = _promote_project if promote_id else current_project
 
 st.title("새 요청 등록")
 
 # 프로젝트 미선택 시 새 등록 차단 — 단, 승격은 원본 프로젝트를 따르므로 예외.
-if not current_project and not _promote_id_peek:
+if not current_project and not promote_id:
     st.warning(
         "먼저 좌측 사이드바에서 **프로젝트** 를 선택하거나 추가해주세요. "
         "새 요청은 현재 선택된 프로젝트에 등록됩니다."
@@ -84,33 +118,11 @@ if _effective_project:
 else:
     st.caption("프로젝트 미지정 상태로 등록됩니다.")
 
-
-# ---------------------------------------------------------------------------
-# 폼 nonce — 제출 후 위젯 초기화용
-# ---------------------------------------------------------------------------
-
-st.session_state.setdefault("new_form_nonce", 0)
-nonce: int = int(st.session_state["new_form_nonce"])
-
-# 미구현목록 [개발 요청] 으로 진입한 경우 — 제목/설명을 그 항목 값으로 prefill (1회).
-# 등록 시 create_issue 대신 promote_unimplemented 로 kind 를 dev 로 전환한다.
-promote_id = st.session_state.get("promote_id")
 if promote_id:
-    _filled_key = f"_promote_filled_{promote_id}"
-    if not st.session_state.get(_filled_key):
-        try:
-            _pf = repository.get_issue(promote_id)
-            st.session_state[f"new_title_{nonce}"] = _pf.title
-            st.session_state[f"new_desc_{nonce}"] = _pf.description or ""
-            st.session_state[_filled_key] = True
-        except Exception:  # noqa: BLE001
-            st.session_state.pop("promote_id", None)
-            promote_id = None
-    if promote_id:
-        st.info(
-            "📋 **미구현목록 항목을 개발 요청으로 승격**합니다 — "
-            "담당자·긴급도를 지정해 등록하면 담당자확인요청으로 전환됩니다."
-        )
+    st.info(
+        "📋 **미구현목록 항목을 개발 요청으로 승격**합니다 — "
+        "담당자·긴급도를 지정해 등록하면 담당자확인요청으로 전환됩니다."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +205,9 @@ with left:
 
     # R2: 승격(개발 요청)이면 원본 항목의 기존 첨부는 그대로 따라온다 — 다시 올릴
     #     필요 없음. 아래는 '추가로' 올릴 사진만 받는다.
-    if _promote_id_peek:
+    if promote_id:
         try:
-            _src_imgs = list(repository.get_issue(_promote_id_peek).images or [])
+            _src_imgs = list(repository.get_issue(promote_id).images or [])
         except Exception:  # noqa: BLE001
             _src_imgs = []
         if _src_imgs:
@@ -206,7 +218,7 @@ with left:
                     if str(_ref.file).lower().endswith(".pdf"):
                         st.caption(f"📄 {_ref.file}")
                     else:
-                        _ep = paths.item_dir(_promote_id_peek) / _ref.file
+                        _ep = paths.item_dir(promote_id) / _ref.file
                         if _ep.exists():
                             try:
                                 st.image(str(_ep), width="stretch")
@@ -510,8 +522,7 @@ if submit:
     st.session_state.pop(f"_last_pasted_v2_{nonce}", None)
     # 미구현 승격이었으면 promote 상태 정리.
     if promote_id:
-        st.session_state.pop("promote_id", None)
-        st.session_state.pop(f"_promote_filled_{promote_id}", None)
+        promote_state.clear_promote(st.session_state)
     st.session_state["new_form_nonce"] = nonce + 1
     # st.switch_page 가 query_params 를 유실하는 케이스가 있어
     # session_state 로도 함께 전달 (상세보기에서 둘 다 체크).

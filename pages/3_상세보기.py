@@ -37,6 +37,7 @@ from core.workflow import (
     allowed_transitions,
     rule_status_label,
 )
+from ui import promote_state
 from ui.auth import get_or_init_user, require_user
 from ui.components import humanize_dt
 from ui.theme import (
@@ -201,7 +202,7 @@ with _right_area:
                 "개발 요청", key="detail_promote_dev", type="primary",
                 width=_PROMO_W, help="담당자·긴급도를 지정해 개발목록으로 승격",
             ):
-                st.session_state["promote_id"] = item_id
+                promote_state.request_promote(st.session_state, item_id)
                 st.switch_page("pages/2_새요청등록.py")
             if st.button(
                 "Temp로", key="detail_promote_temp", width=_PROMO_W,
