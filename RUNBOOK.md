@@ -217,6 +217,26 @@ Start-Sleep -Seconds 5
 curl http://localhost:8501           # 응답 확인
 ```
 
+### 5-1. 2026-08-11 버전으로 올릴 때 (삭제 태그 도입, 1회)
+
+옛 `archived` 플래그를 삭제 태그로 정리하는 마이그레이션이 **앱 시작 시 자동
+실행**된다. 별도 조치 없이 위 절차대로 재시작하면 된다.
+
+재시작 전에 무엇이 바뀔지 미리 보고 싶으면 (백업 후):
+
+```powershell
+scripts\backup.bat
+.venv\Scripts\python.exe scripts\migrate_deleted_tag.py --dry-run   # 미리보기
+.venv\Scripts\python.exe scripts\migrate_deleted_tag.py             # 실제 이관
+```
+
+분류 규칙: `archived` + **완료** = 옛 자동보관 → 완료로 복귀 / `archived` +
+완료 아님 = 사용자가 삭제한 것 → 삭제 태그. 재실행해도 안전하다.
+
+> 완료 상태인 항목을 예전에 일부러 [삭제] 했다면 이번에 **완료로 되살아난다**
+> (옛 데이터로는 자동보관과 구분이 안 됨). 되살아난 것 중 정말 지울 건 상세보기
+> 🗑 로 다시 삭제하면 되고, 이후로는 삭제 태그가 유지된다.
+
 ---
 
 ## 6. 트러블슈팅
