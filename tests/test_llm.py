@@ -153,8 +153,8 @@ def test_build_project_digest(
         done.id, Status.closed, actor="tester", actor_role=Role.reviewer
     )
 
-    arch = repository.create_issue(**{**kw, "title": "보관된 항목"})
-    repository.archive_issue(arch.id, actor="등록")
+    arch = repository.create_issue(**{**kw, "title": "삭제된 항목"})
+    repository.delete_issue(arch.id, actor="등록")
 
     digest = llm.build_project_digest("P1")
 
@@ -163,7 +163,7 @@ def test_build_project_digest(
     assert "확인대기 항목" in digest
     assert "confirm전 항목" in digest  # Temp 섹션
     assert "완료: 1건" in digest
-    assert "보관된 항목" not in digest  # 삭제(보관) 제외
+    assert "삭제된 항목" not in digest  # 삭제 표시 항목 제외
     assert "진행 상황 코멘트" in digest  # 최근 코멘트 포함
     assert "확인대기(확인요청목록): 1건" in digest
     assert "Temp(확정 보류): 1건" in digest

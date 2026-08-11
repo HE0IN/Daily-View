@@ -51,10 +51,10 @@ DATA_DIR=C:\Users\duddl\Desktop\Project\Daily View\data
 # 업로드 제한
 MAX_UPLOAD_MB=10
 MAX_IMAGES_PER_ITEM=20
-
-# 자동 아카이브
-AUTO_ARCHIVE_DAYS=14
 ```
+
+> 자동 아카이브(`AUTO_ARCHIVE_DAYS`)는 2026-08-11 폐지됐다. 완료 항목은 시간이
+> 지나도 자동으로 숨겨지지 않는다 ([04_workflow.md](04_workflow.md) 4.7 참고).
 
 ## 5.4 첫 실행
 

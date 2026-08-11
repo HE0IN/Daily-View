@@ -133,7 +133,7 @@ if promote_id:
 # 담당했던 사람(assignee). 등록자=담당자 겸직이 가능하므로 본인도 포함한다.
 from core import user_registry
 
-existing_entries = repository.list_issues(include_archived=True)
+existing_entries = repository.list_issues(include_deleted=True)
 known_names: set[str] = set(user_registry.list_users())  # 7번: 사용자 명단
 for e in existing_entries:
     if e.assignee:

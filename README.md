@@ -52,7 +52,7 @@ python -m pytest tests/ -v
 
 기대 결과: `75 passed`. 카테고리:
 
-- `test_repository.py` — CRUD/상태 전이/이미지/아카이브 (21건)
+- `test_repository.py` — CRUD/상태 전이/이미지/삭제 태그·복구·마이그레이션
 - `test_locking.py` — 동시 쓰기/락 잔존 (9건)
 - `test_workflow.py` — 권한 매트릭스 (34건)
 - `test_images.py` — 슬러그/썸네일/한도 (11건)

@@ -66,7 +66,7 @@ def _by_status(statuses: list, *, include_closed: bool = False) -> list[dict]:
         out.extend(
             repository.list_issues(
                 status=s,
-                include_archived=False,
+                include_deleted=False,
                 include_closed=include_closed,
                 project=current_project,
             )
@@ -99,13 +99,13 @@ st.divider()
 # 상태별 섹션
 # ---------------------------------------------------------------------------
 
-# 1) 전체 개발 목록 — 완료까지 포함한 전체 개발 항목 (삭제(보관)만 제외, 4번)
+# 1) 전체 개발 목록 — 완료까지 포함한 전체 개발 항목 (삭제 표시된 것만 제외, 4번)
 all_active_entries = repository.list_issues(
-    include_archived=False, include_closed=True, project=current_project
+    include_deleted=False, include_closed=True, project=current_project
 )
 all_active = _to_dicts(all_active_entries)
 st.subheader(f"전체 개발 목록 ({len(all_active)})")
-st.caption("완료 포함 전체 개발 항목 (삭제(보관)만 제외)")
+st.caption("완료 포함 전체 개발 항목 (삭제 표시된 항목만 제외)")
 _grid(all_active, key_prefix="dash_all")
 
 st.divider()
@@ -154,22 +154,24 @@ _grid(author_items, key_prefix="dash_author")
 
 st.divider()
 
-# 5) 완료
+# 5) 완료 — 상태가 '완료(closed)' 인 항목 전부. 기간·보관과 무관하게 항상 집계된다.
+#    (삭제 표시를 한 항목만 빠진다 — include_deleted=False)
 done = _by_status([Status.closed], include_closed=True)
 st.subheader(f"완료 ({len(done)})")
-st.caption("등록자가 최종 완료한 항목")
+st.caption("등록자가 최종 완료한 항목 전체 (오래돼도 계속 집계)")
 _grid(done, key_prefix="dash_done")
 
 st.divider()
 
-# 6) 삭제 — archived 항목 (상태·종류 무관). kind=None 으로 확인요청·Temp 보관 항목도 포함.
-_archived_entries = repository.list_issues(
-    include_archived=True, include_closed=True, project=current_project, kind=None
+# 6) 삭제 — 삭제 태그(deleted)가 붙은 항목만. 상태·종류 무관.
+#    kind=None 으로 확인요청·Temp 삭제 항목도 포함.
+_deleted_entries = repository.list_issues(
+    include_deleted=True, include_closed=True, project=current_project, kind=None
 )
-archived = _to_dicts([e for e in _archived_entries if e.archived])
-st.subheader(f"삭제 ({len(archived)})")
-st.caption("삭제(보관) 처리된 항목 (개발·확인요청·Temp 모두)")
-_grid(archived, key_prefix="dash_arch")
+deleted_items = _to_dicts([e for e in _deleted_entries if e.deleted])
+st.subheader(f"삭제 ({len(deleted_items)})")
+st.caption("삭제 표시한 항목 (개발·확인요청·Temp 모두) — 상세보기에서 복구 가능")
+_grid(deleted_items, key_prefix="dash_arch")
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +198,7 @@ with st.sidebar:
     st.divider()
     st.markdown("**상태 바로가기**")
     active_only = repository.list_issues(
-        include_archived=False, include_closed=False, project=current_project
+        include_deleted=False, include_closed=False, project=current_project
     )
     _status_counts: dict[str, int] = {}
     for _e in active_only:

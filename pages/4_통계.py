@@ -66,10 +66,10 @@ st.caption(
 # 데이터 로드
 # ---------------------------------------------------------------------------
 
-# 아카이브/완료 포함한 전체 항목 (카운트 정확성을 위해)
+# 완료까지 포함한 전체 항목 (카운트 정확성을 위해). 삭제 표시된 항목만 제외.
 # 사이드바 프로젝트 선택기가 켜져 있으면 해당 프로젝트만 집계 대상.
 all_entries: list[IndexEntry] = repository.list_issues(
-    include_archived=True, include_closed=True, project=current_project
+    include_deleted=False, include_closed=True, project=current_project
 )
 
 if not all_entries:
@@ -180,8 +180,8 @@ IN_PROGRESS_STATUSES = {
     Status.author_reviewing.value,
 }
 
-# 활성 / closed 마스크 (IndexEntry 기반)
-active_mask = df["status"].isin(ACTIVE_STATUSES) & (~df["archived"].fillna(False))
+# 활성 / closed 마스크 (IndexEntry 기반). 삭제 항목은 로드 단계에서 이미 빠졌다.
+active_mask = df["status"].isin(ACTIVE_STATUSES)
 
 # 이번 주 완료 — closed_at 이 최근 7일 이내 (Issue 의 reviewer_confirmed_at 사용)
 weekly_closed_count = 0
@@ -194,14 +194,9 @@ for issue in issues:
     if closed_at.astimezone(KST).date() >= WEEK_START:
         weekly_closed_count += 1
 
-# 진행 중 / 대기 중 — 상태별 현황과 동일하게 '삭제(archived) 제외' 기준으로 집계.
-_not_archived = ~df["archived"].fillna(False)
-in_progress_count = int(
-    (df["status"].isin(IN_PROGRESS_STATUSES) & _not_archived).sum()
-)
-requested_count = int(
-    ((df["status"] == Status.assignee_request.value) & _not_archived).sum()
-)
+# 진행 중 / 대기 중 — 상태별 현황과 동일하게 '삭제 제외' 기준으로 집계.
+in_progress_count = int(df["status"].isin(IN_PROGRESS_STATUSES).sum())
+requested_count = int((df["status"] == Status.assignee_request.value).sum())
 
 # 정체 — 활성 항목 중 마지막 갱신이 STALE_DAYS 일 이상 경과
 _stale_threshold: datetime = NOW - timedelta(days=STALE_DAYS)
@@ -261,7 +256,7 @@ _proc_status_keys = [
     "author_reviewing",
     "closed",
 ]
-_active_df_for_status = df[~df["archived"].fillna(False)]
+_active_df_for_status = df  # 삭제 항목은 로드 단계에서 제외됨
 _proc_cols = st.columns(len(_proc_status_keys))
 for _col, _sk in zip(_proc_cols, _proc_status_keys):
     with _col:
@@ -307,11 +302,6 @@ def _build_category_table(records_payload: list[dict]) -> pd.DataFrame:
         l1 = (issue.category_l1 or "").strip() or "(미분류)"
         bucket = rows[l1]
         bucket["total"] += 1
-
-        # 아카이브는 closed 와 같이 친다 (대부분 closed 가 archived 됨)
-        if issue.archived:
-            bucket["closed"] += 1
-            continue
 
         status_value = issue.status.value
         if status_value == Status.closed.value:
@@ -567,8 +557,7 @@ def _build_category_detail(records_payload: list[dict]) -> dict[str, pd.DataFram
             status_counts[l1][s] += 1
 
         # 평균 처리 시간 (closed 항목만)
-        is_closed_like = issue.archived or s == Status.closed.value
-        if is_closed_like:
+        if s == Status.closed.value:
             ca = _closed_at(issue)
             if ca is not None and issue.created_at is not None:
                 delta = (ca - issue.created_at).total_seconds()
@@ -576,7 +565,7 @@ def _build_category_detail(records_payload: list[dict]) -> dict[str, pd.DataFram
                     proc_secs[l1].append(delta)
 
         # 활성 / 정체 (정체율 계산용)
-        if (s in ACTIVE_STATUSES) and (not issue.archived) and (s != Status.closed.value):
+        if (s in ACTIVE_STATUSES) and (s != Status.closed.value):
             active_cnt[l1] += 1
             if issue.updated_at <= STALE_CUTOFF:
                 stale_cnt[l1] += 1
@@ -676,7 +665,7 @@ else:
     # ---- § 5.3 평균 처리 / 정체율 / 재요청 요약 ----
     st.markdown("**카테고리별 평균 처리 시간 / 정체율 / 재요청**")
     st.caption(
-        f"평균 처리: 완료(closed/archived) 항목의 (closed_at − created_at) 평균 시간. "
+        f"평균 처리: 완료(closed) 항목의 (closed_at − created_at) 평균 시간. "
         f"정체율: 활성 중 마지막 갱신이 {STALE_DAYS}일 이상 지난 비율. "
         "재요청 횟수: status_history 에 reopened 가 한 번이라도 등장한 항목 수."
     )

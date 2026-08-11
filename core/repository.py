@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import secrets
 import uuid
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +25,7 @@ from . import images as images_mod
 from . import index as index_mod
 from . import logger as audit
 from . import paths
-from .clock import from_iso, now, to_iso
+from .clock import from_iso, now
 from .images import MAX_IMAGES_PER_ITEM, save_image_bytes, save_pil_image
 from .locking import _write_json_unlocked, atomic_append_jsonl, file_lock
 from .models import (
@@ -150,6 +149,8 @@ def create_issue(
         reviewer_confirmed=False,
         reviewer_confirmed_at=None,
         tags=list(tags or []),
+        deleted=False,
+        deleted_at=None,
         archived=False,
         category_l1=(category_l1.strip() or None) if category_l1 else None,
         category_l2=(category_l2.strip() or None) if category_l2 else None,
@@ -221,12 +222,12 @@ def _entry_matches(
     assignee: str | None,
     author: str | None,
     search: str | None,
-    include_archived: bool,
+    include_deleted: bool,
     include_closed: bool,
     project: str | None,
 ) -> bool:
     """단일 인덱스 엔트리가 필터 조건에 부합하는지."""
-    if not include_archived and entry.get("archived"):
+    if not include_deleted and entry.get("deleted"):
         return False
 
     entry_status = entry.get("status")
@@ -269,7 +270,7 @@ def list_issues(
     assignee: str | None = None,
     author: str | None = None,
     search: str | None = None,
-    include_archived: bool = False,
+    include_deleted: bool = False,
     include_closed: bool = True,
     project: str | None = None,
     kind: str | None = "dev",
@@ -278,6 +279,11 @@ def list_issues(
 
     kind: "dev"(기본, 개발목록) / "unimplemented"(미구현목록) / None(전체).
     기본이 "dev" 라 기존 호출은 미구현 항목을 자동으로 제외한다.
+
+    ``include_deleted`` 기본 False — 삭제 태그가 붙은 항목만 숨긴다.
+    완료(closed) 항목은 ``include_closed`` 로만 제어되며, 삭제와 무관하게
+    항상 완료로 집계된다 (2026-08-11: 옛 archived 자동보관이 완료 항목을
+    삭제 목록으로 밀어넣던 문제 수정).
 
     검색은 title/tags 부분 매칭(case-insensitive). 인덱스가 비어 있으면 빈 리스트.
     project 가 주어지면 해당 프로젝트로 필터 — 빈 문자열은 None 과 동일(필터 미적용).
@@ -296,7 +302,7 @@ def list_issues(
             assignee=assignee,
             author=author,
             search=search,
-            include_archived=include_archived,
+            include_deleted=include_deleted,
             include_closed=include_closed,
             project=project,
         )
@@ -1084,18 +1090,17 @@ def list_projects(participant: str | None = None) -> list[str]:
 
     Notes
     -----
-    소스: 인덱스의 **활성 항목** (archived=False) 의 unique project ∪
+    소스: 인덱스의 **삭제되지 않은 항목** (deleted=False) 의 unique project ∪
     user_projects.json 에 등록된 *모든 사용자* 의 프로젝트 union.
 
-    archived 항목의 프로젝트는 의도적으로 제외 — UI 라벨이 "삭제(보관)"
-    이라 사용자 시점에서 보관 == 삭제이며, 모두 보관 처리한 프로젝트는
-    옵션에서 사라져야 자연스럽다 (그래야 마지막 프로젝트 삭제 후 사이드바에서
-    완전히 제거됨).
+    삭제 태그가 붙은 항목의 프로젝트는 의도적으로 제외 — 항목을 모두 삭제한
+    프로젝트는 옵션에서 사라져야 자연스럽다 (그래야 마지막 항목 삭제 후
+    사이드바에서 완전히 제거됨). 완료 항목은 포함된다.
     """
     seen: set[str] = set()
     for entry in index_mod.read_index():
-        if entry.get("archived"):
-            continue  # 보관 처리된 항목은 프로젝트 풀에 영향 X
+        if entry.get("deleted"):
+            continue  # 삭제된 항목은 프로젝트 풀에 영향 X
         raw = entry.get("project")
         if not raw:
             continue
@@ -1132,18 +1137,17 @@ def last_project_for_user(user: str) -> str | None:
     return latest_project
 
 
-def count_project_items(project: str, *, include_archived: bool = False) -> int:
+def count_project_items(project: str, *, include_deleted: bool = False) -> int:
     """프로젝트의 항목 수. 글로벌 삭제 가드용.
 
     Parameters
     ----------
     project : str
         대상 프로젝트 이름.
-    include_archived : bool, default False
-        ``False`` (기본): 활성 항목만 카운트. 보관(archive) 처리된 항목은 제외.
-        UI 라벨이 "삭제(보관)" 이라 사용자 시점에서 보관 == 삭제이며, 모두
-        보관 처리했으면 프로젝트 자체도 삭제 가능해야 한다.
-        ``True``: 활성 + 보관 모두 카운트 (감사/통계 용도).
+    include_deleted : bool, default False
+        ``False`` (기본): 삭제 태그가 붙지 않은 항목만 카운트. 항목을 모두
+        삭제했으면 프로젝트 자체도 삭제 가능해야 한다.
+        ``True``: 삭제된 항목까지 모두 카운트 (감사/통계 용도).
     """
     if not project:
         return 0
@@ -1154,7 +1158,7 @@ def count_project_items(project: str, *, include_archived: bool = False) -> int:
     for entry in index_mod.read_index():
         if (entry.get("project") or "").strip() != project:
             continue
-        if not include_archived and entry.get("archived"):
+        if not include_deleted and entry.get("deleted"):
             continue
         n += 1
     return n
@@ -1174,14 +1178,14 @@ def list_categories(project: str | None = None) -> dict[str, dict[str, set[str]]
 
     Notes
     -----
-    archived=True 항목은 제외. UI 라벨이 "삭제(보관)" 이라
-    사용자 시점에서 보관 == 삭제 — 모두 보관 처리한 카테고리는 옵션에서
-    자동으로 사라진다 (= 명시적 카테고리 삭제 기능 불필요).
+    삭제 태그(deleted=True) 항목은 제외 — 항목을 모두 삭제한 카테고리는
+    옵션에서 자동으로 사라진다 (= 명시적 카테고리 삭제 기능 불필요).
+    완료 항목의 카테고리는 계속 노출된다.
     """
     tree: dict[str, dict[str, set[str]]] = {}
     for entry in index_mod.read_index():
-        if entry.get("archived"):
-            continue  # archived 제외 — 보관 == 삭제
+        if entry.get("deleted"):
+            continue  # 삭제된 항목 제외
         if project is not None:
             if (entry.get("project") or "").strip() != project:
                 continue
@@ -1398,15 +1402,21 @@ def add_image_from_pil(
 
 
 # ---------------------------------------------------------------------------
-# 아카이브
+# 삭제 (소프트 삭제 = 삭제 태그) / 복구
 # ---------------------------------------------------------------------------
 
 
-def archive_issue(item_id: str, actor: str) -> Issue:
-    """수동 아카이브. ``archived = True`` 로 설정하고 인덱스 갱신."""
+def delete_issue(item_id: str, actor: str) -> Issue:
+    """삭제 태그를 붙인다. ``deleted = True`` + ``deleted_at`` 기록 후 인덱스 갱신.
+
+    상태(status)는 건드리지 않는다 — 완료 항목을 삭제하면 '완료이면서 삭제됨'
+    이 되고, 대시보드에서는 삭제 목록에만 보인다. :func:`restore_issue` 로
+    되돌릴 수 있다 (복구 가능한 소프트 삭제).
+    """
     with file_lock(_meta_lock_path(item_id)):
         issue = _read_meta(item_id)
-        issue.archived = True
+        issue.deleted = True
+        issue.deleted_at = now()
         issue.updated_at = now()
         _write_meta_unlocked(issue)
 
@@ -1415,6 +1425,27 @@ def archive_issue(item_id: str, actor: str) -> Issue:
     comments_count, images_count = index_mod.get_counts(item_id)
     index_mod.update_index_entry(issue, comments_count, images_count)
     return issue
+
+
+def restore_issue(item_id: str, actor: str) -> Issue:
+    """삭제 태그를 뗀다 (복구). 레거시 ``archived`` 플래그도 함께 내린다."""
+    with file_lock(_meta_lock_path(item_id)):
+        issue = _read_meta(item_id)
+        issue.deleted = False
+        issue.deleted_at = None
+        issue.archived = False
+        issue.updated_at = now()
+        _write_meta_unlocked(issue)
+
+    audit.audit_log(actor=actor, action=audit.RESTORE, item_id=item_id, detail=None)
+
+    comments_count, images_count = index_mod.get_counts(item_id)
+    index_mod.update_index_entry(issue, comments_count, images_count)
+    return issue
+
+
+# 옛 이름 — 호출부가 남아 있어도 깨지지 않도록 유지 (동작은 delete_issue 와 동일).
+archive_issue = delete_issue
 
 
 def delete_issue_permanently(item_id: str, actor: str) -> None:
@@ -1439,19 +1470,33 @@ def delete_issue_permanently(item_id: str, actor: str) -> None:
         shutil.rmtree(target)
 
 
-def auto_archive_closed(days: int = 14) -> int:
-    """``closed`` 상태이면서 reviewer_confirmed_at + days < now 인 항목들을
-    archived=True 로 변경.
+def migrate_archived_to_deleted() -> tuple[int, int]:
+    """레거시 ``archived`` 플래그를 삭제 태그 체계로 정리 (재실행 안전).
 
-    docs/04_workflow.md 4.7 절. 앱 시작 시 1회 호출 권장. 반환값은 아카이빙된 개수.
+    배경 — 2026-08-11 이전에는 ``archived`` 하나가 두 가지를 겸했다:
+      (1) 사용자가 [삭제] 를 누른 항목
+      (2) 완료 후 14 일이 지나 ``auto_archive_closed`` 가 자동 보관한 항목
+    대시보드 '삭제' 가 archived 전체를 보여줬기 때문에, (2) 의 완료 항목들이
+    삭제 목록으로 밀려나 '완료 1건 / 삭제 다수' 로 보이던 것이 원인이다.
+
+    분류 규칙:
+      - archived + 완료(closed)  → 자동 보관된 완료 항목. 삭제 아님 → 플래그만 내려
+        완료로 되돌린다.
+      - archived + 완료 아님      → 사람이 삭제한 항목. ``deleted = True`` 로 이관.
+
+    ``updated_at`` 은 건드리지 않는다 — 목록 정렬(최신순)이 통째로 뒤집히는 것을
+    막기 위해. 처리 후 archived 는 항상 False 가 되므로 다음 실행에는 대상이 없다.
+
+    Returns
+    -------
+    tuple[int, int]
+        (완료로 되돌린 건수, 삭제 태그로 이관한 건수)
     """
-    cutoff = now() - timedelta(days=days)
-    archived_count = 0
+    restored = 0
+    tagged = 0
 
     for entry in index_mod.read_index():
-        if entry.get("archived"):
-            continue
-        if entry.get("status") != Status.closed.value:
+        if not entry.get("archived"):
             continue
         item_id = entry.get("id")
         if not item_id:
@@ -1459,34 +1504,38 @@ def auto_archive_closed(days: int = 14) -> int:
 
         try:
             issue = _read_meta(item_id)
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (FileNotFoundError, json.JSONDecodeError, ValueError):
             continue
+        if not issue.archived:
+            continue  # 인덱스만 낡은 경우 — meta 기준으로 스킵
 
-        confirmed_at = issue.reviewer_confirmed_at
-        if confirmed_at is None:
-            continue
-        if confirmed_at >= cutoff:
-            continue
-
-        # 임계값 초과 → 아카이브
+        was_closed = issue.status == Status.closed
         with file_lock(_meta_lock_path(item_id)):
             issue = _read_meta(item_id)
-            issue.archived = True
-            issue.updated_at = now()
+            issue.archived = False
+            if not was_closed:
+                issue.deleted = True
+                if issue.deleted_at is None:
+                    # 실제 삭제 시각은 남아 있지 않다 — 마지막 갱신 시각으로 대체.
+                    issue.deleted_at = issue.updated_at
+            # updated_at 은 의도적으로 유지 (정렬 보존).
             _write_meta_unlocked(issue)
 
         audit.audit_log(
             actor="system",
-            action=audit.AUTO_ARCHIVE,
+            action=audit.MIGRATE_DELETED,
             item_id=item_id,
-            detail={"days": days, "closed_at": to_iso(confirmed_at)},
+            detail={"to": "deleted" if not was_closed else "closed"},
         )
 
         comments_count, images_count = index_mod.get_counts(item_id)
         index_mod.update_index_entry(issue, comments_count, images_count)
-        archived_count += 1
+        if was_closed:
+            restored += 1
+        else:
+            tagged += 1
 
-    return archived_count
+    return restored, tagged
 
 
 __all__ = [
@@ -1505,6 +1554,9 @@ __all__ = [
     "list_projects",
     "add_image_from_bytes",
     "add_image_from_pil",
+    "delete_issue",
+    "restore_issue",
     "archive_issue",
-    "auto_archive_closed",
+    "delete_issue_permanently",
+    "migrate_archived_to_deleted",
 ]

@@ -61,7 +61,7 @@ else:
 # 한 번 전체 로드해서 담당자 옵션 추출 (필터링은 아래에서 다시).
 # 현재 프로젝트가 선택돼 있으면 그 프로젝트에 등장한 담당자만 후보로 노출.
 all_entries_for_options = repository.list_issues(
-    include_archived=True, project=current_project
+    include_deleted=True, project=current_project
 )
 assignee_set: set[str] = {
     e.assignee for e in all_entries_for_options if e.assignee
@@ -172,7 +172,7 @@ with f6:
         key="list_category_l1",
     )
 
-# 2번: 완료포함 · 삭제(보관) · 보기(카드/테이블)를 한 줄에.
+# 2번: 완료포함 · 삭제 · 보기(카드/테이블)를 한 줄에.
 opt_col1, opt_col2, opt_col3 = st.columns([1, 1.2, 1])
 with opt_col1:
     include_closed = st.checkbox(
@@ -183,14 +183,14 @@ with opt_col1:
     )
 with opt_col2:
     archive_view = st.radio(
-        "삭제(보관) 항목",
+        "삭제 항목",
         options=["제외", "포함", "삭제만"],
         horizontal=True,
         key="list_archive_view",
-        help="'삭제만' = 삭제(보관)된 항목만 모아보기.",
+        help="'삭제만' = 삭제 표시된 항목만 모아보기.",
     )
-# 라디오 → 내부 플래그 (제외=숨김 / 포함=같이 / 삭제만=아카이브만)
-include_archived = archive_view != "제외"
+# 라디오 → 내부 플래그 (제외=숨김 / 포함=같이 / 삭제만=삭제 항목만)
+include_deleted = archive_view != "제외"
 
 # 보기 모드 토글 — 카드/테이블
 with opt_col3:
@@ -210,7 +210,7 @@ with opt_col3:
 def _fetch_entries() -> list[dict]:
     """필터 조건에 따라 list_issues 를 호출하고 dict 리스트로 반환."""
     repo_kwargs: dict = {
-        "include_archived": include_archived,
+        "include_deleted": include_deleted,
         "include_closed": include_closed,
         "search": search_query.strip() or None,
         "project": current_project,
@@ -306,7 +306,7 @@ def _fetch_entries() -> list[dict]:
 
 items = _fetch_entries()
 if archive_view == "삭제만":
-    items = [i for i in items if i.get("archived")]
+    items = [i for i in items if i.get("deleted")]
 total = len(items)
 
 # 6번: 상세보기 [다음 →] 이 이 목록 순서대로 이동하도록 ID 순서를 넘긴다.
@@ -430,8 +430,8 @@ def _render_card_view(items_local: list[dict]) -> None:
         col_objs = st.columns(cols_per_row)
         for col, item in zip(col_objs, row):
             with col:
-                # 삭제(보관) 처리된 항목임을 카드 위에 표시
-                if item.get("archived"):
+                # 삭제 표시된 항목임을 카드 위에 표시
+                if item.get("deleted"):
                     st.caption("🗑 삭제됨")
                 _iid = item.get("id", "")
                 # 5번: 카드에 선택 체크박스 → 상단 일괄 전환 UI 에서 한 번에 처리.

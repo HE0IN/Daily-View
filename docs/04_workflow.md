@@ -114,7 +114,7 @@ SLA 임박/위반은 통계 페이지에 별도 섹션으로 표시.
 | 오늘 SLA 임박 | `urgency = high` AND `created_at ≤ now-2h` AND `status ∈ 활성` | 모두 |
 | 외부 대기 중 | `status = api_check` (장기 추적) | 모두 |
 | 최근 7일 클로즈 | `status = closed` AND `closed_at >= now-7d` | 회고용 |
-| 보관함 | `archived = true` | 모두 |
+| 삭제 | `deleted = true` | 모두 |
 
 요청 목록 페이지 상단에 칩(chip)으로 노출 → 클릭 시 해당 필터 즉시 적용.
 
@@ -124,12 +124,37 @@ SLA 임박/위반은 통계 페이지에 별도 섹션으로 표시.
 
 | 자동화 | 트리거 | 동작 |
 |---|---|---|
-| 자동 아카이브 | `closed`된 지 14일 경과 | `archived = true`로 플래그 (목록 기본 제외) |
+| ~~자동 아카이브~~ | ~~`closed`된 지 14일 경과~~ | **2026-08-11 폐지** — 아래 참고 |
+| 레거시 플래그 정리 | 앱 시작 시 1회 (재실행 안전) | `archived=true` → 완료면 해제, 미완료면 `deleted=true` |
 | SLA 위반 표시 | 카드 렌더 시 매번 계산 | 빨간 테두리, 큐 상단 고정 |
 | 장기 API 대기 알림 | `api_check` 5일 경과 | 카드에 경고 배지, 담당자 액션 큐에 표시 |
 | 자동 재오픈 | `closed` 후 24시간 내 코멘트 달림 | `reviewing`으로 상태 자동 변경 (옵션) |
 
-자동 아카이브 같은 일괄 처리는 앱 시작 시 한 번 또는 별도 스크립트로 실행.
+일괄 처리는 앱 시작 시 한 번 또는 별도 스크립트로 실행.
+
+### 삭제 태그 (2026-08-11)
+
+**자동 아카이브를 폐지했다.** `archived` 하나가 두 가지 의미를 겸했던 것이 원인:
+
+1. 사용자가 [삭제] 를 누른 항목
+2. 완료 후 14일이 지나 `auto_archive_closed` 가 자동 보관한 항목
+
+대시보드 '삭제' 섹션이 `archived` 전체를 보여줬기 때문에, **완료 처리한 항목이
+14일 뒤 자동으로 '삭제' 목록으로 옮겨가** "완료 1건 / 삭제 다수" 로 보였다.
+
+현재 규칙:
+
+| 개념 | 필드 | 의미 |
+|---|---|---|
+| 완료 | `status = closed` | 기간과 무관하게 **항상** 대시보드 '완료' 에 집계 |
+| 삭제 | `deleted = true` (+ `deleted_at`) | 사용자가 명시적으로 [삭제] 를 누른 항목만. 복구 가능 |
+| ~~보관~~ | `archived` | 레거시 — 어떤 필터에도 쓰지 않음. 옛 데이터 호환용으로만 유지 |
+
+- `repository.delete_issue()` / `restore_issue()` — 삭제 태그 부착·해제 (상세보기 🗑 / [복구])
+- `repository.delete_issue_permanently()` — 완전삭제 (🔥, 디스크에서 제거, 복구 불가)
+- `list_issues(include_deleted=False)` 가 기본 — 숨김 기준은 삭제 태그 하나뿐
+- `repository.migrate_archived_to_deleted()` — 옛 `archived` 를 위 규칙으로 이관.
+  앱 시작 시 자동 실행되며, `scripts/migrate_deleted_tag.py` 로 수동 실행도 가능
 
 ## 4.8 코멘트 스레드 구조
 

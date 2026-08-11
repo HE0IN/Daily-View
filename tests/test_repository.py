@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,7 +16,7 @@ from pydantic import ValidationError
 
 from core import index as index_mod
 from core import paths, repository
-from core.clock import KST, from_iso, to_iso
+from core.clock import from_iso, to_iso
 from core.models import Issue, Role, Status, Urgency
 from core.workflow import WorkflowError
 
@@ -177,19 +176,19 @@ def test_list_issues_filters(
     assert {e.id for e in upper} == {a.id, c.id}
 
 
-def test_list_issues_include_archived_default(
+def test_list_issues_include_deleted_default(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """include_archived 기본 False → 아카이브된 항목 미포함."""
+    """include_deleted 기본 False → 삭제 표시된 항목 미포함."""
     a = _make_issue(sample_issue_kwargs, title="A")
     b = _make_issue(sample_issue_kwargs, title="B")
 
-    repository.archive_issue(a.id, actor="tester")
+    repository.delete_issue(a.id, actor="tester")
 
     default = repository.list_issues()
-    assert {e.id for e in default} == {b.id}, "아카이브된 a 가 기본 목록에 포함됨"
+    assert {e.id for e in default} == {b.id}, "삭제된 a 가 기본 목록에 포함됨"
 
-    incl = repository.list_issues(include_archived=True)
+    incl = repository.list_issues(include_deleted=True)
     assert {e.id for e in incl} == {a.id, b.id}
 
 
@@ -593,70 +592,137 @@ def test_list_issues_with_project_filter(
 
 
 # ---------------------------------------------------------------------------
-# 아카이브
+# 삭제 태그 / 복구 / 레거시 archived 마이그레이션
 # ---------------------------------------------------------------------------
 
 
-def test_archive_issue_flag_and_visibility(
+def test_delete_issue_flag_and_visibility(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """archive_issue 후 archived=True. 기본 list 에서 제외, include_archived 로 포함."""
+    """delete_issue 후 deleted=True. 기본 list 에서 제외, include_deleted 로 포함."""
     issue = _make_issue(sample_issue_kwargs)
-    archived = repository.archive_issue(issue.id, actor="tester")
+    deleted = repository.delete_issue(issue.id, actor="tester")
 
-    assert archived.archived is True
+    assert deleted.deleted is True
+    assert deleted.deleted_at is not None
     refreshed = repository.get_issue(issue.id)
-    assert refreshed.archived is True
+    assert refreshed.deleted is True
 
     # 기본 list_issues 에서 제외
     default = repository.list_issues()
-    assert all(e.id != issue.id for e in default), "아카이브된 항목이 기본 목록에 포함"
+    assert all(e.id != issue.id for e in default), "삭제된 항목이 기본 목록에 포함"
 
-    incl = repository.list_issues(include_archived=True)
+    incl = repository.list_issues(include_deleted=True)
     assert any(e.id == issue.id for e in incl)
 
 
-def test_auto_archive_closed(
+def test_restore_issue(temp_data_dir: Path, sample_issue_kwargs: dict) -> None:
+    """restore_issue 로 삭제 태그를 떼면 다시 기본 목록에 나온다."""
+    issue = _make_issue(sample_issue_kwargs)
+    repository.delete_issue(issue.id, actor="tester")
+
+    restored = repository.restore_issue(issue.id, actor="tester")
+    assert restored.deleted is False
+    assert restored.deleted_at is None
+
+    default = repository.list_issues()
+    assert any(e.id == issue.id for e in default), "복구된 항목이 목록에 없음"
+
+
+def test_closed_issue_stays_in_closed_list_not_deleted(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """closed 후 reviewer_confirmed_at 가 cutoff 보다 과거면 auto_archive 됨.
+    """완료 항목은 시간이 지나도 완료로 조회된다 (옛 자동보관 회귀 방지).
 
-    meta.json 을 직접 편집해 reviewer_confirmed_at 을 강제로 과거로 바꾼다.
+    대시보드 '완료' = status=closed & include_deleted=False 이므로, 완료 처리만
+    한 항목은 언제 조회해도 여기 잡혀야 한다.
     """
-    a = _make_issue(sample_issue_kwargs, title="A")
-    b = _make_issue(sample_issue_kwargs, title="B")
-
-    # a 만 closed 까지 진행
-    _drive_to_closed(a.id)
-
-    # a 의 meta.json 을 읽어 reviewer_confirmed_at 을 30일 전으로 수정
-    meta_path = paths.item_meta_path(a.id)
-    raw = json.loads(meta_path.read_text(encoding="utf-8"))
-    past = datetime.now(KST) - timedelta(days=30)
-    raw["reviewer_confirmed_at"] = to_iso(past)
-    meta_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    # 14일 임계값으로 auto_archive 수행
-    n = repository.auto_archive_closed(days=14)
-    assert n == 1, f"아카이브된 항목 수 기대 1, 실제 {n}"
-
-    # a 는 archived, b 는 그대로
-    a_after = repository.get_issue(a.id)
-    b_after = repository.get_issue(b.id)
-    assert a_after.archived is True, "오래된 closed 항목이 archived 되지 않음"
-    assert b_after.archived is False
-
-
-def test_auto_archive_skips_recent_closed(
-    temp_data_dir: Path, sample_issue_kwargs: dict
-) -> None:
-    """closed 직후라면 auto_archive 가 건드리지 않음."""
     issue = _make_issue(sample_issue_kwargs)
     _drive_to_closed(issue.id)
 
-    n = repository.auto_archive_closed(days=14)
-    assert n == 0
-    assert repository.get_issue(issue.id).archived is False
+    done = repository.list_issues(status=Status.closed, include_closed=True)
+    assert [e.id for e in done] == [issue.id]
+    assert repository.get_issue(issue.id).deleted is False
+
+    # 삭제 목록(deleted=True)에는 없어야 한다.
+    all_entries = repository.list_issues(include_deleted=True, include_closed=True)
+    assert [e.id for e in all_entries if e.deleted] == []
+
+
+def test_migrate_archived_closed_returns_to_done(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """레거시 archived=True 완료 항목 → 삭제가 아니라 완료로 복귀."""
+    issue = _make_issue(sample_issue_kwargs)
+    _drive_to_closed(issue.id)
+
+    # 옛 auto_archive_closed 가 남긴 상태를 재현 (meta 직접 편집).
+    meta_path = paths.item_meta_path(issue.id)
+    raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    raw["archived"] = True
+    raw.pop("deleted", None)
+    raw.pop("deleted_at", None)
+    updated_before = raw["updated_at"]
+    meta_path.write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    index_mod.rebuild_index()
+
+    restored, tagged = repository.migrate_archived_to_deleted()
+    assert (restored, tagged) == (1, 0)
+
+    after = repository.get_issue(issue.id)
+    assert after.deleted is False, "완료 항목이 삭제로 분류됨"
+    assert after.archived is False
+    # 정렬 보존 — 마이그레이션은 updated_at 을 건드리지 않는다 (meta 원문 비교).
+    updated_after = json.loads(meta_path.read_text(encoding="utf-8"))["updated_at"]
+    assert updated_after == updated_before, "마이그레이션이 updated_at 을 변경함"
+
+    done = repository.list_issues(status=Status.closed, include_closed=True)
+    assert [e.id for e in done] == [issue.id]
+
+
+def test_migrate_archived_open_becomes_deleted(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """레거시 archived=True 미완료 항목 → 사람이 삭제한 것 → deleted=True."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    meta_path = paths.item_meta_path(issue.id)
+    raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    raw["archived"] = True
+    raw.pop("deleted", None)
+    raw.pop("deleted_at", None)
+    meta_path.write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    index_mod.rebuild_index()
+
+    restored, tagged = repository.migrate_archived_to_deleted()
+    assert (restored, tagged) == (0, 1)
+
+    after = repository.get_issue(issue.id)
+    assert after.deleted is True
+    assert after.deleted_at is not None
+    assert after.archived is False
+    assert all(e.id != issue.id for e in repository.list_issues())
+
+
+def test_migrate_archived_is_idempotent(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """두 번째 실행에는 대상이 없다 (부팅마다 호출해도 안전)."""
+    issue = _make_issue(sample_issue_kwargs)
+    meta_path = paths.item_meta_path(issue.id)
+    raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    raw["archived"] = True
+    meta_path.write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    index_mod.rebuild_index()
+
+    assert repository.migrate_archived_to_deleted() == (0, 1)
+    assert repository.migrate_archived_to_deleted() == (0, 0)
 
 
 # ---------------------------------------------------------------------------

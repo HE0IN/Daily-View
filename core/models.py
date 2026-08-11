@@ -186,6 +186,13 @@ class Issue(BaseModel):
     reviewer_confirmed: bool = False
     reviewer_confirmed_at: datetime | None = None
     tags: list[str] = []
+    # 삭제 태그 — 사용자가 명시적으로 [삭제] 한 항목만 True.
+    # 목록·대시보드에서 숨기는 유일한 기준이다 (복구 가능한 소프트 삭제).
+    deleted: bool = False
+    deleted_at: datetime | None = None
+    # 레거시 보관 플래그 (2026-08-11 폐지). 옛 auto_archive_closed 가 완료 후
+    # 14 일 지난 항목에 True 를 찍었고, 그게 '삭제' 로 집계되던 것이 버그의 원인.
+    # 이제 어떤 필터에도 쓰지 않는다 — 옛 meta.json 호환을 위해 필드만 남긴다.
     archived: bool = False
     # 카테고리 3 단계 (대 / 중 / 소). 모두 optional — 기존 meta.json 도 그대로 호환.
     category_l1: str | None = None
@@ -198,7 +205,10 @@ class Issue(BaseModel):
     # 기존 meta.json 호환을 위해 optional — 누락 시 None 으로 처리.
     project: str | None = None
 
-    @field_validator("created_at", "updated_at", "reviewer_confirmed_at", mode="after")
+    @field_validator(
+        "created_at", "updated_at", "reviewer_confirmed_at", "deleted_at",
+        mode="after",
+    )
     @classmethod
     def _tzify(cls, v):  # noqa: N805
         return _to_aware(v)
@@ -221,6 +231,9 @@ class IndexEntry(BaseModel):
     comments_count: int = 0
     images_count: int = 0
     reviewer_confirmed: bool = False
+    # 삭제 태그 — Issue.deleted 와 동일 의미. 목록 필터의 유일한 숨김 기준.
+    deleted: bool = False
+    # 레거시 보관 플래그 — 필터에 쓰지 않는다 (Issue.archived 주석 참고).
     archived: bool = False
     tags: list[str] = []
     # 카테고리 3 단계 — 목록 필터·표시용. Issue 와 동일 의미.
@@ -272,6 +285,7 @@ class IndexEntry(BaseModel):
             comments_count=comments_count,
             images_count=images_count,
             reviewer_confirmed=issue.reviewer_confirmed,
+            deleted=issue.deleted,
             archived=issue.archived,
             tags=list(issue.tags),
             category_l1=issue.category_l1,

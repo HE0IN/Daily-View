@@ -38,7 +38,7 @@ items = [
         kind="criteria",
         project=current_project,
         include_closed=True,
-        include_archived=False,
+        include_deleted=False,
     )
     if (getattr(e, "rule_status", "unsorted") or "unsorted") == "confirmed"
 ]

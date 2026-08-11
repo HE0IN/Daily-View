@@ -223,6 +223,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# 삭제 표시된 항목이면 배너로 알린다 (상단 [복구] 로 되돌릴 수 있음).
+if issue.deleted:
+    _del_when = f" ({_abs_tooltip_dt(issue.deleted_at)})" if issue.deleted_at else ""
+    st.warning(
+        f"🗑 삭제 표시된 항목입니다{_del_when} — 목록·대시보드에서는 '삭제' 에만 "
+        "보입니다. 상단 **[복구]** 로 되돌릴 수 있습니다."
+    )
+
 # --- 2행: 제목(또는 편집 입력) + 편집/삭제/완전삭제 버튼 ------------------
 # 편집 모드 토글 — True 면 제목/설명이 입력칸으로 바뀌고 버튼이 [완료] 가 된다.
 _edit_mode = bool(st.session_state.get(f"_edit_mode_{item_id}", False))
@@ -274,20 +282,26 @@ with title_btns_col:
                     st.error(str(exc))
                 except Exception as exc:  # pragma: no cover
                     st.error(f"수정 실패: {exc}")
-        elif not issue.archived:
+        elif not issue.deleted:
             if st.button("편집", key="edit_start_btn", width=_ACT_W):
                 st.session_state[f"_edit_mode_{item_id}"] = True
                 st.rerun()
-        # 삭제(보관)
-        if issue.archived:
-            st.caption("🗑")
+        # 삭제 / 복구 — 삭제 태그 토글
+        if issue.deleted:
+            if st.button("복구", key="restore_btn", width=_ACT_W, help="삭제 표시 해제"):
+                try:
+                    repository.restore_issue(item_id, user["name"])
+                    st.toast("복구되었습니다", icon="↩")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover
+                    st.error(f"복구 실패: {exc}")
         else:
-            with st.popover("🗑", width=_ACT_W, help="삭제(보관)"):
-                st.warning("이 요청을 삭제(보관)하시겠습니까?")
+            with st.popover("🗑", width=_ACT_W, help="삭제"):
+                st.warning("이 요청에 삭제 표시를 하시겠습니까? (나중에 복구 가능)")
                 if st.button("삭제 확인", type="primary", key="del_confirm_title"):
                     try:
-                        repository.archive_issue(item_id, user["name"])
-                        st.toast("삭제(보관)되었습니다", icon="🗑")
+                        repository.delete_issue(item_id, user["name"])
+                        st.toast("삭제 표시되었습니다", icon="🗑")
                         st.switch_page("pages/1_요청목록.py")
                     except Exception as exc:  # pragma: no cover
                         st.error(f"삭제 실패: {exc}")
@@ -1277,4 +1291,4 @@ with tobe_col:
         st.caption("개발(결과) 사진이 없습니다.")
 
 
-# (삭제(보관)은 상단 우측 [🗑 삭제] popover 로 이동됨)
+# (삭제는 상단 우측 [🗑] popover 로 이동됨)

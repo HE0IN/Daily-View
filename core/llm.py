@@ -212,11 +212,11 @@ def build_project_digest(
 ) -> str:
     """현재 프로젝트의 현황을 LLM 컨텍스트용 텍스트로 요약.
 
-    범위: 삭제(보관) 제외 전체(완료 포함). 코멘트는 최근 갱신 항목 상위
+    범위: 삭제 항목 제외 전체(완료 포함). 코멘트는 최근 갱신 항목 상위
     ``max_comments`` 건의 마지막 사람 코멘트만 담는다(시스템 이력 제외).
     """
     entries = repository.list_issues(
-        kind=None, project=project, include_closed=True, include_archived=False
+        kind=None, project=project, include_closed=True, include_deleted=False
     )
     dev = [e for e in entries if (e.kind or "dev") == "dev"]
     pending = [e for e in entries if e.kind == "unimplemented"]

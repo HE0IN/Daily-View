@@ -70,6 +70,8 @@ data/
   "reviewer_confirmed": false,
   "reviewer_confirmed_at": null,
   "tags": ["login", "auth"],
+  "deleted": false,
+  "deleted_at": null,
   "archived": false
 }
 ```
@@ -91,7 +93,9 @@ data/
 | `images` | array | 첨부 이미지 메타 |
 | `reviewer_confirmed` | bool | 검토자 최종 OK 여부 |
 | `tags` | array | 자유 태그 (검색용) |
-| `archived` | bool | true면 기본 목록에서 제외 |
+| `deleted` | bool | **삭제 태그** — true면 기본 목록에서 제외되고 '삭제' 에만 노출 |
+| `deleted_at` | datetime \| null | 삭제 표시 시각 |
+| `archived` | bool | 레거시(옛 자동보관). 필터에 쓰지 않음 — [04_workflow.md](04_workflow.md) 4.7 참고 |
 
 코멘트는 별도 `comments.jsonl`에 저장 (이유는 2.5).
 
@@ -176,6 +180,7 @@ JSONL은 append-only이므로 일반적으로 잠금 불필요하지만, 라인�
       "comments_count": 3,
       "images_count": 2,
       "reviewer_confirmed": false,
+      "deleted": false,
       "archived": false,
       "tags": ["login", "auth"]
     }
