@@ -1470,30 +1470,34 @@ def delete_issue_permanently(item_id: str, actor: str) -> None:
         shutil.rmtree(target)
 
 
-def migrate_archived_to_deleted() -> tuple[int, int]:
-    """레거시 ``archived`` 플래그를 삭제 태그 체계로 정리 (재실행 안전).
+def restore_legacy_archived() -> dict[str, int]:
+    """레거시 ``archived`` 플래그를 전부 해제해 원래 단계로 되돌린다 (재실행 안전).
 
     배경 — 2026-08-11 이전에는 ``archived`` 하나가 두 가지를 겸했다:
       (1) 사용자가 [삭제] 를 누른 항목
       (2) 완료 후 14 일이 지나 ``auto_archive_closed`` 가 자동 보관한 항목
-    대시보드 '삭제' 가 archived 전체를 보여줬기 때문에, (2) 의 완료 항목들이
-    삭제 목록으로 밀려나 '완료 1건 / 삭제 다수' 로 보이던 것이 원인이다.
+    대시보드 '삭제' 가 archived 전체를 보여줬기 때문에, (2) 가 삭제 목록으로
+    밀려나 '완료 1건 / 삭제 다수' 로 보이던 것이 원인이다.
 
-    분류 규칙:
-      - archived + 완료(closed)  → 자동 보관된 완료 항목. 삭제 아님 → 플래그만 내려
-        완료로 되돌린다.
-      - archived + 완료 아님      → 사람이 삭제한 항목. ``deleted = True`` 로 이관.
+    **상태로는 (1)/(2) 를 구분할 수 없다.** 완료된 항목을 다시 열면
+    (``완료 → 등록자검토중 → 반려``) archived 는 True 로 남은 채 상태만 바뀌므로,
+    '담당자검토중인데 자동 보관된' 항목이 실제로 존재한다. 그래서 추측으로
+    삭제 태그를 붙이지 않고 **전부 원래 상태 그대로 되살린다** — 진짜 지울 것은
+    사용자가 [삭제] 로 다시 표시한다 (그때부터 ``deleted`` 로 명확히 남는다).
+
+    각 항목은 자기 ``status``/``kind`` 에 해당하는 섹션으로 자동 복귀한다
+    (완료 → 완료, 담당자검토중 → 담당자 처리, 확인대기 → 확인요청목록 …).
 
     ``updated_at`` 은 건드리지 않는다 — 목록 정렬(최신순)이 통째로 뒤집히는 것을
     막기 위해. 처리 후 archived 는 항상 False 가 되므로 다음 실행에는 대상이 없다.
 
     Returns
     -------
-    tuple[int, int]
-        (완료로 되돌린 건수, 삭제 태그로 이관한 건수)
+    dict[str, int]
+        되살린 항목의 상태값별 건수. 예: ``{"closed": 12, "assignee_reviewing": 3}``.
+        대상이 없으면 빈 dict.
     """
-    restored = 0
-    tagged = 0
+    restored: dict[str, int] = {}
 
     for entry in index_mod.read_index():
         if not entry.get("archived"):
@@ -1509,33 +1513,25 @@ def migrate_archived_to_deleted() -> tuple[int, int]:
         if not issue.archived:
             continue  # 인덱스만 낡은 경우 — meta 기준으로 스킵
 
-        was_closed = issue.status == Status.closed
         with file_lock(_meta_lock_path(item_id)):
             issue = _read_meta(item_id)
             issue.archived = False
-            if not was_closed:
-                issue.deleted = True
-                if issue.deleted_at is None:
-                    # 실제 삭제 시각은 남아 있지 않다 — 마지막 갱신 시각으로 대체.
-                    issue.deleted_at = issue.updated_at
-            # updated_at 은 의도적으로 유지 (정렬 보존).
+            # updated_at 은 의도적으로 유지 (정렬 보존). deleted 도 건드리지 않는다.
             _write_meta_unlocked(issue)
 
+        status_value = issue.status.value
         audit.audit_log(
             actor="system",
-            action=audit.MIGRATE_DELETED,
+            action=audit.RESTORE_LEGACY,
             item_id=item_id,
-            detail={"to": "deleted" if not was_closed else "closed"},
+            detail={"status": status_value},
         )
 
         comments_count, images_count = index_mod.get_counts(item_id)
         index_mod.update_index_entry(issue, comments_count, images_count)
-        if was_closed:
-            restored += 1
-        else:
-            tagged += 1
+        restored[status_value] = restored.get(status_value, 0) + 1
 
-    return restored, tagged
+    return restored
 
 
 __all__ = [
@@ -1558,5 +1554,5 @@ __all__ = [
     "restore_issue",
     "archive_issue",
     "delete_issue_permanently",
-    "migrate_archived_to_deleted",
+    "restore_legacy_archived",
 ]

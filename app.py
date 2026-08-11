@@ -72,17 +72,16 @@ def _bootstrap_once() -> None:
                 f"인덱스 점검/재구축 실패: {exc} / rebuild: {rebuild_exc}"
             )
 
-    # 3) 레거시 보관 플래그(archived) → 삭제 태그(deleted) 정리 (1회, 재실행 안전).
-    #    옛 자동보관이 완료 항목을 '삭제' 목록으로 밀어넣던 것을 되돌린다.
-    #    완료 항목은 자동으로 보관/삭제되지 않는다 (2026-08-11 정책 변경).
+    # 3) 레거시 보관 플래그(archived) 해제 (1회, 재실행 안전).
+    #    옛 자동보관이 '삭제' 목록으로 밀어넣었던 항목들을 각자의 단계로 되돌린다.
+    #    진짜 삭제는 사용자가 [삭제] 로 다시 표시한다 (2026-08-11 정책 변경).
     try:
-        restored, tagged = repository.migrate_archived_to_deleted()
-        if restored > 0:
-            st.toast(f"완료 항목 {restored}건을 완료 목록으로 되돌렸습니다", icon="✅")
-        if tagged > 0:
-            st.toast(f"삭제 항목 {tagged}건에 삭제 표시를 적용했습니다", icon="🗑")
+        _restored = repository.restore_legacy_archived()
+        _n = sum(_restored.values())
+        if _n > 0:
+            st.toast(f"보관돼 있던 {_n}건을 각 단계로 되돌렸습니다", icon="✅")
     except Exception as exc:  # pragma: no cover
-        st.warning(f"삭제 태그 정리 실패: {exc}")
+        st.warning(f"레거시 보관 플래그 정리 실패: {exc}")
 
     st.session_state["_bootstrap_done"] = True
 

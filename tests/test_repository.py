@@ -649,32 +649,35 @@ def test_closed_issue_stays_in_closed_list_not_deleted(
     assert [e.id for e in all_entries if e.deleted] == []
 
 
-def test_migrate_archived_closed_returns_to_done(
+def _force_legacy_archived(item_id: str) -> str:
+    """옛 archived=True 상태를 meta 직접 편집으로 재현. updated_at 원문 반환."""
+    meta_path = paths.item_meta_path(item_id)
+    raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    raw["archived"] = True
+    raw.pop("deleted", None)
+    raw.pop("deleted_at", None)
+    meta_path.write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return raw["updated_at"]
+
+
+def test_restore_legacy_archived_closed_returns_to_done(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
     """레거시 archived=True 완료 항목 → 삭제가 아니라 완료로 복귀."""
     issue = _make_issue(sample_issue_kwargs)
     _drive_to_closed(issue.id)
-
-    # 옛 auto_archive_closed 가 남긴 상태를 재현 (meta 직접 편집).
-    meta_path = paths.item_meta_path(issue.id)
-    raw = json.loads(meta_path.read_text(encoding="utf-8"))
-    raw["archived"] = True
-    raw.pop("deleted", None)
-    raw.pop("deleted_at", None)
-    updated_before = raw["updated_at"]
-    meta_path.write_text(
-        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    updated_before = _force_legacy_archived(issue.id)
     index_mod.rebuild_index()
 
-    restored, tagged = repository.migrate_archived_to_deleted()
-    assert (restored, tagged) == (1, 0)
+    assert repository.restore_legacy_archived() == {Status.closed.value: 1}
 
     after = repository.get_issue(issue.id)
     assert after.deleted is False, "완료 항목이 삭제로 분류됨"
     assert after.archived is False
     # 정렬 보존 — 마이그레이션은 updated_at 을 건드리지 않는다 (meta 원문 비교).
+    meta_path = paths.item_meta_path(issue.id)
     updated_after = json.loads(meta_path.read_text(encoding="utf-8"))["updated_at"]
     assert updated_after == updated_before, "마이그레이션이 updated_at 을 변경함"
 
@@ -682,47 +685,65 @@ def test_migrate_archived_closed_returns_to_done(
     assert [e.id for e in done] == [issue.id]
 
 
-def test_migrate_archived_open_becomes_deleted(
+def test_restore_legacy_archived_keeps_open_items_in_workflow(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """레거시 archived=True 미완료 항목 → 사람이 삭제한 것 → deleted=True."""
-    issue = _make_issue(sample_issue_kwargs)
+    """미완료 archived 항목도 삭제로 추정하지 않고 원래 단계로 되살린다.
 
-    meta_path = paths.item_meta_path(issue.id)
-    raw = json.loads(meta_path.read_text(encoding="utf-8"))
-    raw["archived"] = True
-    raw.pop("deleted", None)
-    raw.pop("deleted_at", None)
-    meta_path.write_text(
-        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
+    완료 후 다시 열린 항목(완료 → 등록자검토중 → 반려)은 archived=True 인 채
+    상태만 바뀌므로, 상태만으로 '사람이 삭제한 것' 을 구분할 수 없다.
+    """
+    issue = _make_issue(sample_issue_kwargs)
+    repository.update_status(
+        issue.id, Status.assignee_reviewing, actor="dev", actor_role=Role.developer
     )
+    _force_legacy_archived(issue.id)
     index_mod.rebuild_index()
 
-    restored, tagged = repository.migrate_archived_to_deleted()
-    assert (restored, tagged) == (0, 1)
+    assert repository.restore_legacy_archived() == {
+        Status.assignee_reviewing.value: 1
+    }
 
     after = repository.get_issue(issue.id)
-    assert after.deleted is True
-    assert after.deleted_at is not None
+    assert after.deleted is False, "미완료 항목이 삭제로 추정됨"
     assert after.archived is False
-    assert all(e.id != issue.id for e in repository.list_issues())
+    # 담당자 처리 섹션(담당자검토중)에 다시 잡힌다.
+    listed = repository.list_issues(status=Status.assignee_reviewing)
+    assert [e.id for e in listed] == [issue.id]
 
 
-def test_migrate_archived_is_idempotent(
+def test_restore_legacy_archived_breakdown_and_idempotent(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """두 번째 실행에는 대상이 없다 (부팅마다 호출해도 안전)."""
-    issue = _make_issue(sample_issue_kwargs)
-    meta_path = paths.item_meta_path(issue.id)
-    raw = json.loads(meta_path.read_text(encoding="utf-8"))
-    raw["archived"] = True
-    meta_path.write_text(
-        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    """상태별 건수를 돌려주고, 두 번째 실행에는 대상이 없다 (부팅마다 안전)."""
+    a = _make_issue(sample_issue_kwargs, title="A")
+    b = _make_issue(sample_issue_kwargs, title="B")
+    c = _make_issue(sample_issue_kwargs, title="C")
+    _drive_to_closed(c.id)
+    for iid in (a.id, b.id, c.id):
+        _force_legacy_archived(iid)
     index_mod.rebuild_index()
 
-    assert repository.migrate_archived_to_deleted() == (0, 1)
-    assert repository.migrate_archived_to_deleted() == (0, 0)
+    assert repository.restore_legacy_archived() == {
+        Status.assignee_request.value: 2,
+        Status.closed.value: 1,
+    }
+    assert repository.restore_legacy_archived() == {}
+
+    # 셋 다 기본 목록(삭제 아님)에 있다.
+    listed = {e.id for e in repository.list_issues(include_closed=True)}
+    assert listed == {a.id, b.id, c.id}
+
+
+def test_restore_legacy_archived_preserves_explicit_delete(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """새 방식으로 삭제한 항목(deleted=True)은 복구 대상이 아니다."""
+    issue = _make_issue(sample_issue_kwargs)
+    repository.delete_issue(issue.id, actor="tester")
+
+    assert repository.restore_legacy_archived() == {}
+    assert repository.get_issue(issue.id).deleted is True
 
 
 # ---------------------------------------------------------------------------

@@ -43,7 +43,7 @@ CONFIRM_REVIEW = "confirm_review"
 ARCHIVE = "archive"           # 삭제 태그 부착 (소프트 삭제)
 RESTORE = "restore"           # 삭제 태그 해제 (복구)
 AUTO_ARCHIVE = "auto_archive"  # 레거시 — 옛 자동보관 로그 판독용 (2026-08-11 폐지)
-MIGRATE_DELETED = "migrate_deleted"  # archived → deleted 이관
+RESTORE_LEGACY = "restore_legacy_archived"  # 레거시 archived 플래그 해제
 DELETE = "delete"             # 완전삭제 (디스크에서 제거)
 
 
@@ -122,7 +122,7 @@ __all__ = [
     "ARCHIVE",
     "RESTORE",
     "AUTO_ARCHIVE",
-    "MIGRATE_DELETED",
+    "RESTORE_LEGACY",
     "DELETE",
     "audit_log",
     "tail_audit",

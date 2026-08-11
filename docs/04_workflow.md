@@ -125,7 +125,7 @@ SLA 임박/위반은 통계 페이지에 별도 섹션으로 표시.
 | 자동화 | 트리거 | 동작 |
 |---|---|---|
 | ~~자동 아카이브~~ | ~~`closed`된 지 14일 경과~~ | **2026-08-11 폐지** — 아래 참고 |
-| 레거시 플래그 정리 | 앱 시작 시 1회 (재실행 안전) | `archived=true` → 완료면 해제, 미완료면 `deleted=true` |
+| 레거시 플래그 정리 | 앱 시작 시 1회 (재실행 안전) | `archived=true` 전부 해제 → 각자 `status` 단계로 복귀 |
 | SLA 위반 표시 | 카드 렌더 시 매번 계산 | 빨간 테두리, 큐 상단 고정 |
 | 장기 API 대기 알림 | `api_check` 5일 경과 | 카드에 경고 배지, 담당자 액션 큐에 표시 |
 | 자동 재오픈 | `closed` 후 24시간 내 코멘트 달림 | `reviewing`으로 상태 자동 변경 (옵션) |
@@ -150,11 +150,25 @@ SLA 임박/위반은 통계 페이지에 별도 섹션으로 표시.
 | 삭제 | `deleted = true` (+ `deleted_at`) | 사용자가 명시적으로 [삭제] 를 누른 항목만. 복구 가능 |
 | ~~보관~~ | `archived` | 레거시 — 어떤 필터에도 쓰지 않음. 옛 데이터 호환용으로만 유지 |
 
-- `repository.delete_issue()` / `restore_issue()` — 삭제 태그 부착·해제 (상세보기 🗑 / [복구])
+- `repository.delete_issue()` / `restore_issue()` — 삭제 태그 부착·해제
+  (상세보기 🗑 / [복구], 요청목록 카드 체크 → 일괄 삭제/복구)
 - `repository.delete_issue_permanently()` — 완전삭제 (🔥, 디스크에서 제거, 복구 불가)
 - `list_issues(include_deleted=False)` 가 기본 — 숨김 기준은 삭제 태그 하나뿐
-- `repository.migrate_archived_to_deleted()` — 옛 `archived` 를 위 규칙으로 이관.
-  앱 시작 시 자동 실행되며, `scripts/migrate_deleted_tag.py` 로 수동 실행도 가능
+
+#### 옛 `archived` 데이터 처리 — 추정하지 않고 전부 복구
+
+옛 데이터에서는 **삭제와 자동보관을 구분할 수 없다.** 완료된 항목을 다시 열면
+(`완료 → 등록자검토중 → 반려`) `archived` 는 True 로 남은 채 상태만 바뀌므로,
+"담당자검토중인데 자동 보관된" 항목이 실제로 존재한다. 상태로 삭제 여부를
+추정하면 사용자가 지운 적 없는 항목을 삭제로 만들어버린다.
+
+그래서 `repository.restore_legacy_archived()` 는 **분류하지 않고 `archived` 를
+전부 해제**한다. 각 항목은 자기 `status`/`kind` 에 맞는 섹션으로 자동 복귀하고
+(완료 → 완료, 담당자검토중 → 담당자 처리, 확인대기 → 확인요청목록 …), 진짜 지울
+항목은 사용자가 [삭제] 로 다시 표시한다. 그때부터는 `deleted` 로 명확히 남는다.
+
+앱 시작 시 자동 실행되며 `scripts/migrate_deleted_tag.py` 로 미리보기·수동 실행
+가능. `updated_at` 은 보존한다 (목록 정렬 유지).
 
 ## 4.8 코멘트 스레드 구조
 

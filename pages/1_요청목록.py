@@ -330,7 +330,56 @@ _bulk_sel_ids = [
 if _bulk_sel_ids:
     _sel_items = [it for it in items if it["id"] in _bulk_sel_ids]
     _sel_statuses = {it["status"] for it in _sel_items}
+    _sel_deleted = [it for it in _sel_items if it.get("deleted")]
+    _sel_alive = [it for it in _sel_items if not it.get("deleted")]
     with st.container(border=True):
+        # --- 일괄 삭제 / 복구 — 상태·권한 무관 (상세보기 🗑 와 동일 규칙) --------
+        _bd1, _bd2, _bd3 = st.columns([2, 2, 5])
+        with _bd1:
+            if _sel_alive:
+                with st.popover(f"🗑 {len(_sel_alive)}건 삭제", width="stretch"):
+                    st.warning(
+                        f"선택한 {len(_sel_alive)}건에 삭제 표시를 합니다. "
+                        "목록에서 숨겨지고 '삭제' 에만 남습니다 (복구 가능)."
+                    )
+                    if st.button(
+                        "삭제 확인", type="primary", key="bulk_del_confirm"
+                    ):
+                        _dn = 0
+                        for _it in _sel_alive:
+                            try:
+                                repository.delete_issue(_it["id"], name)
+                                _dn += 1
+                            except (FileNotFoundError, OSError, ValueError):
+                                continue  # 그 사이 사라진 항목은 건너뛴다
+                            st.session_state.pop(f"bulksel_{_it['id']}", None)
+                        st.toast(f"{_dn}건을 삭제 표시했습니다", icon="🗑")
+                        st.rerun()
+        with _bd2:
+            if _sel_deleted:
+                if st.button(
+                    f"↩ {len(_sel_deleted)}건 복구",
+                    key="bulk_restore",
+                    width="stretch",
+                    help="삭제 표시를 해제해 원래 단계로 되돌립니다",
+                ):
+                    _rn = 0
+                    for _it in _sel_deleted:
+                        try:
+                            repository.restore_issue(_it["id"], name)
+                            _rn += 1
+                        except (FileNotFoundError, OSError, ValueError):
+                            continue
+                        st.session_state.pop(f"bulksel_{_it['id']}", None)
+                    st.toast(f"{_rn}건을 복구했습니다", icon="↩")
+                    st.rerun()
+        with _bd3:
+            if st.button("선택 해제", key="bulk_clear", help="체크를 모두 해제"):
+                for _it in _sel_items:
+                    st.session_state.pop(f"bulksel_{_it['id']}", None)
+                st.rerun()
+
+        st.divider()
         st.markdown(f"**☑ 선택한 {len(_bulk_sel_ids)}건 일괄 전환**")
         if len(_sel_statuses) > 1:
             st.warning(
