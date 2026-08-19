@@ -405,6 +405,138 @@ def render_count_metric(
         st.metric(label=label, value=count)
 
 
+
+# ---------------------------------------------------------------------------
+# 이미지 → 클립보드 복사 (HTTP+IP 환경 대응)
+# ---------------------------------------------------------------------------
+
+# 사내는 http://<사내IP>:8501 로 접속한다 = Secure Context 가 아니라서
+# ``navigator.clipboard.write`` 를 쓸 수 없다 (components/paste_clipboard 가
+# 붙여넣기에서 같은 이유로 paste 이벤트를 쓴 것과 동일한 제약).
+# 그래서 두 경로를 순서대로 시도한다:
+#   1) navigator.clipboard.write  — https / localhost (호스트 PC) 에서 동작.
+#      진짜 image/png 로 들어가므로 그림판 등 어디든 붙는다.
+#   2) contenteditable + document.execCommand("copy")  — Secure Context 무관.
+#      선택 영역을 복사하는 옛 방식이라 HTTP+IP 에서도 된다. Word/메일/Teams
+#      처럼 HTML 붙여넣기를 지원하는 곳에 붙는다.
+_COPY_IMAGE_HTML = """
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:transparent;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;}
+  #btn{width:100%;padding:9px 12px;border:1px solid #0071DB;border-radius:8px;
+    background:#0071DB;color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
+  #btn:hover{background:#0061BD;border-color:#0061BD;}
+  #btn:disabled{opacity:.6;cursor:default;}
+  #status{margin-top:8px;font-size:12.5px;line-height:1.5;color:#475569;min-height:19px;}
+  #status.ok{color:#15803D;font-weight:600;}
+  #status.err{color:#B91C1C;}
+  #holder{position:fixed;left:-99999px;top:0;}
+  #holder img{max-width:none;}
+</style></head><body>
+  <button id="btn" type="button">__LABEL__</button>
+  <div id="status">__HINT__</div>
+  <div id="holder" contenteditable="true"><img id="src" alt=""></div>
+<script>
+(function () {
+  var btn = document.getElementById("btn");
+  var status = document.getElementById("status");
+  var holder = document.getElementById("holder");
+  var img = document.getElementById("src");
+  img.src = "__DATA_URL__";
+
+  function say(msg, cls) { status.textContent = msg; status.className = cls || ""; }
+
+  // JPEG 등은 canvas 로 PNG 변환 — ClipboardItem 은 png 만 확실히 받는다.
+  function toPngBlob() {
+    return new Promise(function (resolve, reject) {
+      try {
+        var c = document.createElement("canvas");
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext("2d").drawImage(img, 0, 0);
+        c.toBlob(function (b) { b ? resolve(b) : reject(new Error("toBlob 실패")); }, "image/png");
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // 1) 표준 비동기 클립보드 API (https / localhost 전용)
+  function copyAsync() {
+    if (!(window.isSecureContext && navigator.clipboard
+          && window.ClipboardItem && navigator.clipboard.write)) {
+      return Promise.reject(new Error("insecure-context"));
+    }
+    return toPngBlob().then(function (blob) {
+      return navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    });
+  }
+
+  // 2) 선택 영역 복사 (HTTP+IP fallback) — 클릭 핸들러 안에서 동기 실행해야
+  //    user activation 이 살아 있어 execCommand 가 허용된다.
+  function copyExec() {
+    var sel = window.getSelection();
+    var range = document.createRange();
+    range.selectNode(img);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    sel.removeAllRanges();
+    return ok;
+  }
+
+  btn.addEventListener("click", function () {
+    if (!img.complete || !img.naturalWidth) { say("이미지를 아직 읽는 중입니다. 잠시 후 다시 눌러주세요.", "err"); return; }
+    btn.disabled = true;
+    say("복사 중…");
+    // fallback 을 먼저 동기 실행해 두면 비동기 API 실패 시 activation 이 이미
+    // 소진돼 재시도가 막히는 문제를 피할 수 있다 → 동기 경로부터 시도.
+    var execOk = copyExec();
+    copyAsync().then(function () {
+      // 표준 방식 = 진짜 image/png. 그림판 등 어디에나 붙는다.
+      say("✅ 복사됐습니다 (표준 방식) — Ctrl+V 로 붙여넣으세요.", "ok");
+    }).catch(function () {
+      if (execOk) {
+        // 호환 방식 = 선택 영역(HTML) 복사. 문서/메일/Teams 에는 붙지만
+        // 그림판 같은 순수 이미지 편집기에는 안 들어갈 수 있다.
+        say("✅ 복사됐습니다 (호환 방식) — 문서·메일·Teams 에 Ctrl+V. "
+            + "그림판 등에 안 붙으면 [다운로드] 를 쓰세요.", "ok");
+      } else {
+        say("⚠ 이 브라우저에서는 복사가 막혀 있습니다. [다운로드] 를 쓰거나 "
+            + "이미지에서 오른쪽 클릭 → [이미지 복사] 를 이용하세요.", "err");
+      }
+    }).finally(function () { btn.disabled = false; });
+  });
+})();
+</script></body></html>
+"""
+
+
+def render_copy_image_button(
+    data_url: str,
+    *,
+    label: str = "📋 클립보드로 복사",
+    hint: str = "",
+    height: int = 92,
+) -> None:
+    """이미지를 클립보드로 복사하는 버튼(iframe 컴포넌트)을 렌더한다.
+
+    ``data_url`` 은 ``data:image/png;base64,...`` 형태. base64 문자열에는
+    ``<`` 가 없어 ``</script>`` 조기 종료 위험이 없으므로 그대로 삽입한다.
+
+    호출 지점은 **모달 등 '필요할 때만 렌더되는 곳'** 이어야 한다 — 원본
+    바이트가 그대로 프론트로 실려가므로, 상세보기처럼 사진이 여러 장 있는
+    화면에 항상 깔아두면 rerun 마다 전부 재전송된다.
+    """
+    import streamlit.components.v1 as _st_components
+
+    body = (
+        _COPY_IMAGE_HTML
+        .replace("__DATA_URL__", data_url)
+        .replace("__LABEL__", html.escape(label))
+        .replace("__HINT__", html.escape(hint))
+    )
+    _st_components.html(body, height=height)
+
+
 # 상태/긴급도 라벨도 외부에서 재사용 가능하도록 노출
 __all__ = [
     "render_card",
@@ -412,6 +544,7 @@ __all__ = [
     "render_badge",
     "render_count_metric",
     "humanize_dt",
+    "render_copy_image_button",
     "STATUS_LABELS",
     "STATUS_COLORS",
 ]

@@ -6,7 +6,9 @@ docs/03_ui_design.md 3.5 절을 따른다.
 
 from __future__ import annotations
 
+import base64
 import html
+import mimetypes
 from datetime import datetime
 from pathlib import Path
 
@@ -39,7 +41,7 @@ from core.workflow import (
 )
 from ui import promote_state
 from ui.auth import get_or_init_user, require_user
-from ui.components import humanize_dt
+from ui.components import humanize_dt, render_copy_image_button
 from ui.theme import (
     STATUS_COLORS,
     STATUS_LABELS,
@@ -843,6 +845,35 @@ def _show_image_dialog(rel_path: str, filename: str) -> None:
         st.error(f"파일을 찾을 수 없습니다: {rel_path}")
 
 
+@st.dialog("클립보드로 복사", width="small")
+def _copy_image_dialog(rel_path: str, filename: str) -> None:
+    """이미지를 클립보드로 복사하는 모달.
+
+    모달로 뺀 이유 — 복사는 원본 바이트를 브라우저로 실어보내야 하는데, 버튼을
+    사진마다 항상 깔아두면 rerun 마다 모든 사진이 재전송된다. 모달은 열 때만
+    렌더되므로 **누른 사진 1장만** 넘어간다.
+    """
+    abs_path = _abs_image_path(rel_path)
+    if not abs_path.exists():
+        st.error(f"파일을 찾을 수 없습니다: {rel_path}")
+        return
+    try:
+        raw = abs_path.read_bytes()
+    except OSError as exc:
+        st.error(f"파일을 읽을 수 없습니다: {exc}")
+        return
+
+    kb = len(raw) / 1024
+    st.caption(f"{filename} · {kb:,.0f} KB")
+    if kb > 4096:
+        st.warning("원본이 커서 복사에 몇 초 걸릴 수 있습니다.")
+    mime = mimetypes.guess_type(filename)[0] or "image/png"
+    render_copy_image_button(
+        f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}",
+        hint="아래 버튼을 누른 뒤 Ctrl+V 로 붙여넣으세요.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 본문: 3 분할 — [요청 AS-IS] | [설명·타임라인·코멘트] | [개발 TO-BE]
 #   각 사이드 컬럼은 자기 구분(kind)의 사진만 보여주고, 그 컬럼에서 추가하면
@@ -932,8 +963,8 @@ def _render_image(idx: int, img_ref) -> None:
                 except Exception as exc:  # pragma: no cover
                     st.error(f"저장 실패: {exc}")
     st.caption(filename)
-    # 1번: 다운로드 / 원본 보기 / 삭제 를 한 행에 배치.
-    _dlc, _viewc, _delc = st.columns(3)
+    # 1번: 다운로드 / 원본 보기 / 복사 / 삭제 를 한 행에 배치.
+    _dlc, _viewc, _copyc, _delc = st.columns(4)
     with _dlc:
         if src_abs.exists():
             st.download_button(
@@ -948,6 +979,15 @@ def _render_image(idx: int, img_ref) -> None:
             "원본 보기", key=f"view_img_{idx}", width="stretch"
         ):
             _show_image_dialog(img_ref.file, filename)
+    with _copyc:
+        # 클립보드 복사 — 모달에서 실제 복사 수행 (원본 바이트를 그때만 전송).
+        if src_abs.exists() and st.button(
+            "복사",
+            key=f"copy_img_{idx}",
+            width="stretch",
+            help="이미지를 클립보드로 복사 (Ctrl+V 로 붙여넣기)",
+        ):
+            _copy_image_dialog(img_ref.file, filename)
     with _delc:
         # 잘못 첨부한 사진 삭제 (2단계 확인) — 요청/개발 공통.
         # key 는 (인덱스+파일명) 조합으로 항상 유일하게 — 옛 seq 충돌로 파일명이
