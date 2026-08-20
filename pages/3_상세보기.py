@@ -384,18 +384,19 @@ with meta_c0:
         )
     with s_r:
         with st.popover("변경", width="stretch"):
-            # 등록자/담당자 위치별 가능한 전이 수집 (target, role)
-            _options: list = []
-            if is_assignee:
-                for _ns in allowed_transitions(issue.status, Role.developer):
-                    _options.append((_ns, Role.developer))
-            if is_author:
-                for _ns in allowed_transitions(issue.status, Role.reviewer):
-                    # 같은 목표 상태가 이미 있으면 건너뜀 — 등록자=담당자 겸직 시
-                    # 확인대기 버튼이 두 번(중복 key) 그려지는 것을 방지.
-                    if any(_t == _ns for (_t, _r) in _options):
-                        continue
-                    _options.append((_ns, Role.reviewer))
+            # 상태 전이 자유화 (2026-08-19) — 현재 단계와 무관하게 어느 단계로든
+            # 바로 보낼 수 있고, 담당자/등록자가 아니어도 바꿀 수 있다.
+            # 기록용 역할만 위치로 판단한다 (담당자면 developer, 아니면 reviewer).
+            _actor_role = Role.developer if is_assignee else Role.reviewer
+            _options: list = [
+                (_ns, _actor_role)
+                for _ns in allowed_transitions(issue.status, _actor_role)
+            ]
+            # 확인대기로 되돌리기 — 담당자확인요청 단계에서만 (kind 도 함께 바뀌며,
+            # repository.send_dev_to_pending 이 그 단계만 허용한다).
+            if issue.kind == "dev" and issue.status == Status.assignee_request:
+                if not any(_t == Status.pending_check for (_t, _r) in _options):
+                    _options.append((Status.pending_check, _actor_role))
             # req2: Temp 로 보내기 — 이미 Temp(criteria)가 아니면 어떤 항목/단계든
             #   상태변경에 항상 노출 (확정 보류). 담당자 없는 행정 이동.
             if issue.kind != "criteria":
@@ -406,18 +407,7 @@ with meta_c0:
                 if not any(_t == Status.pending_check for (_t, _r) in _options):
                     _options.append((Status.pending_check, Role.reviewer))
             if not _options:
-                # 2번: 이 단계를 '실제로' 바꿀 수 있는 역할+사람만 정확히 안내.
-                _who = []
-                if allowed_transitions(issue.status, Role.developer):
-                    _who.append(f"담당자({issue.assignee or '미지정'})")
-                if allowed_transitions(issue.status, Role.reviewer):
-                    _who.append(f"등록자({issue.author})")
-                if _who:
-                    st.caption(
-                        f"이 단계는 {' / '.join(_who)} 만 상태를 변경할 수 있습니다."
-                    )
-                else:
-                    st.caption("이 단계에서는 변경할 수 있는 상태가 없습니다.")
+                st.caption("이 단계에서는 변경할 수 있는 상태가 없습니다.")
             else:
                 # 코멘트(사유) 규칙 — 기본 필수, 단 아래는 생략 가능:
                 #  · 어떤 단계에서든 '검토중'(담당자검토중·등록자검토중) 또는

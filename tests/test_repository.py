@@ -264,32 +264,65 @@ def test_update_status_full_workflow(
     assert final.reviewer_confirmed_at is not None, "reviewer_confirmed_at not None"
 
 
-def test_update_status_unauthorized_role(
+def test_update_status_any_role_allowed(
     temp_data_dir: Path, sample_issue_kwargs: dict
 ) -> None:
-    """등록자(reviewer)가 담당자 전이(검토중) 시도 → WorkflowError."""
+    """역할과 무관하게 상태를 바꿀 수 있다 (2026-08-19 자유 전이).
+
+    예전에는 담당자 단계는 developer 만 바꿀 수 있었지만, 실제 업무에서
+    막히는 일이 잦아 역할 제한을 없앴다.
+    """
     issue = _make_issue(sample_issue_kwargs)
 
-    with pytest.raises(WorkflowError):
-        repository.update_status(
-            issue.id, Status.assignee_reviewing, actor="bad", actor_role=Role.reviewer
-        )
+    repository.update_status(
+        issue.id, Status.assignee_reviewing, actor="등록자", actor_role=Role.reviewer
+    )
+    assert repository.get_issue(issue.id).status == Status.assignee_reviewing
 
-    # 상태 변경 시도가 실패했으니 디스크 상태도 그대로
+
+def test_update_status_can_skip_and_go_back(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """중간 단계를 건너뛰고, 완료에서 되돌아올 수도 있다."""
+    issue = _make_issue(sample_issue_kwargs)
+
+    # 담당자확인요청 → 등록자확인요청 (검토·개발 단계 통째로 건너뜀)
+    repository.update_status(
+        issue.id, Status.author_request, actor="dev", actor_role=Role.developer
+    )
+    assert repository.get_issue(issue.id).status == Status.author_request
+
+    # → 완료로 바로 점프
+    repository.update_status(
+        issue.id, Status.closed, actor="등록자", actor_role=Role.reviewer
+    )
+    assert repository.get_issue(issue.id).status == Status.closed
+
+    # 완료 → 신규개발중으로 되돌리기
+    repository.update_status(
+        issue.id, Status.assignee_developing, actor="dev", actor_role=Role.developer
+    )
+    assert repository.get_issue(issue.id).status == Status.assignee_developing
+
+
+def test_update_status_blocks_kind_bound_jump(
+    temp_data_dir: Path, sample_issue_kwargs: dict
+) -> None:
+    """확인대기/Temp 로의 직행은 여전히 막힌다 (kind 가 안 바뀌어 미아가 됨).
+
+    이 이동은 kind 까지 바꾸는 전용 함수(send_dev_to_pending 등)로만 가능하다.
+    """
+    issue = _make_issue(sample_issue_kwargs)
+
+    for _target in (Status.pending_check, Status.temp):
+        with pytest.raises(WorkflowError):
+            repository.update_status(
+                issue.id, _target, actor="dev", actor_role=Role.developer
+            )
+
     after = repository.get_issue(issue.id)
     assert after.status == Status.assignee_request
-
-
-def test_update_status_invalid_transition(
-    temp_data_dir: Path, sample_issue_kwargs: dict
-) -> None:
-    """담당자확인요청 → 등록자확인요청 직접 점프 (검토 단계 생략) → WorkflowError."""
-    issue = _make_issue(sample_issue_kwargs)
-
-    with pytest.raises(WorkflowError):
-        repository.update_status(
-            issue.id, Status.author_request, actor="dev", actor_role=Role.developer
-        )
+    assert after.kind == "dev"
 
 
 def test_status_history_appended_on_each_change(

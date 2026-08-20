@@ -1,6 +1,7 @@
-"""상태 전이 로직 회귀 테스트 (등록자/담당자 워크플로, 10 단계).
+"""상태 전이 로직 회귀 테스트.
 
-권한: ``Role.developer`` = 담당자(assignee), ``Role.reviewer`` = 등록자(author).
+**전이는 자유다** (2026-08-19) — 워크플로우 14 단계 사이는 역할·순서와 무관하게
+어느 쪽으로든 이동한다. 확인대기/Temp 만 kind 와 묶여 있어 예외.
 디스크 I/O 는 일체 없으므로 가장 빠른 테스트 그룹.
 """
 
@@ -10,8 +11,10 @@ import pytest
 
 from core.models import Role, Status
 from core.workflow import (
+    KIND_BOUND_TRANSITIONS,
     STATUS_LABELS_KO,
     URGENCY_LABELS_KO,
+    WORKFLOW_STATUSES,
     WorkflowError,
     allowed_transitions,
     assert_transition,
@@ -20,182 +23,96 @@ from core.workflow import (
 
 
 # ---------------------------------------------------------------------------
-# 권한 매트릭스 — (상태, 역할) → 허용 next set. 표에 없으면 빈 집합.
-#   developer=담당자, reviewer=등록자.
+# 자유 전이 — 워크플로우 14 단계는 서로 오갈 수 있다
 # ---------------------------------------------------------------------------
-EXPECTED_TRANSITIONS: dict[tuple[Status, Role], set[Status]] = {
-    (Status.assignee_request, Role.developer): {
-        Status.assignee_reviewing,
-        Status.pending_check,
-    },
-    (Status.assignee_request, Role.reviewer): {Status.pending_check},
-    (Status.assignee_reviewing, Role.developer): {
-        Status.assignee_reviewed,
-        Status.vendor_wait,
-        Status.team_wait,
-        Status.assignee_request,
-    },
-    (Status.assignee_reviewing, Role.reviewer): set(),
-    (Status.assignee_reviewed, Role.developer): {
-        Status.assignee_developing,
-        Status.assignee_fixing,
-        Status.vendor_wait,
-        Status.team_wait,
-        Status.author_request,
-        Status.assignee_reviewing,
-    },
-    (Status.assignee_reviewed, Role.reviewer): set(),
-    (Status.vendor_wait, Role.developer): {
-        Status.vendor_request,
-        Status.assignee_reviewed,
-    },
-    (Status.vendor_wait, Role.reviewer): set(),
-    (Status.vendor_request, Role.developer): {
-        Status.vendor_reply,
-        Status.vendor_wait,
-    },
-    (Status.vendor_request, Role.reviewer): set(),
-    (Status.vendor_reply, Role.developer): {
-        Status.author_request,
-        Status.assignee_developing,
-        Status.assignee_fixing,
-        Status.vendor_request,
-    },
-    (Status.vendor_reply, Role.reviewer): set(),
-    # 담당팀 단계 — 개발사 단계와 동일 구조의 병렬 트랙
-    (Status.team_wait, Role.developer): {
-        Status.team_request,
-        Status.assignee_reviewed,
-    },
-    (Status.team_wait, Role.reviewer): set(),
-    (Status.team_request, Role.developer): {
-        Status.team_reply,
-        Status.team_wait,
-    },
-    (Status.team_request, Role.reviewer): set(),
-    (Status.team_reply, Role.developer): {
-        Status.author_request,
-        Status.assignee_developing,
-        Status.assignee_fixing,
-        Status.team_request,
-    },
-    (Status.team_reply, Role.reviewer): set(),
-    (Status.assignee_developing, Role.developer): {
-        Status.author_request,
-        Status.vendor_wait,
-        Status.team_wait,
-        Status.assignee_reviewed,
-    },
-    (Status.assignee_developing, Role.reviewer): set(),
-    (Status.assignee_fixing, Role.developer): {
-        Status.author_request,
-        Status.vendor_wait,
-        Status.team_wait,
-        Status.assignee_reviewed,
-    },
-    (Status.assignee_fixing, Role.reviewer): set(),
-    (Status.author_request, Role.reviewer): {Status.author_reviewing},
-    (Status.author_request, Role.developer): {Status.assignee_reviewed},
-    (Status.author_reviewing, Role.reviewer): {
-        Status.closed,
-        Status.assignee_request,
-        Status.author_request,
-    },
-    (Status.author_reviewing, Role.developer): set(),
-    (Status.closed, Role.developer): set(),
-    (Status.closed, Role.reviewer): {Status.author_reviewing},
-    # 확인대기 — 확인요청(unimplemented) 항목 전용. 등록자만 담당자확인요청으로.
-    (Status.pending_check, Role.developer): set(),
-    (Status.pending_check, Role.reviewer): {Status.assignee_request},
-}
 
 
-@pytest.mark.parametrize(
-    ("status", "role", "expected"),
-    [
-        (status, role, expected)
-        for (status, role), expected in EXPECTED_TRANSITIONS.items()
-    ],
-)
-def test_allowed_transitions_matches_spec(
-    status: Status, role: Role, expected: set[Status]
+@pytest.mark.parametrize("status", list(WORKFLOW_STATUSES))
+@pytest.mark.parametrize("role", [Role.developer, Role.reviewer])
+def test_any_workflow_status_reaches_every_other(
+    status: Status, role: Role
 ) -> None:
-    """권한 매트릭스 모든 칸이 코드와 일치."""
+    """어느 단계에서든 자기 자신을 뺀 나머지 전 단계로 갈 수 있다 (역할 무관)."""
     actual = set(allowed_transitions(status, role))
-    assert actual == expected, (
-        f"{status.value} / {role.value}: expected {expected}, got {actual}"
+    assert actual == set(WORKFLOW_STATUSES) - {status}
+
+
+def test_allowed_transitions_ignores_role() -> None:
+    """담당자/등록자 구분 없이 같은 목록. role 을 안 줘도 동작한다."""
+    dev = allowed_transitions(Status.assignee_developing, Role.developer)
+    rev = allowed_transitions(Status.assignee_developing, Role.reviewer)
+    none_role = allowed_transitions(Status.assignee_developing)
+    assert dev == rev == none_role
+
+
+def test_skip_ahead_and_go_back() -> None:
+    """건너뛰기(신규개발중 → 완료)와 되돌리기(완료 → 담당자확인요청) 모두 허용."""
+    assert can_transition(
+        Status.assignee_developing, Role.developer, Status.closed
     )
+    assert can_transition(Status.closed, Role.reviewer, Status.assignee_request)
+    assert can_transition(
+        Status.closed, Role.developer, Status.assignee_developing
+    )
+    # 예외 없이 통과해야 한다
+    assert_transition(Status.assignee_developing, Role.developer, Status.closed)
+    assert_transition(Status.closed, Role.developer, Status.assignee_request)
 
 
-def test_closed_can_reopen_to_review() -> None:
-    """완료(closed)는 등록자가 '등록자검토중'으로 되돌릴 수 있다 (재개발)."""
-    assert set(allowed_transitions(Status.closed, Role.reviewer)) == {
-        Status.author_reviewing
-    }
-    assert allowed_transitions(Status.closed, Role.developer) == []
+def test_transition_order_follows_workflow_sequence() -> None:
+    """반환 순서는 업무 흐름 순 — UI 버튼 정렬이 뒤죽박죽되지 않게."""
+    opts = allowed_transitions(Status.vendor_request)
+    expected = [s for s in WORKFLOW_STATUSES if s != Status.vendor_request]
+    assert opts == expected
+
+
+def test_same_status_is_not_a_transition() -> None:
+    """자기 자신으로의 전이는 목록에 없다."""
+    for status in WORKFLOW_STATUSES:
+        assert status not in allowed_transitions(status)
+        assert not can_transition(status, Role.developer, status)
 
 
 # ---------------------------------------------------------------------------
-# can_transition vs assert_transition 일관성
+# kind 와 묶인 상태 — 자유 전이에서 제외 (미아 항목 방지)
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("status", list(WORKFLOW_STATUSES))
+@pytest.mark.parametrize("target", [Status.pending_check, Status.temp])
+def test_kind_bound_targets_are_blocked(status: Status, target: Status) -> None:
+    """워크플로우 단계에서 확인대기/Temp 로 곧장 넘어가는 것은 막힌다.
+
+    상태만 바꾸면 확인요청목록에도 개발목록에도 안 잡히는 미아가 되므로,
+    kind 까지 바꾸는 repository 전용 함수로만 이동해야 한다.
+    """
+    assert not can_transition(status, Role.developer, target)
+    with pytest.raises(WorkflowError):
+        assert_transition(status, Role.developer, target)
+
+
+def test_kind_bound_sources_keep_narrow_exit() -> None:
+    """확인대기/Temp 에서 나가는 경로는 좁게 유지된다."""
+    assert allowed_transitions(Status.pending_check) == [Status.assignee_request]
+    assert allowed_transitions(Status.temp) == [Status.pending_check]
+    assert set(KIND_BOUND_TRANSITIONS) == {Status.pending_check, Status.temp}
 
 
 @pytest.mark.parametrize(
     ("current", "role", "target", "should_pass"),
     [
-        # --- 정상 전이 (담당자) ---
-        (Status.assignee_request, Role.developer, Status.assignee_reviewing, True),
-        (Status.assignee_reviewing, Role.developer, Status.assignee_reviewed, True),
-        (Status.assignee_reviewed, Role.developer, Status.assignee_developing, True),
-        (Status.assignee_reviewed, Role.developer, Status.assignee_fixing, True),
-        (Status.assignee_reviewed, Role.developer, Status.vendor_wait, True),
-        # 어느 작업 단계(검토중·수정중)에서든 바로 개발사요청대기로 보낼 수 있다.
-        (Status.assignee_reviewing, Role.developer, Status.vendor_wait, True),
-        (Status.assignee_reviewing, Role.developer, Status.team_wait, True),
-        (Status.assignee_fixing, Role.developer, Status.vendor_wait, True),
-        (Status.assignee_fixing, Role.developer, Status.team_wait, True),
-        (Status.vendor_wait, Role.developer, Status.vendor_request, True),
-        (Status.vendor_request, Role.developer, Status.vendor_reply, True),
-        (Status.vendor_reply, Role.developer, Status.author_request, True),
-        (Status.vendor_reply, Role.developer, Status.assignee_developing, True),
-        (Status.vendor_reply, Role.developer, Status.assignee_fixing, True),
-        # --- 담당팀 단계 (개발사와 동일 구조) ---
-        (Status.assignee_reviewed, Role.developer, Status.team_wait, True),
-        (Status.team_wait, Role.developer, Status.team_request, True),
-        (Status.team_request, Role.developer, Status.team_reply, True),
-        (Status.team_reply, Role.developer, Status.author_request, True),
-        (Status.team_reply, Role.developer, Status.team_request, True),  # 되돌리기
-        (Status.assignee_developing, Role.developer, Status.team_wait, True),
-        (Status.assignee_developing, Role.developer, Status.author_request, True),
-        (Status.assignee_fixing, Role.developer, Status.author_request, True),
-        # --- 정상 전이 (등록자) ---
-        (Status.author_request, Role.reviewer, Status.author_reviewing, True),
-        (Status.author_reviewing, Role.reviewer, Status.closed, True),
-        (Status.author_reviewing, Role.reviewer, Status.assignee_request, True),  # 반려
-        # --- 위반: 권한 (담당자 단계를 등록자가 / 그 반대) ---
-        (Status.assignee_request, Role.reviewer, Status.assignee_reviewing, False),
-        (Status.assignee_reviewed, Role.reviewer, Status.assignee_developing, False),
-        (Status.author_request, Role.developer, Status.author_reviewing, False),
-        (Status.author_reviewing, Role.developer, Status.closed, False),
-        # --- 위반: 흐름 점프 ---
-        (Status.assignee_request, Role.developer, Status.assignee_reviewed, False),
-        (Status.assignee_reviewing, Role.developer, Status.author_request, False),
-        (Status.vendor_request, Role.developer, Status.author_request, False),
-        # --- 되돌리기(직전 단계로) ---
-        (Status.assignee_reviewing, Role.developer, Status.assignee_request, True),
-        (Status.assignee_reviewed, Role.developer, Status.assignee_reviewing, True),
-        (Status.vendor_reply, Role.developer, Status.vendor_request, True),
-        (Status.author_reviewing, Role.reviewer, Status.author_request, True),
-        # --- 완료 → 등록자검토중 (재개발) ---
+        # --- 자유 이동 (모두 통과) ---
+        (Status.assignee_request, Role.reviewer, Status.assignee_reviewing, True),
+        (Status.assignee_request, Role.developer, Status.closed, True),
+        (Status.assignee_developing, Role.reviewer, Status.vendor_reply, True),
+        (Status.team_reply, Role.developer, Status.assignee_request, True),
+        (Status.closed, Role.developer, Status.assignee_request, True),
         (Status.closed, Role.reviewer, Status.author_reviewing, True),
-        # --- 확인대기 — 담당자확인요청 → 확인대기 는 담당자/등록자 모두 가능 ---
-        (Status.assignee_request, Role.reviewer, Status.pending_check, True),
-        (Status.assignee_request, Role.developer, Status.pending_check, True),
-        (Status.pending_check, Role.reviewer, Status.assignee_request, True),
-        (Status.pending_check, Role.developer, Status.assignee_request, False),
-        # --- terminal/위반 ---
-        (Status.closed, Role.developer, Status.assignee_request, False),
-        (Status.closed, Role.reviewer, Status.assignee_request, False),
+        # --- kind 묶인 상태로의 직행 (차단) ---
+        (Status.assignee_request, Role.developer, Status.pending_check, False),
+        (Status.closed, Role.reviewer, Status.temp, False),
+        (Status.pending_check, Role.developer, Status.vendor_wait, False),
+        (Status.temp, Role.reviewer, Status.closed, False),
     ],
 )
 def test_can_transition_matches_assert_transition(
@@ -220,27 +137,24 @@ def test_can_transition_matches_assert_transition(
 
 
 def test_workflow_error_message_includes_korean_labels() -> None:
-    """완료(terminal)에서 전이 시도 시 메시지에 한글 라벨 + 화살표가 들어감."""
+    """차단되는 전이(확인대기 직행) 메시지에 한글 라벨 + 화살표가 들어감."""
     with pytest.raises(WorkflowError) as exc_info:
-        assert_transition(Status.closed, Role.developer, Status.assignee_request)
+        assert_transition(Status.closed, Role.developer, Status.pending_check)
 
     msg = str(exc_info.value)
     assert "완료" in msg, f"메시지에 'closed' 한글 라벨 누락: {msg!r}"
-    assert "담당자확인요청" in msg, f"메시지에 대상 한글 라벨 누락: {msg!r}"
+    assert "확인대기" in msg, f"메시지에 대상 한글 라벨 누락: {msg!r}"
     assert "→" in msg, f"메시지에 '→' 없음: {msg!r}"
 
 
-def test_workflow_error_wrong_position() -> None:
-    """등록자(reviewer)가 담당자 전이를 시도하면 명확한 에러."""
+def test_workflow_error_hints_dedicated_button() -> None:
+    """확인대기/Temp 는 전용 경로로 가야 한다는 안내가 메시지에 있다."""
     with pytest.raises(WorkflowError) as exc_info:
-        assert_transition(
-            Status.assignee_request, Role.reviewer, Status.assignee_reviewing
-        )
+        assert_transition(Status.assignee_request, Role.reviewer, Status.temp)
 
     msg = str(exc_info.value)
-    assert "담당자확인요청" in msg
-    assert "담당자검토중" in msg
-    assert "reviewer" in msg, f"메시지에 역할 'reviewer' 누락: {msg!r}"
+    assert "Temp" in msg
+    assert "전용" in msg, f"안내 문구 누락: {msg!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -289,10 +203,10 @@ def test_allowed_transitions_returns_independent_list() -> None:
     first.clear()
     second = allowed_transitions(Status.assignee_reviewed, Role.developer)
     assert second == [
-        Status.assignee_developing,
-        Status.assignee_fixing,
-        Status.vendor_wait,
-        Status.team_wait,
-        Status.author_request,
-        Status.assignee_reviewing,
-    ], "내부 TRANSITIONS 가 외부 변형에 노출됨"
+        s for s in WORKFLOW_STATUSES if s != Status.assignee_reviewed
+    ], "내부 WORKFLOW_STATUSES 가 외부 변형에 노출됨"
+
+    # kind 묶인 상태의 목록도 마찬가지로 복사본이어야 한다.
+    pend = allowed_transitions(Status.pending_check)
+    pend.clear()
+    assert allowed_transitions(Status.pending_check) == [Status.assignee_request]

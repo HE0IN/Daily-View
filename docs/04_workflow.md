@@ -37,48 +37,64 @@ stateDiagram-v2
     closed --> [*]
 ```
 
-## 4.3 권한 매트릭스
+## 4.3 상태 전이 — 자유 이동 (2026-08-19 개정)
 
-각 전이를 어떤 역할이 수행할 수 있는가:
+**워크플로우 14 단계 사이는 어느 쪽으로든 바로 갈 수 있다.** 순서를 건너뛰든
+앞 단계로 되돌리든 제한이 없고, 담당자·등록자가 아니어도 바꿀 수 있다.
 
-| 전이 | 검토자 | 개발자 | 비고 |
-|---|---|---|---|
-| `(none)` → `requested` | O |  | 새 요청 등록 |
-| `requested` → `in_progress` |  | O | 개발자가 착수 |
-| `requested` → `closed` | O |  | 검토자가 자체 취소 |
-| `in_progress` → `api_check` |  | O | 외부 의존 발견 |
-| `in_progress` → `done` |  | O | 처리 완료 |
-| `api_check` → `in_progress` |  | O | 외부 답변 받고 작업 재개 |
-| `api_check` → `done` |  | O | 외부 답변 받고 처리 완료 |
-| `done` → `reviewing` | O |  | 검토 시작 |
-| `done` → `closed` | O |  | 즉시 OK |
-| `reviewing` → `closed` | O |  | 확인 OK |
-| `reviewing` → `reopened` | O |  | 미해결 판단 |
-| `reopened` → `in_progress` |  | O | 재작업 착수 |
-| 코멘트 작성 | O | O | 누구나 |
-| 이미지 추가 | O | O | 등록 후에도 가능 |
-| 검토 완료 (`reviewer_confirmed = true`) | O |  | `closed` 진입 시 자동 |
+예전에는 `(현재 상태, 역할) → 허용 목록` 매트릭스로 다음 단계를 강제했다.
+그런데 실무에서는 이런 일이 수시로 생겨 매번 막혔다:
 
-이 매트릭스는 `core/workflow.py`에 dict 형태로 코드화:
+- 개발사 확인이 필요 없어져 **개발사확인중에서 바로 등록자확인요청으로** 보내고 싶다
+- 완료 처리한 걸 **처음(담당자확인요청)부터 다시** 돌리고 싶다
+- 검토 단계를 건너뛰고 **바로 완료** 처리하고 싶다
+- 담당자가 자리에 없어 **등록자가 대신** 단계를 넘기고 싶다
+
+그래서 매트릭스를 걷어냈다. 순서는 이제 *강제*가 아니라 *권장 흐름*이다
+(4.2 절의 흐름도가 그 권장 경로).
+
+| 개념 | 규칙 |
+|---|---|
+| 이동 범위 | 워크플로우 14 단계 전체 (자기 자신 제외) |
+| 역할 제한 | 없음 — 누구나 변경 가능. `Role` 은 이력·코멘트 기록용으로만 남는다 |
+| 변경 사유 | 코멘트 필수 (검토중·검토완료·Temp 전환만 생략 가능) |
+| 이력 | 모든 이동이 `status_history` + 시스템 코멘트로 남는다 |
 
 ```python
 # core/workflow.py
-TRANSITIONS: dict[tuple[str, str], list[str]] = {
-    # (current_status, role) -> [allowed_next_statuses]
-    ("requested",   "developer"): ["in_progress"],
-    ("requested",   "reviewer"):  ["closed"],
-    ("in_progress", "developer"): ["api_check", "done"],
-    ("api_check",   "developer"): ["in_progress", "done"],
-    ("done",        "reviewer"):  ["reviewing", "closed"],
-    ("reviewing",   "reviewer"):  ["closed", "reopened"],
-    ("reopened",    "developer"): ["in_progress"],
-}
+WORKFLOW_STATUSES: tuple[Status, ...] = (
+    Status.assignee_request, Status.assignee_reviewing, Status.assignee_reviewed,
+    Status.assignee_developing, Status.assignee_fixing,
+    Status.vendor_wait, Status.vendor_request, Status.vendor_reply,
+    Status.team_wait, Status.team_request, Status.team_reply,
+    Status.author_request, Status.author_reviewing, Status.closed,
+)
 
-def allowed_transitions(current: str, role: str) -> list[str]:
-    return TRANSITIONS.get((current, role), [])
+def allowed_transitions(current: Status, role: Role | None = None) -> list[Status]:
+    if current in WORKFLOW_STATUSES:
+        return [s for s in WORKFLOW_STATUSES if s != current]
+    return list(KIND_BOUND_TRANSITIONS.get(current, []))
 ```
 
-UI에서 상태 변경 드롭다운은 이 함수의 결과만 노출 → 권한 없는 전이는 애초에 보이지 않음.
+UI(상세보기 [변경] 팝오버 · 개발목록 일괄 전환)는 이 결과를 그대로 노출한다.
+일괄 전환은 선택 항목의 상태가 **섞여 있어도** 한 번에 같은 단계로 보낼 수 있다.
+
+### 예외: 확인대기 / Temp
+
+`pending_check`(확인대기)와 `temp`(Temp)는 **자유 이동에서 제외**된다. 이 둘은
+항목 종류(`kind`)와 묶여 있어서, 상태만 바꾸면 확인요청목록에도 개발목록에도
+안 잡히는 **미아 항목**이 된다. 그래서 `kind` 까지 함께 바꾸는 전용 경로로만
+오간다:
+
+| 이동 | 함수 |
+|---|---|
+| 개발목록 → 확인요청목록 | `repository.send_dev_to_pending` (담당자확인요청 단계에서만) |
+| 확인요청목록 → 개발목록 | `repository.send_pending_to_dev` (담당자 지정 필수) |
+| 무엇이든 → Temp | `repository.promote_to_criteria` |
+| Temp → 확인요청목록 | `repository.revert_criteria_to_request` |
+
+`assert_transition` 은 이제 이 경계만 지킨다 — 워크플로우 단계끼리는 통과시키고,
+확인대기·Temp 로 곧장 넘어가려 할 때만 `WorkflowError` 를 던진다.
 
 ## 4.4 긴급도 정의 및 SLA
 

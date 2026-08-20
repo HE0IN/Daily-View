@@ -13,7 +13,7 @@ import streamlit as st
 
 from core import paths, repository
 from core.models import Role, Status, Urgency
-from core.workflow import allowed_transitions, can_transition
+from core.workflow import WORKFLOW_STATUSES
 from ui import components
 from ui.auth import get_or_init_user, render_project_selector, require_user
 from ui.theme import STATUS_LABELS, URGENCY_LABELS
@@ -329,7 +329,6 @@ _bulk_sel_ids = [
 ]
 if _bulk_sel_ids:
     _sel_items = [it for it in items if it["id"] in _bulk_sel_ids]
-    _sel_statuses = {it["status"] for it in _sel_items}
     _sel_deleted = [it for it in _sel_items if it.get("deleted")]
     _sel_alive = [it for it in _sel_items if not it.get("deleted")]
     with st.container(border=True):
@@ -381,92 +380,64 @@ if _bulk_sel_ids:
 
         st.divider()
         st.markdown(f"**☑ 선택한 {len(_bulk_sel_ids)}건 일괄 전환**")
-        if len(_sel_statuses) > 1:
-            st.warning(
-                "일괄 전환은 같은 상태(단계)끼리만 됩니다 — 선택 항목의 상태가 "
-                "섞여 있어요. (PDF 추출은 위에서 가능)"
+        # 상태 전이 자유화 (2026-08-19) — 선택 항목의 상태가 섞여 있어도, 담당자·
+        # 등록자가 아니어도 어느 단계로든 한 번에 보낼 수 있다.
+        _nbc1, _nbc2 = st.columns([2, 3])
+        with _nbc1:
+            _next_labels = [
+                STATUS_LABELS.get(s.value, s.value) for s in WORKFLOW_STATUSES
+            ]
+            _next_sel = st.selectbox("다음 단계", _next_labels, key="bulk_next")
+            _next_status = WORKFLOW_STATUSES[_next_labels.index(_next_sel)]
+        with _nbc2:
+            _bulk_comment = st.text_input(
+                "코멘트 (필수)",
+                key="bulk_comment",
+                placeholder="일괄 전환 사유",
             )
-        else:
-            _sval = next(iter(_sel_statuses))
-            # 이 상태에서 담당자/등록자가 갈 수 있는 다음 단계(중복 제거).
-            # 확인대기는 확인요청 전용이라 개발목록 일괄전환에서는 제외한다.
-            _next_uniq: list[Status] = []
-            for _r in (Role.developer, Role.reviewer):
-                for _ns in allowed_transitions(Status(_sval), _r):
-                    if _ns == Status.pending_check or _ns in _next_uniq:
-                        continue
-                    _next_uniq.append(_ns)
-            if not _next_uniq:
-                st.caption(
-                    f"'{STATUS_LABELS.get(_sval, _sval)}' 단계는 "
-                    f"넘어갈 다음 단계가 없습니다."
-                )
+        if st.button(
+            f"⏩ {len(_bulk_sel_ids)}건 → {_next_sel}",
+            type="primary",
+            key="bulk_apply",
+        ):
+            if not _bulk_comment.strip():
+                st.error("코멘트는 필수입니다.")
             else:
-                _nbc1, _nbc2 = st.columns([2, 3])
-                with _nbc1:
-                    _next_labels = [
-                        STATUS_LABELS.get(s.value, s.value) for s in _next_uniq
-                    ]
-                    _next_sel = st.selectbox(
-                        "다음 단계", _next_labels, key="bulk_next"
+                _ok, _same, _skip = 0, 0, []
+                for _iid in _bulk_sel_ids:
+                    # 렌더~클릭 사이에 삭제/제거된 항목이 있어도 배치 전체가
+                    # 죽지 않게 개별 스킵 (문제점 #15).
+                    try:
+                        _iss = repository.get_issue(_iid)
+                    except (FileNotFoundError, OSError, ValueError):
+                        continue
+                    if _iss.status == _next_status:
+                        _same += 1
+                        continue
+                    _role = (
+                        Role.developer if _iss.assignee == name else Role.reviewer
                     )
-                    _next_status = _next_uniq[_next_labels.index(_next_sel)]
-                with _nbc2:
-                    _bulk_comment = st.text_input(
-                        "코멘트 (필수)",
-                        key="bulk_comment",
-                        placeholder="일괄 전환 사유",
+                    try:
+                        # 전이를 먼저 — 실패 시 변경사유 코멘트가 유령으로
+                        # 남지 않게 한다 (상세보기와 같은 순서, 문제점 #2).
+                        repository.update_status(_iid, _next_status, name, _role)
+                        repository.add_comment(
+                            _iid, name, _role, f"[일괄 전환] {_bulk_comment.strip()}"
+                        )
+                        _ok += 1
+                    except Exception as exc:  # noqa: BLE001
+                        _skip.append(f"{_iss.title} ({exc})")
+                if _ok:
+                    st.success(f"{_ok}건을 '{_next_sel}'(으)로 전환했습니다.")
+                if _same:
+                    st.caption(f"이미 '{_next_sel}' 단계인 {_same}건은 그대로 뒀습니다.")
+                if _skip:
+                    st.warning(
+                        f"실패 {len(_skip)}건: {', '.join(_skip[:5])}"
                     )
-                if st.button(
-                    f"⏩ {len(_bulk_sel_ids)}건 → {_next_sel}",
-                    type="primary",
-                    key="bulk_apply",
-                ):
-                    if not _bulk_comment.strip():
-                        st.error("코멘트는 필수입니다.")
-                    else:
-                        _ok, _skip = 0, []
-                        for _iid in _bulk_sel_ids:
-                            # 렌더~클릭 사이에 삭제/제거된 항목이 있어도 배치 전체가
-                            # 죽지 않게 개별 스킵 (문제점 #15).
-                            try:
-                                _iss = repository.get_issue(_iid)
-                            except (FileNotFoundError, OSError, ValueError):
-                                continue
-                            _role = None
-                            if _iss.assignee == name and can_transition(
-                                _iss.status, Role.developer, _next_status
-                            ):
-                                _role = Role.developer
-                            elif _iss.author == name and can_transition(
-                                _iss.status, Role.reviewer, _next_status
-                            ):
-                                _role = Role.reviewer
-                            if _role is not None:
-                                repository.add_comment(
-                                    _iid,
-                                    name,
-                                    _role,
-                                    f"[일괄 전환] {_bulk_comment.strip()}",
-                                )
-                                repository.update_status(
-                                    _iid, _next_status, name, _role
-                                )
-                                _ok += 1
-                            else:
-                                _skip.append(_iss.title)
-                        if _ok:
-                            st.success(
-                                f"{_ok}건을 '{_next_sel}'(으)로 전환했습니다."
-                            )
-                        if _skip:
-                            st.warning(
-                                f"권한이 없어 제외 {len(_skip)}건: "
-                                f"{', '.join(_skip[:5])}"
-                            )
-                        for _iid in _bulk_sel_ids:
-                            st.session_state.pop(f"bulksel_{_iid}", None)
-                        st.rerun()
+                for _iid in _bulk_sel_ids:
+                    st.session_state.pop(f"bulksel_{_iid}", None)
+                st.rerun()
 
 
 def _render_card_view(items_local: list[dict]) -> None:
