@@ -431,22 +431,56 @@ _COPY_IMAGE_HTML = """
   #status.ok{color:#15803D;font-weight:600;}
   #status.err{color:#B91C1C;}
   #holder{position:fixed;left:-99999px;top:0;}
-  #holder img{max-width:none;}
 </style></head><body>
   <button id="btn" type="button">__LABEL__</button>
   <div id="status">__HINT__</div>
-  <div id="holder" contenteditable="true"><img id="src" alt=""></div>
+  <div id="holder"><img id="src" alt=""></div>
 <script>
 (function () {
   var btn = document.getElementById("btn");
   var status = document.getElementById("status");
-  var holder = document.getElementById("holder");
   var img = document.getElementById("src");
-  img.src = "__DATA_URL__";
+  var DATA_URL = "__DATA_URL__";
+  var FILENAME = "__FILENAME__";
+  img.src = DATA_URL;
 
   function say(msg, cls) { status.textContent = msg; status.className = cls || ""; }
 
-  // JPEG 등은 canvas 로 PNG 변환 — ClipboardItem 은 png 만 확실히 받는다.
+  // --- 경로 1: copy 이벤트 + setData (HTTP 에서도 동작) --------------------
+  // 클립보드에 무엇을 넣을지 직접 지정한다. 이미지 바이너리는 setData 로 넣을
+  // 수 없지만(브라우저 제약), data URL 을 품은 <img> HTML 은 넣을 수 있고
+  // 워드·메일·Teams·데일리뷰 붙여넣기 칸이 모두 이걸 읽는다.
+  function copyViaEvent() {
+    var wrote = false;
+    function onCopy(e) {
+      try {
+        var cd = e.clipboardData;
+        cd.setData("text/html", '<img src="' + DATA_URL + '" alt="' + FILENAME + '">');
+        cd.setData("text/plain", FILENAME + " (Daily View 이미지)");
+        e.preventDefault();
+        wrote = true;
+      } catch (err) { wrote = false; }
+    }
+    document.addEventListener("copy", onCopy, true);
+    try {
+      // execCommand("copy") 는 선택 영역이 있어야 발동한다 — 임시 textarea 사용.
+      var ta = document.createElement("textarea");
+      ta.value = " ";
+      ta.style.cssText = "position:fixed;left:-99999px;top:0;";
+      document.body.appendChild(ta);
+      ta.select();
+      var fired = document.execCommand("copy");
+      ta.remove();
+      return fired && wrote;
+    } catch (err) {
+      return false;
+    } finally {
+      document.removeEventListener("copy", onCopy, true);
+    }
+  }
+
+  // --- 경로 2: 표준 클립보드 API (https / localhost 전용) ------------------
+  // 진짜 image/png 로 들어가므로 그림판 등 어디에나 붙는다.
   function toPngBlob() {
     return new Promise(function (resolve, reject) {
       try {
@@ -458,7 +492,6 @@ _COPY_IMAGE_HTML = """
     });
   }
 
-  // 1) 표준 비동기 클립보드 API (https / localhost 전용)
   function copyAsync() {
     if (!(window.isSecureContext && navigator.clipboard
           && window.ClipboardItem && navigator.clipboard.write)) {
@@ -469,39 +502,24 @@ _COPY_IMAGE_HTML = """
     });
   }
 
-  // 2) 선택 영역 복사 (HTTP+IP fallback) — 클릭 핸들러 안에서 동기 실행해야
-  //    user activation 이 살아 있어 execCommand 가 허용된다.
-  function copyExec() {
-    var sel = window.getSelection();
-    var range = document.createRange();
-    range.selectNode(img);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    var ok = false;
-    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
-    sel.removeAllRanges();
-    return ok;
-  }
-
   btn.addEventListener("click", function () {
-    if (!img.complete || !img.naturalWidth) { say("이미지를 아직 읽는 중입니다. 잠시 후 다시 눌러주세요.", "err"); return; }
+    if (!img.complete || !img.naturalWidth) {
+      say("이미지를 아직 읽는 중입니다. 잠시 후 다시 눌러주세요.", "err");
+      return;
+    }
     btn.disabled = true;
-    say("복사 중…");
-    // fallback 을 먼저 동기 실행해 두면 비동기 API 실패 시 activation 이 이미
-    // 소진돼 재시도가 막히는 문제를 피할 수 있다 → 동기 경로부터 시도.
-    var execOk = copyExec();
+    say("복사 중\u2026");
+    // 동기 경로를 먼저 — user activation 이 살아 있을 때만 execCommand 가 허용된다.
+    var evOk = copyViaEvent();
     copyAsync().then(function () {
-      // 표준 방식 = 진짜 image/png. 그림판 등 어디에나 붙는다.
-      say("✅ 복사됐습니다 (표준 방식) — Ctrl+V 로 붙여넣으세요.", "ok");
+      say("\u2705 복사됐습니다 (표준 방식) \u2014 어디에든 Ctrl+V 로 붙여넣으세요.", "ok");
     }).catch(function () {
-      if (execOk) {
-        // 호환 방식 = 선택 영역(HTML) 복사. 문서/메일/Teams 에는 붙지만
-        // 그림판 같은 순수 이미지 편집기에는 안 들어갈 수 있다.
-        say("✅ 복사됐습니다 (호환 방식) — 문서·메일·Teams 에 Ctrl+V. "
-            + "그림판 등에 안 붙으면 [다운로드] 를 쓰세요.", "ok");
+      if (evOk) {
+        say("\u2705 복사됐습니다 \u2014 다른 항목의 붙여넣기 칸이나 문서\u00b7메일에 "
+            + "Ctrl+V. (그림판 등 이미지 편집기에는 [다운로드] 를 쓰세요)", "ok");
       } else {
-        say("⚠ 이 브라우저에서는 복사가 막혀 있습니다. [다운로드] 를 쓰거나 "
-            + "이미지에서 오른쪽 클릭 → [이미지 복사] 를 이용하세요.", "err");
+        say("\u26a0 이 브라우저에서는 복사가 막혀 있습니다. [다운로드] 를 쓰거나 "
+            + "이미지에서 오른쪽 클릭 \u2192 [이미지 복사] 를 이용하세요.", "err");
       }
     }).finally(function () { btn.disabled = false; });
   });
@@ -513,6 +531,7 @@ _COPY_IMAGE_HTML = """
 def render_copy_image_button(
     data_url: str,
     *,
+    filename: str = "image",
     label: str = "📋 클립보드로 복사",
     hint: str = "",
     height: int = 92,
@@ -531,6 +550,7 @@ def render_copy_image_button(
     body = (
         _COPY_IMAGE_HTML
         .replace("__DATA_URL__", data_url)
+        .replace("__FILENAME__", html.escape(filename, quote=True))
         .replace("__LABEL__", html.escape(label))
         .replace("__HINT__", html.escape(hint))
     )

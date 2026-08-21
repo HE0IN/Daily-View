@@ -99,6 +99,23 @@
       // 초기 포커스 시도 (iframe 마운트 직후)
       setTimeout(function () { try { area.focus(); } catch (e) {} }, 100);
 
+      // 클립보드의 HTML/텍스트에서 data URL 을 뽑아낸다.
+      //   text/html  : <img src="data:image/png;base64,...">
+      //   text/plain : data URL 을 통째로 복사한 경우
+      // 둘 다 HTTP 에서 읽고 쓸 수 있는 형식이라 Secure Context 가 필요 없다.
+      function extractDataUrl(cd) {
+        var plain = '';
+        try { plain = (cd.getData('text/plain') || '').trim(); } catch (e) {}
+        if (plain.indexOf('data:image/') === 0) return plain;
+
+        var markup = '';
+        try { markup = cd.getData('text/html') || ''; } catch (e) {}
+        if (!markup) return null;
+        // src="data:image/...;base64,..." (따옴표는 " 또는 ' 또는 없음)
+        var m = markup.match(/src\s*=\s*("|')?(data:image\/[a-zA-Z0-9.+-]+;base64,[^"'\s>]+)\1?/);
+        return m ? m[2] : null;
+      }
+
       area.addEventListener('paste', function (e) {
         // 텍스트 / HTML 가 contenteditable 에 들어가는 것을 막는다.
         e.preventDefault();
@@ -135,6 +152,23 @@
             };
             reader.readAsDataURL(blob);
             break;
+          }
+        }
+        // 이미지 파일이 없으면 data URL 이 실린 HTML/텍스트를 찾아본다.
+        // 데일리뷰 [복사] 버튼은 HTTP 에서 이미지 바이너리를 클립보드에 넣을 수
+        // 없어 <img src="data:..."> HTML 로 넣는다 — 그걸 여기서 되살린다.
+        if (!handled) {
+          var fromMarkup = extractDataUrl(cd);
+          if (fromMarkup) {
+            handled = true;
+            var approxKb = Math.round((fromMarkup.length * 3 / 4) / 1024);
+            status.textContent =
+              '인식 완료 (' + approxKb + ' KB) — 아래 미리보기에 자동 추가됨';
+            refreshHeight();
+            if (fromMarkup !== lastSentDataUrl) {
+              lastSentDataUrl = fromMarkup;
+              setValue(fromMarkup);
+            }
           }
         }
         if (!handled) {

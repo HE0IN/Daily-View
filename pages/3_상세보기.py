@@ -860,7 +860,9 @@ def _copy_image_dialog(rel_path: str, filename: str) -> None:
     mime = mimetypes.guess_type(filename)[0] or "image/png"
     render_copy_image_button(
         f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}",
-        hint="아래 버튼을 누른 뒤 Ctrl+V 로 붙여넣으세요.",
+        filename=filename,
+        hint="복사한 뒤 다른 항목의 사진 붙여넣기 칸에 Ctrl+V 하세요.",
+        height=104,
     )
 
 
