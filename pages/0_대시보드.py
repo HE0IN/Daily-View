@@ -12,9 +12,9 @@ from __future__ import annotations
 import streamlit as st
 
 from core import repository
-from core.models import Status
+from core.models import Status, Urgency
 from ui import components
-from ui.theme import STATUS_LABELS
+from ui.theme import STATUS_LABELS, URGENCY_LABELS
 
 user = st.session_state.get("user")
 if not user:
@@ -60,6 +60,31 @@ def _grid(items: list[dict], *, key_prefix: str, cols: int = 4) -> None:
                     st.switch_page("pages/3_상세보기.py")
 
 
+def _repo_kwargs() -> dict:
+    """상단 필터 → repository.list_issues 인자 (서버측에서 거를 수 있는 것만)."""
+    kw: dict = {"project": current_project}
+    if urgency_choice != "(전체)":
+        kw["urgency"] = urgency_choice
+    # '(미할당)' 은 list_issues 가 assignee=None 을 '필터 없음' 으로 보므로 후처리.
+    if assignee_choice not in ("(전체)", "(미할당)"):
+        kw["assignee"] = assignee_choice
+    if search_query.strip():
+        kw["search"] = search_query.strip()
+    return kw
+
+
+def _post_filter(entries: list) -> list:
+    """list_issues 가 못 거르는 조건(미할당·등록자·카테고리)을 뒤에서 적용."""
+    out = entries
+    if assignee_choice == "(미할당)":
+        out = [e for e in out if not e.assignee]
+    if author_choice != "(전체)":
+        out = [e for e in out if e.author == author_choice]
+    if category_l1_choice != "(전체)":
+        out = [e for e in out if (e.category_l1 or "") == category_l1_choice]
+    return out
+
+
 def _by_status(statuses: list, *, include_closed: bool = False) -> list[dict]:
     out: list = []
     for s in statuses:
@@ -68,9 +93,10 @@ def _by_status(statuses: list, *, include_closed: bool = False) -> list[dict]:
                 status=s,
                 include_deleted=False,
                 include_closed=include_closed,
-                project=current_project,
+                **_repo_kwargs(),
             )
         )
+    out = _post_filter(out)
     out.sort(
         key=lambda e: e.model_dump(mode="json").get("updated_at") or "",
         reverse=True,
@@ -92,6 +118,87 @@ with cta_col:
     if st.button("+ 새 요청 등록", type="primary", width="stretch"):
         st.switch_page("pages/2_새요청등록.py")
 
+
+# ---------------------------------------------------------------------------
+# 필터 — 개발목록과 같은 구성. 모든 섹션에 공통 적용된다.
+#   상태(단계)는 섹션 자체가 그 역할을 하므로 여기서는 제외.
+# ---------------------------------------------------------------------------
+
+_FILTER_DEFAULTS = {
+    "dash_urgency": "(전체)",
+    "dash_assignee": "(전체)",
+    "dash_author": "(전체)",
+    "dash_search": "",
+    "dash_category_l1": "(전체)",
+}
+
+# [초기화] 는 플래그만 세우고 rerun 한다. 실제 값 복원은 위젯이 만들어지기 '전'인
+# 여기서 처리 — 위젯 생성 후에 그 key 를 건드리면 Streamlit 이 예외를 던진다.
+if st.session_state.pop("_dash_filter_reset", False):
+    for _k, _v in _FILTER_DEFAULTS.items():
+        st.session_state[_k] = _v
+
+# 옵션 후보 — 현재 프로젝트에 실제로 등장한 값만 (삭제 항목까지 포함해서 수집:
+# '삭제' 섹션도 필터 대상이라 그쪽 담당자/등록자가 빠지면 안 된다).
+_opt_entries = repository.list_issues(
+    include_deleted=True, include_closed=True, project=current_project, kind=None
+)
+_assignee_options = ["(전체)", "(미할당)"] + sorted(
+    {e.assignee for e in _opt_entries if e.assignee}
+)
+_author_options = ["(전체)"] + sorted({e.author for e in _opt_entries if e.author})
+try:
+    _cat_tree = repository.list_categories(project=current_project)
+except Exception:  # noqa: BLE001 - 카테고리 조회 실패가 대시보드를 막지 않게
+    _cat_tree = {}
+_category_options = ["(전체)"] + sorted(_cat_tree.keys())
+# 프로젝트를 바꿔 선택지가 사라졌으면 (전체)로 되돌린다 (stale 선택 방지).
+for _key, _opts in (
+    ("dash_assignee", _assignee_options),
+    ("dash_author", _author_options),
+    ("dash_category_l1", _category_options),
+):
+    if st.session_state.get(_key) and st.session_state[_key] not in _opts:
+        st.session_state[_key] = "(전체)"
+
+_f1, _f2, _f3, _f4, _f5, _f6 = st.columns([1, 1.2, 1.2, 1.6, 1.3, 0.8])
+with _f1:
+    urgency_choice = st.selectbox(
+        "긴급도",
+        options=["(전체)"] + [u.value for u in Urgency],
+        format_func=lambda v: "전체" if v == "(전체)" else URGENCY_LABELS.get(v, v),
+        key="dash_urgency",
+    )
+with _f2:
+    assignee_choice = st.selectbox("담당자", options=_assignee_options, key="dash_assignee")
+with _f3:
+    author_choice = st.selectbox("등록자", options=_author_options, key="dash_author")
+with _f4:
+    search_query = st.text_input("검색", placeholder="제목/태그", key="dash_search")
+with _f5:
+    category_l1_choice = st.selectbox(
+        "카테고리", options=_category_options, key="dash_category_l1"
+    )
+with _f6:
+    st.write("")  # selectbox 라벨 높이만큼 내려 버튼을 같은 줄에 맞춘다
+    if st.button("초기화", width="stretch", help="필터를 모두 (전체)로"):
+        st.session_state["_dash_filter_reset"] = True
+        st.rerun()
+
+# 필터가 걸려 있으면 눈에 띄게 알린다 — 섹션이 비어 보이는 이유를 바로 알 수 있게.
+_active_filters = [
+    f"{_label}: {_val}"
+    for _label, _val in (
+        ("긴급도", URGENCY_LABELS.get(urgency_choice, urgency_choice)),
+        ("담당자", assignee_choice),
+        ("등록자", author_choice),
+        ("카테고리", category_l1_choice),
+    )
+    if _val != "(전체)"
+] + ([f"검색: {search_query.strip()}"] if search_query.strip() else [])
+if _active_filters:
+    st.info("필터 적용 중 — " + " · ".join(_active_filters))
+
 st.divider()
 
 
@@ -100,8 +207,10 @@ st.divider()
 # ---------------------------------------------------------------------------
 
 # 1) 전체 개발 목록 — 완료까지 포함한 전체 개발 항목 (삭제 표시된 것만 제외, 4번)
-all_active_entries = repository.list_issues(
-    include_deleted=False, include_closed=True, project=current_project
+all_active_entries = _post_filter(
+    repository.list_issues(
+        include_deleted=False, include_closed=True, **_repo_kwargs()
+    )
 )
 all_active = _to_dicts(all_active_entries)
 st.subheader(f"전체 개발 목록 ({len(all_active)})")
@@ -165,8 +274,10 @@ st.divider()
 
 # 6) 삭제 — 삭제 태그(deleted)가 붙은 항목만. 상태·종류 무관.
 #    kind=None 으로 확인요청·Temp 삭제 항목도 포함.
-_deleted_entries = repository.list_issues(
-    include_deleted=True, include_closed=True, project=current_project, kind=None
+_deleted_entries = _post_filter(
+    repository.list_issues(
+        include_deleted=True, include_closed=True, kind=None, **_repo_kwargs()
+    )
 )
 deleted_items = _to_dicts([e for e in _deleted_entries if e.deleted])
 st.subheader(f"삭제 ({len(deleted_items)})")
@@ -197,8 +308,10 @@ STATUS_NAV_KEYS = [
 with st.sidebar:
     st.divider()
     st.markdown("**상태 바로가기**")
-    active_only = repository.list_issues(
-        include_deleted=False, include_closed=False, project=current_project
+    active_only = _post_filter(
+        repository.list_issues(
+            include_deleted=False, include_closed=False, **_repo_kwargs()
+        )
     )
     _status_counts: dict[str, int] = {}
     for _e in active_only:
